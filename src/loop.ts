@@ -10,7 +10,7 @@ import {
 	removeWorktree,
 	generateBranchName,
 	determineRepoPath,
-	detectFeatureBranch,
+	detectFeatureBranches,
 } from "./worktree.js";
 import type { LisaConfig } from "./types.js";
 
@@ -85,12 +85,12 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		const prUrl = config.workflow === "worktree"
+		const prUrls = config.workflow === "worktree"
 			? await runWorktreeSession(config, issue, logFile, session)
 			: await runBranchSession(config, issue, logFile, session);
 
-		// Attach PR link to issue card
-		if (prUrl) {
+		// Attach PR links to issue card
+		for (const prUrl of prUrls) {
 			try {
 				await source.attachPullRequest(issue.id, prUrl);
 				logger.ok(`Attached PR to ${issue.id}`);
@@ -138,7 +138,7 @@ async function runWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-): Promise<string | undefined> {
+): Promise<string[]> {
 	const provider = createProvider(config.provider);
 	const workspace = resolve(config.workspace);
 
@@ -155,7 +155,7 @@ async function runWorktreeSession(
 		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
 	} catch (err) {
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
-		return;
+		return [];
 	}
 
 	logger.ok(`Worktree created at ${worktreePath}`);
@@ -175,11 +175,11 @@ async function runWorktreeSession(
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
 		await cleanupWorktree(repoPath, worktreePath);
-		return undefined;
+		return [];
 	}
 
 	// Create PR from worktree
-	let prUrl: string | undefined;
+	const prUrls: string[] = [];
 	try {
 		const repoInfo = await getRepoInfo(worktreePath);
 		const pr = await createPullRequest({
@@ -191,7 +191,7 @@ async function runWorktreeSession(
 			body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
 		}, config.github);
 		logger.ok(`PR created: ${pr.html_url}`);
-		prUrl = pr.html_url;
+		prUrls.push(pr.html_url);
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
@@ -199,7 +199,7 @@ async function runWorktreeSession(
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return prUrl;
+	return prUrls;
 }
 
 async function runBranchSession(
@@ -207,7 +207,7 @@ async function runBranchSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-): Promise<string | undefined> {
+): Promise<string[]> {
 	const provider = createProvider(config.provider);
 	const prompt = buildImplementPrompt(issue, config);
 	const workspace = resolve(config.workspace);
@@ -225,42 +225,42 @@ async function runBranchSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		return undefined;
+		return [];
 	}
 
-	// Scan all repos to find where the feature branch was actually created
-	const detected = await detectFeatureBranch(config.repos, issue.id, workspace, config.base_branch);
+	// Scan all repos to find where feature branches were created (may span multiple repos)
+	const detected = await detectFeatureBranches(config.repos, issue.id, workspace, config.base_branch);
 
-	// Fall back to heuristic repo detection if branch scan found nothing
-	const repoPath = detected?.repoPath ?? (determineRepoPath(config.repos, issue, workspace) ?? workspace);
-	const baseBranch = resolveBaseBranch(config, repoPath);
-	const headBranch = detected?.branch;
-
-	if (!headBranch || headBranch === baseBranch) {
+	if (detected.length === 0) {
 		logger.error(`Could not detect feature branch for ${issue.id} — skipping PR creation`);
 		logger.ok(`Session ${session} complete for ${issue.id}`);
-		return undefined;
+		return [];
 	}
 
-	let prUrl: string | undefined;
-	try {
-		const repoInfo = await getRepoInfo(repoPath);
-		const pr = await createPullRequest({
-			owner: repoInfo.owner,
-			repo: repoInfo.repo,
-			head: headBranch,
-			base: baseBranch,
-			title: issue.title,
-			body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
-		}, config.github);
-		logger.ok(`PR created: ${pr.html_url}`);
-		prUrl = pr.html_url;
-	} catch (err) {
-		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+	const prUrls: string[] = [];
+	for (const { repoPath, branch } of detected) {
+		const baseBranch = resolveBaseBranch(config, repoPath);
+		if (branch === baseBranch) continue;
+
+		try {
+			const repoInfo = await getRepoInfo(repoPath);
+			const pr = await createPullRequest({
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+				head: branch,
+				base: baseBranch,
+				title: issue.title,
+				body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
+			}, config.github);
+			logger.ok(`PR created: ${pr.html_url}`);
+			prUrls.push(pr.html_url);
+		} catch (err) {
+			logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return prUrl;
+	return prUrls;
 }
 
 async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<void> {

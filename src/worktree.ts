@@ -128,26 +128,28 @@ export function determineRepoPath(
 }
 
 /**
- * Scan all repos in the workspace to find where a feature branch was created.
- * The agent creates a branch and stays on it, so we look for a repo whose
- * current branch differs from its configured base branch.
+ * Scan all repos in the workspace to find where feature branches were created.
+ * Returns ALL repos that have a matching feature branch — the agent may work
+ * across multiple repos in a single session.
  *
- * Detection strategy (in order):
+ * Detection per repo (in priority order):
  * 1. Current branch contains the issue ID (strongest signal)
  * 2. Current branch differs from the repo's base branch (agent is still on it)
  * 3. Any local/remote branch contains the issue ID (agent switched back)
  */
-export async function detectFeatureBranch(
+export async function detectFeatureBranches(
 	repos: { path: string; base_branch: string }[],
 	issueId: string,
 	workspace: string,
 	globalBaseBranch: string,
-): Promise<{ repoPath: string; branch: string } | undefined> {
+): Promise<{ repoPath: string; branch: string }[]> {
 	const entries = repos.length > 0
 		? repos.map((r) => ({ path: resolve(workspace, r.path), baseBranch: r.base_branch }))
 		: [{ path: workspace, baseBranch: globalBaseBranch }];
 
 	const needle = issueId.toLowerCase();
+	const results: { repoPath: string; branch: string }[] = [];
+	const matched = new Set<string>();
 
 	// Pass 1: current branch contains the issue ID (strongest signal)
 	const currentBranches: { path: string; baseBranch: string; current: string }[] = [];
@@ -157,7 +159,8 @@ export async function detectFeatureBranch(
 			const current = stdout.trim();
 			currentBranches.push({ ...entry, current });
 			if (current && current.toLowerCase().includes(needle)) {
-				return { repoPath: entry.path, branch: current };
+				results.push({ repoPath: entry.path, branch: current });
+				matched.add(entry.path);
 			}
 		} catch {
 			// Not a git repo or other error — skip
@@ -166,18 +169,20 @@ export async function detectFeatureBranch(
 
 	// Pass 2: current branch differs from base branch (agent stayed on feature branch)
 	for (const entry of currentBranches) {
-		if (entry.current && entry.current !== entry.baseBranch) {
-			return { repoPath: entry.path, branch: entry.current };
+		if (!matched.has(entry.path) && entry.current && entry.current !== entry.baseBranch) {
+			results.push({ repoPath: entry.path, branch: entry.current });
+			matched.add(entry.path);
 		}
 	}
 
 	// Pass 3: search for any branch containing the issue ID (agent may have switched back)
 	for (const entry of entries) {
+		if (matched.has(entry.path)) continue;
 		const branch = await findBranchByIssueId(entry.path, issueId);
 		if (branch) {
-			return { repoPath: entry.path, branch };
+			results.push({ repoPath: entry.path, branch });
 		}
 	}
 
-	return undefined;
+	return results;
 }

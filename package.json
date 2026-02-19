@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "0.8.2",
+	"version": "0.9.0",
 	"description": "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	"type": "module",
 	"bin": {
