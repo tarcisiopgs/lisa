@@ -89,21 +89,21 @@ Worktree mode is ideal when you want to keep working in the repo while lisa reso
 
 Config lives in `.lisa/config.yaml`:
 
+**Linear:**
 ```yaml
 provider: claude
 source: linear
 workflow: branch
 
 source_config:
-  team: Internal
-  project: Zenixx
+  team: Engineering
+  project: Web App
   label: ready
-  initial_status: Todo
-  active_status: In Progress
-  done_status: In Review
+  pick_from: Todo
+  in_progress: In Progress
+  done: In Review
 
 github: cli
-
 workspace: .
 repos:
   - name: app
@@ -119,16 +119,41 @@ logs:
   format: text
 ```
 
+**Trello:**
+```yaml
+provider: claude
+source: trello
+workflow: branch
+
+source_config:
+  board: Product
+  pick_from: Backlog
+  label: ready
+  in_progress: In Progress
+  done: Code Review
+
+github: cli
+workspace: .
+
+loop:
+  cooldown: 10
+  max_sessions: 0
+
+logs:
+  dir: .lisa/logs
+  format: text
+```
+
 ### Source-specific fields
 
 | Field | Linear | Trello |
 |-------|--------|--------|
-| `team` | Team name | Board name |
-| `project` | Project name | List name (source column) |
+| `team` / `board` | Team name | Board name |
+| `project` | Project name | — |
+| `pick_from` | Status to pick issues from (e.g. Todo) | List to pick cards from (e.g. Backlog) |
 | `label` | Label to filter issues | Label to filter cards |
-| `initial_status` | Source status (e.g. Todo) | Same as `project` |
-| `active_status` | In-progress status (e.g. In Progress) | In-progress column |
-| `done_status` | Destination status (e.g. In Review) | Destination column (e.g. Code Review) |
+| `in_progress` | In-progress status (e.g. In Progress) | In-progress column |
+| `done` | Destination status (e.g. In Review) | Destination column (e.g. Code Review) |
 
 CLI flags override config values:
 
@@ -139,8 +164,8 @@ lisa run --provider gemini --label "urgent"
 ## How It Works
 
 1. **Fetch** — Calls the Linear GraphQL API or Trello REST API to get the next issue matching the configured label, team, and project. Issues are sorted by priority.
-2. **Activate** — Moves the issue to the configured `active_status` (e.g. "In Progress") so your team can see it's being worked on.
+2. **Activate** — Moves the issue to the configured `in_progress` status (e.g. "In Progress") so your team can see it's being worked on.
 3. **Implement** — Builds a prompt with the issue context and sends it to the AI coding agent. In branch mode, the agent creates a branch and works in the current checkout. In worktree mode, lisa creates an isolated worktree first.
 4. **PR** — Creates a pull request via the GitHub API (CLI or token) referencing the original issue. In multi-repo workspaces, the correct repo is detected automatically.
-5. **Update** — Moves the issue to the configured `done_status` and removes the pickup label via the source API.
+5. **Update** — Moves the issue to the configured `done` status and removes the pickup label via the source API.
 6. **Loop** — Waits `cooldown` seconds, then picks the next issue. Repeats until no issues remain or the limit is reached.

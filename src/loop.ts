@@ -80,13 +80,13 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 
-		// Move issue to active status before starting work
+		// Move issue to in-progress status before starting work
 		try {
-			const activeStatus = config.source_config.active_status;
-			await source.updateStatus(issue.id, activeStatus);
-			logger.ok(`Moved ${issue.id} to "${activeStatus}"`);
+			const inProgress = config.source_config.in_progress;
+			await source.updateStatus(issue.id, inProgress);
+			logger.ok(`Moved ${issue.id} to "${inProgress}"`);
 		} catch (err) {
-			logger.warn(`Failed to update active status: ${err instanceof Error ? err.message : String(err)}`);
+			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
 		const prUrl = config.workflow === "worktree"
@@ -105,7 +105,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		// Update issue status + remove label (shared by both modes)
 		try {
-			const doneStatus = config.source_config.done_status;
+			const doneStatus = config.source_config.done;
 			await source.updateStatus(issue.id, doneStatus);
 			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
 		} catch (err) {

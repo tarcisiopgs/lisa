@@ -122,14 +122,20 @@ const status = defineCommand({
 	async run() {
 		banner();
 		const config = loadConfig();
+		const isLinear = config.source === "linear";
 		console.log(pc.cyan("Configuration:"));
-		console.log(`  Provider:  ${pc.bold(config.provider)}`);
-		console.log(`  Source:    ${pc.bold(config.source)}`);
-		console.log(`  Workflow:  ${pc.bold(config.workflow)}`);
-		console.log(`  Label:     ${pc.bold(config.source_config.label)}`);
-		console.log(`  Team:      ${pc.bold(config.source_config.team)}`);
-		console.log(`  Project:   ${pc.bold(config.source_config.project)}`);
-		console.log(`  Logs:      ${pc.dim(config.logs.dir)}`);
+		console.log(`  Provider:    ${pc.bold(config.provider)}`);
+		console.log(`  Source:      ${pc.bold(config.source)}`);
+		console.log(`  Workflow:    ${pc.bold(config.workflow)}`);
+		console.log(`  Label:       ${pc.bold(config.source_config.label)}`);
+		console.log(`  ${isLinear ? "Team" : "Board"}:       ${pc.bold(config.source_config.team)}`);
+		if (isLinear) {
+			console.log(`  Project:     ${pc.bold(config.source_config.project)}`);
+		}
+		console.log(`  Pick from:   ${pc.bold(config.source_config.pick_from)}`);
+		console.log(`  In progress: ${pc.bold(config.source_config.in_progress)}`);
+		console.log(`  Done:        ${pc.bold(config.source_config.done)}`);
+		console.log(`  Logs:        ${pc.dim(config.logs.dir)}`);
 
 		// Count log files
 		const { readdirSync, existsSync } = await import("node:fs");
@@ -225,16 +231,10 @@ async function runConfigWizard(): Promise<void> {
 	// --- Issue source config ---
 
 	const teamAnswer = await clack.text({
-		message: source === "linear" ? "Linear team name?" : "Trello board name?",
+		message: source === "linear" ? "Team?" : "Board?",
 	});
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
 	const team = teamAnswer as string;
-
-	const projectAnswer = await clack.text({
-		message: source === "linear" ? "Project name?" : "Trello list name?",
-	});
-	if (clack.isCancel(projectAnswer)) return process.exit(0);
-	const project = projectAnswer as string;
 
 	const labelAnswer = await clack.text({
 		message: "Label to pick up?",
@@ -243,49 +243,60 @@ async function runConfigWizard(): Promise<void> {
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
 	const label = labelAnswer as string;
 
-	let initialStatus: string;
-	let activeStatus: string;
-	let doneStatus: string;
+	let project: string;
+	let pickFrom: string;
+	let inProgress: string;
+	let done: string;
 
 	if (source === "trello") {
-		// Source column is already `project` (the list where cards are picked from)
-		initialStatus = project as string;
+		const pickFromAnswer = await clack.text({
+			message: "Pick up cards from which list?",
+			initialValue: "Backlog",
+		});
+		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
+		pickFrom = pickFromAnswer as string;
+		project = pickFrom;
 
-		const activeAnswer = await clack.text({
-			message: "Column while Lisa is working?",
+		const inProgressAnswer = await clack.text({
+			message: "Move to which column while working?",
 			initialValue: "In Progress",
 		});
-		if (clack.isCancel(activeAnswer)) return process.exit(0);
-		activeStatus = activeAnswer as string;
+		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
+		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
-			message: "Column after PR is opened?",
+			message: "Move to which column after PR?",
 			initialValue: "Code Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
-		doneStatus = doneAnswer as string;
+		done = doneAnswer as string;
 	} else {
-		// Linear: ask for source, active, and destination statuses
-		const statusAnswer = await clack.text({
-			message: "Source status (pick issues from)?",
+		const projectAnswer = await clack.text({
+			message: "Project?",
+		});
+		if (clack.isCancel(projectAnswer)) return process.exit(0);
+		project = projectAnswer as string;
+
+		const pickFromAnswer = await clack.text({
+			message: "Pick up issues from which status?",
 			initialValue: "Backlog",
 		});
-		if (clack.isCancel(statusAnswer)) return process.exit(0);
-		initialStatus = statusAnswer as string;
+		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
+		pickFrom = pickFromAnswer as string;
 
-		const activeAnswer = await clack.text({
-			message: "Status while Lisa is working?",
+		const inProgressAnswer = await clack.text({
+			message: "Move to which status while working?",
 			initialValue: "In Progress",
 		});
-		if (clack.isCancel(activeAnswer)) return process.exit(0);
-		activeStatus = activeAnswer as string;
+		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
+		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
-			message: "Status after PR is opened?",
+			message: "Move to which status after PR?",
 			initialValue: "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
-		doneStatus = doneAnswer as string;
+		done = doneAnswer as string;
 	}
 
 	// --- Git workflow ---
@@ -347,9 +358,9 @@ async function runConfigWizard(): Promise<void> {
 			team,
 			project,
 			label,
-			initial_status: initialStatus,
-			active_status: activeStatus,
-			done_status: doneStatus,
+			pick_from: pickFrom,
+			in_progress: inProgress,
+			done,
 		},
 		github: githubMethod,
 		workflow,

@@ -72,7 +72,7 @@ export class LinearSource implements Source {
 				teamName: config.team,
 				projectName: config.project,
 				labelName: config.label,
-				statusName: config.initial_status,
+				statusName: config.pick_from,
 			},
 		);
 

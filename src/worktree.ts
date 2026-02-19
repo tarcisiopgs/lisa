@@ -81,7 +81,7 @@ export async function findBranchByIssueId(repoRoot: string, issueId: string): Pr
 		.find((b) => b.toLowerCase().includes(needle));
 	if (localMatch) return localMatch;
 
-	// Fall back to remote tracking branches
+	// Check local remote-tracking refs
 	const { stdout: remote } = await execa("git", [
 		"for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin/",
 	], { cwd: repoRoot });
@@ -89,6 +89,16 @@ export async function findBranchByIssueId(repoRoot: string, issueId: string): Pr
 	const remoteMatch = remote.split("\n").map((b) => b.trim()).filter(Boolean)
 		.find((b) => b.toLowerCase().includes(needle));
 	if (remoteMatch) return remoteMatch.replace("origin/", "");
+
+	// Fall back to querying the actual remote (local refs may be stale)
+	const { stdout: lsRemote } = await execa("git", [
+		"ls-remote", "--heads", "origin",
+	], { cwd: repoRoot });
+
+	const lsMatch = lsRemote.split("\n").map((l) => l.trim()).filter(Boolean)
+		.map((l) => l.split("\t")[1]?.replace("refs/heads/", "") ?? "")
+		.find((b) => b.toLowerCase().includes(needle));
+	if (lsMatch) return lsMatch;
 
 	return undefined;
 }

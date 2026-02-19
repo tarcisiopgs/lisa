@@ -15,9 +15,9 @@ export interface SourceConfig {
 	team: string;
 	project: string;
 	label: string;
-	initial_status: string;
-	active_status: string;
-	done_status: string;
+	pick_from: string;
+	in_progress: string;
+	done: string;
 }
 
 export interface LoopConfig {

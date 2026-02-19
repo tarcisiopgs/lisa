@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import type { LisaConfig } from "./types.js";
+import type { LisaConfig, SourceConfig } from "./types.js";
 
 const CONFIG_DIR = ".lisa";
 const CONFIG_FILE = "config.yaml";
@@ -13,9 +13,9 @@ const DEFAULT_CONFIG: LisaConfig = {
 		team: "",
 		project: "",
 		label: "",
-		initial_status: "",
-		active_status: "",
-		done_status: "",
+		pick_from: "",
+		in_progress: "",
+		done: "",
 	},
 	github: "cli",
 	workflow: "branch",
@@ -48,14 +48,30 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	}
 
 	const raw = readFileSync(configPath, "utf-8");
-	const parsed = parse(raw) as Partial<LisaConfig>;
+	const parsed = parse(raw) as Record<string, unknown>;
 
-	const config = {
+	// Normalize source_config from any format (old or new, linear or trello)
+	const rawSource = (parsed.source_config ?? {}) as Record<string, string>;
+	const sourceConfig: SourceConfig = {
+		team: rawSource.team ?? rawSource.board ?? "",
+		project: rawSource.project ?? rawSource.list ?? rawSource.pick_from ?? "",
+		label: rawSource.label ?? "",
+		pick_from: rawSource.pick_from ?? rawSource.initial_status ?? "",
+		in_progress: rawSource.in_progress ?? rawSource.active_status ?? "",
+		done: rawSource.done ?? rawSource.done_status ?? "",
+	};
+
+	// For Trello, pick_from defaults to project (source list)
+	if (parsed.source === "trello" && !sourceConfig.pick_from) {
+		sourceConfig.pick_from = sourceConfig.project;
+	}
+
+	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
-		...parsed,
-		source_config: { ...DEFAULT_CONFIG.source_config, ...parsed.source_config },
-		loop: { ...DEFAULT_CONFIG.loop, ...parsed.loop },
-		logs: { ...DEFAULT_CONFIG.logs, ...parsed.logs },
+		...(parsed as Partial<LisaConfig>),
+		source_config: sourceConfig,
+		loop: { ...DEFAULT_CONFIG.loop, ...((parsed.loop ?? {}) as LisaConfig["loop"]) },
+		logs: { ...DEFAULT_CONFIG.logs, ...((parsed.logs ?? {}) as LisaConfig["logs"]) },
 	};
 
 	// Backward compat: fill base_branch if missing
@@ -75,7 +91,15 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 		mkdirSync(dir, { recursive: true });
 	}
 
-	writeFileSync(configPath, stringify(config), "utf-8");
+	// Build source-specific YAML keys
+	const sc = config.source_config;
+	const sourceYaml =
+		config.source === "trello"
+			? { board: sc.team, pick_from: sc.pick_from || sc.project, label: sc.label, in_progress: sc.in_progress, done: sc.done }
+			: { team: sc.team, project: sc.project, label: sc.label, pick_from: sc.pick_from, in_progress: sc.in_progress, done: sc.done };
+
+	const output = { ...config, source_config: sourceYaml };
+	writeFileSync(configPath, stringify(output), "utf-8");
 }
 
 export function mergeWithFlags(
