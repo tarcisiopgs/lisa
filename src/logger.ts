@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import pc from "picocolors";
 
@@ -22,6 +22,7 @@ export function initLogFile(path: string): void {
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}
+	writeFileSync(path, `[${timestamp()}] Log started\n`);
 	logFilePath = path;
 }
 
@@ -77,11 +78,40 @@ export function divider(session: number): void {
 
 export function banner(): void {
 	if (outputMode !== "default") return;
-	console.log(
-		pc.cyan(`
-  ┌─────────────────────────────────────┐
-  │  lisa — autonomous issue resolver  │
-  └─────────────────────────────────────┘
-`),
-	);
+
+	const art = `
+                     @@%#@@
+                   @@%=--=%@      @@
+          @@@@@@@@%@+------*@%%@%##*@
+          @*=======---------===-----@@
+          @=------------------------#@
+          @=------------------------+@@
+         @@=-------------------------+#%%%@@
+      @@@#=--------------------------------%@
+    @@*=------------------=---------------=@
+     @%------=%--=%=--@==+@=--------------@@
+      @@+-##+*%**#%=-+*+==+####*---------#@
+        @%*%-::::::%#::::::::+@=---------#@
+        @@@-:++::::@-::::=::::*%*=--------*@@
+          @+:==::::%=::::#-:::%==----------=@@
+          @@+:=%%%%*#+::::::+%=-----------=@@
+           @%*@=-----=*******---*+=-----=%@
+         @%=--+##**#=----------#++##----=@
+         @-----------------#=---**+%-----%@
+         @%*+=-----===++**#@#--%**#=-==++%@
+            @@@%%@#*+++=---=--=%----%%%@@@
+                 @@@----------*@#**#@
+                 @@@=---------#@@
+                @+*%*%%###%*%%=-@
+                @%@+=#@==@#:+@##@
+                   @@@@%%@##%
+`;
+
+	const title = " lisa — autonomous issue resolver ";
+	const border = "─".repeat(title.length);
+
+	console.log(pc.yellow(art));
+	console.log(pc.cyan(`  ┌${border}┐`));
+	console.log(pc.cyan(`  │${title}│`));
+	console.log(pc.cyan(`  └${border}┘\n`));
 }

@@ -2,6 +2,7 @@ export type GitHubMethod = "cli" | "token";
 export type SourceName = "linear" | "trello";
 export type ProviderName = "claude" | "gemini" | "opencode";
 export type LogFormat = "text" | "json";
+export type WorkflowMode = "worktree" | "branch";
 
 export interface RepoConfig {
 	name: string;
@@ -14,6 +15,7 @@ export interface SourceConfig {
 	project: string;
 	label: string;
 	status: string;
+	done_status: string;
 }
 
 export interface LoopConfig {
@@ -31,6 +33,7 @@ export interface LisaConfig {
 	source: SourceName;
 	source_config: SourceConfig;
 	github: GitHubMethod;
+	workflow: WorkflowMode;
 	workspace: string;
 	repos: RepoConfig[];
 	loop: LoopConfig;

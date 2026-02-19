@@ -14,8 +14,10 @@ const DEFAULT_CONFIG: LisaConfig = {
 		project: "",
 		label: "",
 		status: "",
+		done_status: "",
 	},
 	github: "cli",
+	workflow: "branch",
 	workspace: "",
 	repos: [],
 	loop: {

@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { defineCommand, runMain } from "citty";
@@ -13,7 +14,8 @@ import { banner, log, setOutputMode } from "./logger.js";
 import { runLoop } from "./loop.js";
 import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
-import type { GitHubMethod, LisaConfig, ProviderName, RepoConfig, SourceName } from "./types.js";
+import { ensureWorktreeGitignore } from "./worktree.js";
+import type { GitHubMethod, LisaConfig, ProviderName, RepoConfig, SourceName, WorkflowMode } from "./types.js";
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -115,12 +117,13 @@ const status = defineCommand({
 		banner();
 		const config = loadConfig();
 		console.log(pc.cyan("Configuration:"));
-		console.log(`  Provider: ${pc.bold(config.provider)}`);
-		console.log(`  Source:   ${pc.bold(config.source)}`);
-		console.log(`  Label:    ${pc.bold(config.source_config.label)}`);
-		console.log(`  Team:     ${pc.bold(config.source_config.team)}`);
-		console.log(`  Project:  ${pc.bold(config.source_config.project)}`);
-		console.log(`  Logs:     ${pc.dim(config.logs.dir)}`);
+		console.log(`  Provider:  ${pc.bold(config.provider)}`);
+		console.log(`  Source:    ${pc.bold(config.source)}`);
+		console.log(`  Workflow:  ${pc.bold(config.workflow)}`);
+		console.log(`  Label:     ${pc.bold(config.source_config.label)}`);
+		console.log(`  Team:      ${pc.bold(config.source_config.team)}`);
+		console.log(`  Project:   ${pc.bold(config.source_config.project)}`);
+		console.log(`  Logs:      ${pc.dim(config.logs.dir)}`);
 
 		// Count log files
 		const { readdirSync, existsSync } = await import("node:fs");
@@ -152,62 +155,8 @@ export const main = defineCommand({
 	subCommands: { run, config, init, status },
 });
 
-const LISA_ART = pc.yellow(`
-                                             @@@@@@@
-                                           @@@%+=*@@@@
-                                         @@@@+-----#@@@
-                                       @@@@*--------+@@@            @@@@@
-                                      @@@*-----------=%@@      @@@@@@@@@@@
-                     @@@@@@@@@@@@@@@@@@#---------------*@@@@@@@@@%#*+=-=@@
-                    @@@#########%%%%%*=-----------------=%%%#*+=--------@@@
-                    @@*-------------------------------------------------#@@
-                    @@*-------------------------------------------------+@@
-                    @@*--------------------------------------------------@@@
-                    @@*--------------------------------------------------%@@
-                    @@*--------------------------------------------------*@@@
-                    @@*--------------------------------------------------=%@@@@@@@@
-                   @@@+------------------------------------------------------=+#%@@@@@@
-                @@@@@*------------------------------------------------------------=+*%@@@
-             @@@@%*=------------------------------------------------------------------=@@
-          @@@@#+----------------------------------------------------------------------%@@
-         @@%=------------------------------------------------------------------------*@@
-         @@@+--------------=%*------=#*-----*+------+@*-----------------------------=@@@
-          @@@#-------------+@#-----=@@=-----@@-----=@@=-----------------------------@@@
-            @@@=----##-----=@@-----%@+------%@@@@@@@@@#*+-----=--------------------%@@
-             @@@*---*@%++*#@@@@@@@@@@*---=*@@@#+======+*%@%#%@%#------------------+@@@
-               @@@*--=@@@#+=:::::::-+%@#*@@#=::::::::::::-*@@+--------------------#@@
-                @@@@*%@#::::::::::::::*@@#::::::::::::::::::%@*-------------------+@@@
-                  @@@@%:::::::::::::::+@%:::::::::::::::::::-@@--------------------+@@@
-                @@@@@@+:::-**-::::::::%@=:::::::::-=:::::::::@@*+==-----------------=%@@@
-                 @@@@@+:::%@@*::::::::@@-::::::::+@@%:::::::-@@#%%#-------------------*@@@
-                    @@#::::==:::::::::#@+::::::::-%@*:::::::%@+-------------------------#@@@
-                     @@+::::::::-====+#@@=::::::::::::::::-%@*-------------------------=@@@
-                     @@@+::::+%@%%%%%%#*%@%=:::::::::::::+@@+-------------------------#@@@
-                       @@%#*#@#----------+%@@*+=--::::-*@@@=-----------------------=*@@@
-                      @@@#*#@@--------------+#%@@@@@@@@@*+-------==--------------=%@@@@
-                    @@@%=---@@=--------==--------===----------=%@@@@%*-----------%@@
-                   @@%=-----=#@%*****#%@%---------------------%@+---+@@=---------*@@
-                  @@#----------+*#%%%#*=------------------------=**+-*@#----------@@@
-                  @@----------------------------------%@=------+@@%%=*@#----------*@@
-                  @@*--------------------------------=#@@=-----=*=---@@+----------=@@
-                  @@@@*=----------------------==+*#%@@@@@*----##+-=*@@+-------=++**@@@
-                    @@@@@%%#*++====+++**##%@@@@@%#*+=-=@@----=@@@@@@#=---=*%@@@@@@@@@
-                        @@@@@@@@@@@@@@@%%##*++=--------+-----*@#--------*@@@@@
-                                  @@#------------------------#@*--------%@@
-                                   @@@@#---------------------%@@@%#*+==+@@
-                                     @@@---------------------%@@@@@@@@@@@@
-                                     @@%---------------------%@@
-                                  @@@@@@***+--------------*#@@@@@@
-                                @@@*=*@@%%%@@#%%%#+-=*%%%%@#=-:=@@
-                                @@-:-@@-:::+@@****@@@%***@@=:::-@@
-                                @@#=%@+::::#@*::::@@@-:::+@@#*#@@@
-                                 @@@@@@%%%@@@%*=*%@@@%+=*@@@@@@@
-                                      @@@@@@@@@%@@@ @%%%%@@
-`);
-
 async function runConfigWizard(): Promise<void> {
-	console.log(LISA_ART);
-	clack.intro(pc.cyan("lisa — autonomous issue resolver"));
+	banner();
 
 	const providerLabels: Record<ProviderName, string> = {
 		claude: "Claude Code",
@@ -266,14 +215,12 @@ async function runConfigWizard(): Promise<void> {
 
 	const teamAnswer = await clack.text({
 		message: source === "linear" ? "Linear team name?" : "Trello board name?",
-		initialValue: "Internal",
 	});
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
 	const team = teamAnswer as string;
 
 	const projectAnswer = await clack.text({
 		message: source === "linear" ? "Project name?" : "Trello list name?",
-		initialValue: "Zenixx",
 	});
 	if (clack.isCancel(projectAnswer)) return process.exit(0);
 	const project = projectAnswer as string;
@@ -285,11 +232,65 @@ async function runConfigWizard(): Promise<void> {
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
 	const label = labelAnswer as string;
 
+	let status: string;
+	let doneStatus: string;
+
+	if (source === "trello") {
+		// Source column is already `project` (the list where cards are picked from)
+		// Ask for destination column
+		const doneAnswer = await clack.text({
+			message: "Destination column after PR is opened?",
+			initialValue: "Code Review",
+		});
+		if (clack.isCancel(doneAnswer)) return process.exit(0);
+		doneStatus = doneAnswer as string;
+		status = project as string;
+	} else {
+		// Linear: ask for source and destination statuses
+		const statusAnswer = await clack.text({
+			message: "Source status (pick issues from)?",
+			initialValue: "Backlog",
+		});
+		if (clack.isCancel(statusAnswer)) return process.exit(0);
+		status = statusAnswer as string;
+
+		const doneAnswer = await clack.text({
+			message: "Destination status after PR is opened?",
+			initialValue: "In Review",
+		});
+		if (clack.isCancel(doneAnswer)) return process.exit(0);
+		doneStatus = doneAnswer as string;
+	}
+
 	// Detect GitHub method
 	const githubMethod = await detectGitHubMethod();
 
+	// Workflow mode
+	const workflowAnswer = await clack.select({
+		message: "How should Lisa work on issues?",
+		options: [
+			{ value: "branch", label: "Branch", hint: "creates branches in the current checkout" },
+			{ value: "worktree", label: "Worktree", hint: "creates isolated worktrees per issue" },
+		],
+	});
+	if (clack.isCancel(workflowAnswer)) return process.exit(0);
+	const workflow = workflowAnswer as WorkflowMode;
+
 	// Auto-detect repos
 	const repos = await detectGitRepos();
+
+	// Setup .worktrees gitignore if worktree mode
+	if (workflow === "worktree") {
+		const cwd = process.cwd();
+		if (repos.length === 0) {
+			ensureWorktreeGitignore(cwd);
+		} else {
+			for (const repo of repos) {
+				ensureWorktreeGitignore(resolvePath(cwd, repo.path));
+			}
+		}
+		clack.log.info("Added .worktrees to .gitignore");
+	}
 
 	const cfg: LisaConfig = {
 		provider: providerName,
@@ -298,9 +299,11 @@ async function runConfigWizard(): Promise<void> {
 			team,
 			project,
 			label,
-			status: "Backlog",
+			status,
+			done_status: doneStatus,
 		},
 		github: githubMethod,
+		workflow,
 		workspace: ".",
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
@@ -368,10 +371,21 @@ async function detectGitRepos(): Promise<RepoConfig[]> {
 	if (clack.isCancel(selected)) return process.exit(0);
 
 	return (selected as string[]).map((dir) => ({
-		name: dir,
+		name: getGitRepoName(join(cwd, dir)) ?? dir,
 		path: `./${dir}`,
 		match: "",
 	}));
+}
+
+function getGitRepoName(repoPath: string): string | null {
+	try {
+		const url = execSync("git remote get-url origin", { cwd: repoPath, encoding: "utf-8" }).trim();
+		// Handle both HTTPS (https://github.com/org/repo.git) and SSH (git@github.com:org/repo.git)
+		const match = url.match(/\/([^/]+?)(?:\.git)?$/) ?? url.match(/:([^/]+?)(?:\.git)?$/);
+		return match?.[1] ?? null;
+	} catch {
+		return null;
+	}
 }
 
 async function getMissingEnvVars(source: SourceName): Promise<string[]> {

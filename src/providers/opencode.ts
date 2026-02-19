@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { execa } from "execa";
 import type { Provider, RunOptions, RunResult } from "../types.js";
 
@@ -27,15 +28,26 @@ export class OpenCodeProvider implements Provider {
 				},
 			);
 
-			proc.stdout?.pipe(process.stdout);
-			proc.stderr?.pipe(process.stderr);
+			const chunks: string[] = [];
+
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				process.stdout.write(text);
+				chunks.push(text);
+				try { appendFileSync(opts.logFile, text); } catch {}
+			});
+
+			proc.stderr?.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				process.stderr.write(text);
+				try { appendFileSync(opts.logFile, text); } catch {}
+			});
 
 			const result = await proc;
-			const output = result.stdout + (result.stderr ? `\n${result.stderr}` : "");
 
 			return {
 				success: result.exitCode === 0,
-				output,
+				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
 		} catch (err) {
