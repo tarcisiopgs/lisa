@@ -24,7 +24,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	}
 
 	logger.log(
-		`Starting loop (provider: ${config.provider}, model: ${config.model}, source: ${config.source}, label: ${config.source_config.label})`,
+		`Starting loop (provider: ${config.provider}, source: ${config.source}, label: ${config.source_config.label})`,
 	);
 
 	let session = 0;
@@ -74,8 +74,6 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		// 3. Run the AI agent to implement + commit + push
 		const result = await provider.run(prompt, {
-			model: config.model || "",
-			effort: config.effort || "medium",
 			logFile,
 			cwd: workspace,
 		});

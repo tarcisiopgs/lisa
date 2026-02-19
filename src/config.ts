@@ -7,25 +7,23 @@ const CONFIG_DIR = ".lisa-loop";
 const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {
-	provider: "claude",
-	model: "",
-	effort: "medium",
-	source: "linear",
+	provider: "",
+	source: "",
 	source_config: {
-		team: "Internal",
-		project: "Zenixx",
-		label: "ready",
-		status: "Backlog",
+		team: "",
+		project: "",
+		label: "",
+		status: "",
 	},
-	workspace: ".",
+	workspace: "",
 	repos: [],
 	loop: {
-		cooldown: 10,
+		cooldown: 0,
 		max_sessions: 0,
 	},
 	logs: {
-		dir: ".lisa-loop/logs",
-		format: "text",
+		dir: "",
+		format: "",
 	},
 };
 
@@ -74,8 +72,6 @@ export function mergeWithFlags(
 	const merged = { ...config };
 
 	if (flags.provider) merged.provider = flags.provider;
-	if (flags.model) merged.model = flags.model;
-	if (flags.effort) merged.effort = flags.effort;
 	if (flags.source) merged.source = flags.source;
 	if (flags.label) merged.source_config = { ...merged.source_config, label: flags.label };
 

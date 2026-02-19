@@ -11,7 +11,7 @@ import { banner, log } from "./logger.js";
 import { runLoop } from "./loop.js";
 import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
-import type { Effort, LisaConfig, ProviderName, SourceName } from "./types.js";
+import type { LisaConfig, ProviderName, SourceName } from "./types.js";
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -20,8 +20,6 @@ const run = defineCommand({
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
 		"dry-run": { type: "boolean", description: "Preview without executing", default: false },
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
-		model: { type: "string", description: "Model ID override" },
-		effort: { type: "string", description: "Effort level (low, medium, high)" },
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 	},
@@ -30,8 +28,6 @@ const run = defineCommand({
 		const config = loadConfig();
 		const merged = mergeWithFlags(config, {
 			provider: args.provider as ProviderName | undefined,
-			model: args.model,
-			effort: args.effort as Effort | undefined,
 			source: args.source as SourceName | undefined,
 			label: args.label,
 		});
@@ -108,7 +104,6 @@ const status = defineCommand({
 		const config = loadConfig();
 		console.log(pc.cyan("Configuration:"));
 		console.log(`  Provider: ${pc.bold(config.provider)}`);
-		console.log(`  Model:    ${pc.bold(config.model || "(provider default)")}`);
 		console.log(`  Source:   ${pc.bold(config.source)}`);
 		console.log(`  Label:    ${pc.bold(config.source_config.label)}`);
 		console.log(`  Team:     ${pc.bold(config.source_config.team)}`);

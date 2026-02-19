@@ -1,4 +1,3 @@
-export type Effort = "low" | "medium" | "high";
 export type SourceName = "linear" | "trello";
 export type ProviderName = "claude" | "gemini" | "opencode";
 export type LogFormat = "text" | "json";
@@ -28,8 +27,6 @@ export interface LogsConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
-	model?: string;
-	effort?: Effort;
 	source: SourceName;
 	source_config: SourceConfig;
 	workspace: string;
@@ -47,8 +44,6 @@ export interface Issue {
 }
 
 export interface RunOptions {
-	model: string;
-	effort: Effort;
 	logFile: string;
 	cwd: string;
 }

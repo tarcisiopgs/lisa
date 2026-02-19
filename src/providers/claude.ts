@@ -1,11 +1,5 @@
 import { execa } from "execa";
-import type { Effort, Provider, RunOptions, RunResult } from "../types.js";
-
-const MODEL_MAP: Record<Effort, string> = {
-	low: "haiku",
-	medium: "sonnet",
-	high: "opus",
-};
+import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;
@@ -20,13 +14,12 @@ export class ClaudeProvider implements Provider {
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
-		const model = opts.model || MODEL_MAP[opts.effort];
 		const start = Date.now();
 
 		try {
 			const result = await execa(
 				"claude",
-				["--dangerously-skip-permissions", "-p", prompt, "--model", model, "--output-format", "text"],
+				["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
 				{
 					cwd: opts.cwd,
 					timeout: 30 * 60 * 1000, // 30 min

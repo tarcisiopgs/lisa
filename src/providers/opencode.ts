@@ -1,11 +1,5 @@
 import { execa } from "execa";
-import type { Effort, Provider, RunOptions, RunResult } from "../types.js";
-
-const MODEL_MAP: Record<Effort, string> = {
-	low: "anthropic/claude-haiku",
-	medium: "anthropic/claude-sonnet",
-	high: "anthropic/claude-opus",
-};
+import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class OpenCodeProvider implements Provider {
 	name = "opencode" as const;
@@ -20,13 +14,12 @@ export class OpenCodeProvider implements Provider {
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
-		const model = opts.model || MODEL_MAP[opts.effort];
 		const start = Date.now();
 
 		try {
 			const result = await execa(
 				"opencode",
-				["run", "-m", model, prompt],
+				["run", prompt],
 				{
 					cwd: opts.cwd,
 					timeout: 30 * 60 * 1000,

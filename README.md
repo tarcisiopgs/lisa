@@ -42,7 +42,7 @@ lisa-loop run --once
 lisa-loop run --dry-run
 
 # Override provider
-lisa-loop run --provider gemini --model gemini-2.5-pro --once
+lisa-loop run --provider gemini --once
 ```
 
 ## Commands
@@ -75,8 +75,6 @@ Config lives in `.lisa-loop/config.yaml`:
 
 ```yaml
 provider: claude
-model: claude-sonnet-4-6
-effort: medium
 
 source: linear
 source_config:
@@ -103,7 +101,7 @@ logs:
 CLI flags override config values:
 
 ```bash
-lisa-loop run --provider gemini --effort high --label "urgent"
+lisa-loop run --provider gemini --label "urgent"
 ```
 
 ## How It Works
