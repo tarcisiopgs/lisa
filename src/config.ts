@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 		label: "",
 		status: "",
 	},
+	github: "cli",
 	workspace: "",
 	repos: [],
 	loop: {
@@ -73,6 +74,7 @@ export function mergeWithFlags(
 
 	if (flags.provider) merged.provider = flags.provider;
 	if (flags.source) merged.source = flags.source;
+	if (flags.github) merged.github = flags.github;
 	if (flags.label) merged.source_config = { ...merged.source_config, label: flags.label };
 
 	return merged;

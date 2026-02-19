@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import type { GitHubMethod } from "./types.js";
 
 const API_URL = "https://api.github.com";
 
@@ -31,8 +32,8 @@ export interface PullRequestResult {
 	html_url: string;
 }
 
-export async function createPullRequest(opts: PullRequestOptions): Promise<PullRequestResult> {
-	if (!process.env.GITHUB_TOKEN && await isGhCliAvailable()) {
+export async function createPullRequest(opts: PullRequestOptions, method: GitHubMethod = "cli"): Promise<PullRequestResult> {
+	if (method === "cli" && await isGhCliAvailable()) {
 		return createPullRequestWithGhCli(opts);
 	}
 

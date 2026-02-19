@@ -35,10 +35,9 @@ ${repoEntries}
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
 
-4. **Validate**: Run the project's linter/typecheck if available:
-   - API: \`cd ${workspace}/api && bun run check\` (if script exists)
-   - App/Admin: \`cd ${workspace}/{app|admin} && pnpm run lint && pnpm run typecheck\` (if scripts exist)
-   - Store/Website: \`cd ${workspace}/{store|website} && pnpm run lint\` (if scripts exist)
+4. **Validate**: Run the project's linter/typecheck/tests if available:
+   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
+   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 
 5. **Commit & Push**: Make atomic commits with conventional commit messages.

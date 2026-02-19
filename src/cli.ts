@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { defineCommand, runMain } from "citty";
 import * as clack from "@clack/prompts";
 import pc from "picocolors";
@@ -11,7 +13,7 @@ import { banner, log } from "./logger.js";
 import { runLoop } from "./loop.js";
 import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
-import type { LisaConfig, ProviderName, SourceName } from "./types.js";
+import type { GitHubMethod, LisaConfig, ProviderName, RepoConfig, SourceName } from "./types.js";
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -22,6 +24,7 @@ const run = defineCommand({
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
+		github: { type: "string", description: "GitHub method: cli or token" },
 	},
 	async run({ args }) {
 		banner();
@@ -29,6 +32,7 @@ const run = defineCommand({
 		const merged = mergeWithFlags(config, {
 			provider: args.provider as ProviderName | undefined,
 			source: args.source as SourceName | undefined,
+			github: args.github as GitHubMethod | undefined,
 			label: args.label,
 		});
 
@@ -130,7 +134,61 @@ export const main = defineCommand({
 	subCommands: { run, config, init, status },
 });
 
+const LISA_ART = pc.yellow(`
+                                             @@@@@@@
+                                           @@@%+=*@@@@
+                                         @@@@+-----#@@@
+                                       @@@@*--------+@@@            @@@@@
+                                      @@@*-----------=%@@      @@@@@@@@@@@
+                     @@@@@@@@@@@@@@@@@@#---------------*@@@@@@@@@%#*+=-=@@
+                    @@@#########%%%%%*=-----------------=%%%#*+=--------@@@
+                    @@*-------------------------------------------------#@@
+                    @@*-------------------------------------------------+@@
+                    @@*--------------------------------------------------@@@
+                    @@*--------------------------------------------------%@@
+                    @@*--------------------------------------------------*@@@
+                    @@*--------------------------------------------------=%@@@@@@@@
+                   @@@+------------------------------------------------------=+#%@@@@@@
+                @@@@@*------------------------------------------------------------=+*%@@@
+             @@@@%*=------------------------------------------------------------------=@@
+          @@@@#+----------------------------------------------------------------------%@@
+         @@%=------------------------------------------------------------------------*@@
+         @@@+--------------=%*------=#*-----*+------+@*-----------------------------=@@@
+          @@@#-------------+@#-----=@@=-----@@-----=@@=-----------------------------@@@
+            @@@=----##-----=@@-----%@+------%@@@@@@@@@#*+-----=--------------------%@@
+             @@@*---*@%++*#@@@@@@@@@@*---=*@@@#+======+*%@%#%@%#------------------+@@@
+               @@@*--=@@@#+=:::::::-+%@#*@@#=::::::::::::-*@@+--------------------#@@
+                @@@@*%@#::::::::::::::*@@#::::::::::::::::::%@*-------------------+@@@
+                  @@@@%:::::::::::::::+@%:::::::::::::::::::-@@--------------------+@@@
+                @@@@@@+:::-**-::::::::%@=:::::::::-=:::::::::@@*+==-----------------=%@@@
+                 @@@@@+:::%@@*::::::::@@-::::::::+@@%:::::::-@@#%%#-------------------*@@@
+                    @@#::::==:::::::::#@+::::::::-%@*:::::::%@+-------------------------#@@@
+                     @@+::::::::-====+#@@=::::::::::::::::-%@*-------------------------=@@@
+                     @@@+::::+%@%%%%%%#*%@%=:::::::::::::+@@+-------------------------#@@@
+                       @@%#*#@#----------+%@@*+=--::::-*@@@=-----------------------=*@@@
+                      @@@#*#@@--------------+#%@@@@@@@@@*+-------==--------------=%@@@@
+                    @@@%=---@@=--------==--------===----------=%@@@@%*-----------%@@
+                   @@%=-----=#@%*****#%@%---------------------%@+---+@@=---------*@@
+                  @@#----------+*#%%%#*=------------------------=**+-*@#----------@@@
+                  @@----------------------------------%@=------+@@%%=*@#----------*@@
+                  @@*--------------------------------=#@@=-----=*=---@@+----------=@@
+                  @@@@*=----------------------==+*#%@@@@@*----##+-=*@@+-------=++**@@@
+                    @@@@@%%#*++====+++**##%@@@@@%#*+=-=@@----=@@@@@@#=---=*%@@@@@@@@@
+                        @@@@@@@@@@@@@@@%%##*++=--------+-----*@#--------*@@@@@
+                                  @@#------------------------#@*--------%@@
+                                   @@@@#---------------------%@@@%#*+==+@@
+                                     @@@---------------------%@@@@@@@@@@@@
+                                     @@%---------------------%@@
+                                  @@@@@@***+--------------*#@@@@@@
+                                @@@*=*@@%%%@@#%%%#+-=*%%%%@#=-:=@@
+                                @@-:-@@-:::+@@****@@@%***@@=:::-@@
+                                @@#=%@+::::#@*::::@@@-:::+@@#*#@@@
+                                 @@@@@@%%%@@@%*=*%@@@%+=*@@@@@@@
+                                      @@@@@@@@@%@@@ @%%%%@@
+`);
+
 async function runConfigWizard(): Promise<void> {
+	console.log(LISA_ART);
 	clack.intro(pc.cyan("lisa-loop — autonomous issue resolver"));
 
 	const providerLabels: Record<ProviderName, string> = {
@@ -209,6 +267,12 @@ async function runConfigWizard(): Promise<void> {
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
 	const label = labelAnswer as string;
 
+	// Detect GitHub method
+	const githubMethod = await detectGitHubMethod();
+
+	// Auto-detect repos
+	const repos = await detectGitRepos();
+
 	const cfg: LisaConfig = {
 		provider: providerName,
 		source: source as SourceName,
@@ -218,14 +282,78 @@ async function runConfigWizard(): Promise<void> {
 			label,
 			status: "Backlog",
 		},
+		github: githubMethod,
 		workspace: ".",
-		repos: [],
+		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
 		logs: { dir: ".lisa-loop/logs", format: "text" },
 	};
 
 	saveConfig(cfg);
 	clack.outro(pc.green("Config saved to .lisa-loop/config.yaml"));
+}
+
+async function detectGitHubMethod(): Promise<GitHubMethod> {
+	const hasToken = !!process.env.GITHUB_TOKEN;
+	const hasCli = await isGhCliAvailable();
+
+	if (hasToken && hasCli) {
+		const selected = await clack.select({
+			message: "Both GitHub CLI and GITHUB_TOKEN detected. Which do you want to use?",
+			options: [
+				{ value: "cli", label: "GitHub CLI", hint: "gh" },
+				{ value: "token", label: "GitHub API", hint: "GITHUB_TOKEN" },
+			],
+		});
+		if (clack.isCancel(selected)) return process.exit(0);
+		return selected as GitHubMethod;
+	}
+
+	if (hasCli) {
+		clack.log.info("Using GitHub CLI for pull requests.");
+		return "cli";
+	}
+
+	if (hasToken) {
+		clack.log.info("Using GITHUB_TOKEN for pull requests.");
+		return "token";
+	}
+
+	// Neither available — default to token (getMissingEnvVars already warns)
+	return "token";
+}
+
+async function detectGitRepos(): Promise<RepoConfig[]> {
+	const cwd = process.cwd();
+
+	// If current directory is a git repo, no sub-repos needed
+	if (existsSync(join(cwd, ".git"))) {
+		clack.log.info(`Detected git repository in current directory.`);
+		return [];
+	}
+
+	// Scan immediate subdirectories for git repos
+	const entries = readdirSync(cwd, { withFileTypes: true });
+	const gitDirs = entries
+		.filter((e) => e.isDirectory() && existsSync(join(cwd, e.name, ".git")))
+		.map((e) => e.name);
+
+	if (gitDirs.length === 0) {
+		return [];
+	}
+
+	const selected = await clack.multiselect({
+		message: "Select the repos to include in the workspace:",
+		options: gitDirs.map((dir) => ({ value: dir, label: dir })),
+	});
+
+	if (clack.isCancel(selected)) return process.exit(0);
+
+	return (selected as string[]).map((dir) => ({
+		name: dir,
+		path: `./${dir}`,
+		match: "",
+	}));
 }
 
 async function getMissingEnvVars(source: SourceName): Promise<string[]> {

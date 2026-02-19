@@ -1,3 +1,4 @@
+export type GitHubMethod = "cli" | "token";
 export type SourceName = "linear" | "trello";
 export type ProviderName = "claude" | "gemini" | "opencode";
 export type LogFormat = "text" | "json";
@@ -29,6 +30,7 @@ export interface LisaConfig {
 	provider: ProviderName;
 	source: SourceName;
 	source_config: SourceConfig;
+	github: GitHubMethod;
 	workspace: string;
 	repos: RepoConfig[];
 	loop: LoopConfig;

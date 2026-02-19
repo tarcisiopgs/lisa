@@ -102,7 +102,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				base: repoInfo.defaultBranch,
 				title: issue.title,
 				body: `Closes ${issue.url}\n\nImplemented by lisa-loop.`,
-			});
+			}, config.github);
 			logger.ok(`PR created: ${pr.html_url}`);
 		} catch (err) {
 			logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
