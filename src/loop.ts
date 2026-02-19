@@ -191,7 +191,7 @@ async function runWorktreeSession(
 
 async function runBranchSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string },
+	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
 ): Promise<void> {
@@ -215,8 +215,11 @@ async function runBranchSession(
 		return;
 	}
 
+	// In multi-repo workspaces, find the repo the agent worked in
+	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
+
 	try {
-		const repoInfo = await getRepoInfo(workspace);
+		const repoInfo = await getRepoInfo(repoPath);
 		const pr = await createPullRequest({
 			owner: repoInfo.owner,
 			repo: repoInfo.repo,
