@@ -1,4 +1,8 @@
-# lisa
+# Lisa
+
+<p align="center">
+  <img src="src/assets/lisa.png" width="200" alt="Lisa" />
+</p>
 
 Autonomous issue resolver — picks up issues from Linear or Trello, sends them to an AI coding agent (Claude Code, Gemini CLI, or OpenCode), and opens PRs via the GitHub API. No MCP servers required.
 

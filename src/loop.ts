@@ -10,7 +10,7 @@ import {
 	removeWorktree,
 	generateBranchName,
 	determineRepoPath,
-	findBranchByIssueId,
+	detectFeatureBranch,
 } from "./worktree.js";
 import type { LisaConfig } from "./types.js";
 
@@ -70,12 +70,8 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		if (!issue) {
-			logger.warn(
-				`No issues with label '${config.source_config.label}' found. Sleeping ${config.loop.cooldown}s...`,
-			);
-			if (opts.once) break;
-			await sleep(config.loop.cooldown * 1000);
-			continue;
+			logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+			break;
 		}
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
@@ -232,25 +228,23 @@ async function runBranchSession(
 		return undefined;
 	}
 
-	// In multi-repo workspaces, find the repo the agent worked in
-	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
+	// Scan all repos to find where the feature branch was actually created
+	const detected = await detectFeatureBranch(config.repos, issue.id, workspace, config.base_branch);
 
+	// Fall back to heuristic repo detection if branch scan found nothing
+	const repoPath = detected?.repoPath ?? (determineRepoPath(config.repos, issue, workspace) ?? workspace);
 	const baseBranch = resolveBaseBranch(config, repoPath);
+	const headBranch = detected?.branch;
+
+	if (!headBranch || headBranch === baseBranch) {
+		logger.error(`Could not detect feature branch for ${issue.id} — skipping PR creation`);
+		logger.ok(`Session ${session} complete for ${issue.id}`);
+		return undefined;
+	}
 
 	let prUrl: string | undefined;
 	try {
 		const repoInfo = await getRepoInfo(repoPath);
-		let headBranch = repoInfo.branch;
-
-		// Agent may have switched back to the default branch after pushing —
-		// find the feature branch by matching the issue ID in branch names
-		if (headBranch === baseBranch) {
-			const featureBranch = await findBranchByIssueId(repoPath, issue.id);
-			if (featureBranch) {
-				headBranch = featureBranch;
-			}
-		}
-
 		const pr = await createPullRequest({
 			owner: repoInfo.owner,
 			repo: repoInfo.repo,
