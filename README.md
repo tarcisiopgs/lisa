@@ -5,14 +5,6 @@ Autonomous issue resolver — picks up issues from Linear or Trello, sends them 
 ## Install
 
 ```bash
-bun install
-bun run build
-bun link
-```
-
-Or via npm:
-
-```bash
 npm install -g @tarcisiopgs/lisa-loop
 ```
 
