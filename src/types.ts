@@ -14,7 +14,8 @@ export interface SourceConfig {
 	team: string;
 	project: string;
 	label: string;
-	status: string;
+	initial_status: string;
+	active_status: string;
 	done_status: string;
 }
 

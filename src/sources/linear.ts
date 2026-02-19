@@ -72,7 +72,7 @@ export class LinearSource implements Source {
 				teamName: config.team,
 				projectName: config.project,
 				labelName: config.label,
-				statusName: config.status,
+				statusName: config.initial_status,
 			},
 		);
 
@@ -113,7 +113,7 @@ export class LinearSource implements Source {
 		const statesData = await gql<{
 			workflowStates: { nodes: { id: string; name: string }[] };
 		}>(
-			`query($teamId: String!) {
+			`query($teamId: ID!) {
 				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
 					nodes { id name }
 				}
@@ -130,7 +130,7 @@ export class LinearSource implements Source {
 		}
 
 		await gql(
-			`mutation($issueId: String!, $stateId: String!) {
+			`mutation($issueId: ID!, $stateId: String!) {
 				issueUpdate(id: $issueId, input: { stateId: $stateId }) {
 					success
 				}
@@ -162,7 +162,7 @@ export class LinearSource implements Source {
 		if (filtered.length === currentLabels.length) return;
 
 		await gql(
-			`mutation($issueId: String!, $labelIds: [String!]!) {
+			`mutation($issueId: ID!, $labelIds: [String!]!) {
 				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
 					success
 				}

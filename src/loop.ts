@@ -80,6 +80,15 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 
+		// Move issue to active status before starting work
+		try {
+			const activeStatus = config.source_config.active_status;
+			await source.updateStatus(issue.id, activeStatus);
+			logger.ok(`Moved ${issue.id} to "${activeStatus}"`);
+		} catch (err) {
+			logger.warn(`Failed to update active status: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
 		if (config.workflow === "worktree") {
 			await runWorktreeSession(config, issue, logFile, session);
 		} else {

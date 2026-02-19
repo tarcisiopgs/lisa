@@ -34,6 +34,12 @@ const run = defineCommand({
 		if (args.json) setOutputMode("json");
 		else if (args.quiet) setOutputMode("quiet");
 		banner();
+
+		if (!configExists()) {
+			console.error(pc.red("No configuration found. Run `lisa init` first."));
+			process.exit(1);
+		}
+
 		const config = loadConfig();
 		const merged = mergeWithFlags(config, {
 			provider: args.provider as ProviderName | undefined,
@@ -232,30 +238,45 @@ async function runConfigWizard(): Promise<void> {
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
 	const label = labelAnswer as string;
 
-	let status: string;
+	let initialStatus: string;
+	let activeStatus: string;
 	let doneStatus: string;
 
 	if (source === "trello") {
 		// Source column is already `project` (the list where cards are picked from)
-		// Ask for destination column
+		initialStatus = project as string;
+
+		const activeAnswer = await clack.text({
+			message: "Column while Lisa is working?",
+			initialValue: "In Progress",
+		});
+		if (clack.isCancel(activeAnswer)) return process.exit(0);
+		activeStatus = activeAnswer as string;
+
 		const doneAnswer = await clack.text({
-			message: "Destination column after PR is opened?",
+			message: "Column after PR is opened?",
 			initialValue: "Code Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		doneStatus = doneAnswer as string;
-		status = project as string;
 	} else {
-		// Linear: ask for source and destination statuses
+		// Linear: ask for source, active, and destination statuses
 		const statusAnswer = await clack.text({
 			message: "Source status (pick issues from)?",
 			initialValue: "Backlog",
 		});
 		if (clack.isCancel(statusAnswer)) return process.exit(0);
-		status = statusAnswer as string;
+		initialStatus = statusAnswer as string;
+
+		const activeAnswer = await clack.text({
+			message: "Status while Lisa is working?",
+			initialValue: "In Progress",
+		});
+		if (clack.isCancel(activeAnswer)) return process.exit(0);
+		activeStatus = activeAnswer as string;
 
 		const doneAnswer = await clack.text({
-			message: "Destination status after PR is opened?",
+			message: "Status after PR is opened?",
 			initialValue: "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
@@ -299,7 +320,8 @@ async function runConfigWizard(): Promise<void> {
 			team,
 			project,
 			label,
-			status,
+			initial_status: initialStatus,
+			active_status: activeStatus,
 			done_status: doneStatus,
 		},
 		github: githubMethod,
