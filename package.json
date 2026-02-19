@@ -4,7 +4,7 @@
 	"description": "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	"type": "module",
 	"bin": {
-		"lisa-loop": "./dist/index.js"
+		"lisa-loop": "dist/index.js"
 	},
 	"scripts": {
 		"build": "tsup",
