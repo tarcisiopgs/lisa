@@ -1,5 +1,5 @@
 node_modules/
 dist/
-.matuto/logs/
+.lisa-loop/logs/
 *.log
 .DS_Store

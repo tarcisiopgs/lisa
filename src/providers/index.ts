@@ -9,6 +9,14 @@ const providers: Record<ProviderName, () => Provider> = {
 	opencode: () => new OpenCodeProvider(),
 };
 
+export async function getAvailableProviders(): Promise<Provider[]> {
+	const all = Object.values(providers).map((f) => f());
+	const results = await Promise.all(
+		all.map(async (p) => ({ provider: p, available: await p.isAvailable() })),
+	);
+	return results.filter((r) => r.available).map((r) => r.provider);
+}
+
 export function createProvider(name: ProviderName): Provider {
 	const factory = providers[name];
 	if (!factory) {

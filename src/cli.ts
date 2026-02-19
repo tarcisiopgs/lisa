@@ -9,7 +9,8 @@ import {
 } from "./config.js";
 import { banner, log } from "./logger.js";
 import { runLoop } from "./loop.js";
-import type { Effort, MatutoConfig, ProviderName, SourceName } from "./types.js";
+import { getAvailableProviders } from "./providers/index.js";
+import type { Effort, LisaConfig, ProviderName, SourceName } from "./types.js";
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -20,7 +21,7 @@ const run = defineCommand({
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		model: { type: "string", description: "Model ID override" },
 		effort: { type: "string", description: "Effort level (low, medium, high)" },
-		source: { type: "string", description: "Issue source (linear, trello, local)" },
+		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 	},
 	async run({ args }) {
@@ -33,6 +34,15 @@ const run = defineCommand({
 			source: args.source as SourceName | undefined,
 			label: args.label,
 		});
+
+		// Validate env vars before running
+		const missingVars = getMissingEnvVars(merged.source);
+		if (missingVars.length > 0) {
+			const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
+			console.error(pc.red(`Missing required environment variables:\n${missingVars.map((v) => `  ${v}`).join("\n")}`));
+			console.error(pc.dim(`\nAdd them to your ${shell} and run: source ${shell}`));
+			process.exit(1);
+		}
 
 		await runLoop(merged, {
 			once: args.once,
@@ -59,7 +69,7 @@ const config = defineCommand({
 		if (args.set) {
 			const [key, value] = args.set.split("=");
 			if (!key || !value) {
-				console.error(pc.red("Usage: matuto config --set key=value"));
+				console.error(pc.red("Usage: lisa-loop config --set key=value"));
 				process.exit(1);
 			}
 			const cfg = loadConfig();
@@ -75,7 +85,7 @@ const config = defineCommand({
 });
 
 const init = defineCommand({
-	meta: { name: "init", description: "Initialize matuto configuration" },
+	meta: { name: "init", description: "Initialize lisa-loop configuration" },
 	async run() {
 		if (configExists()) {
 			const overwrite = await clack.confirm({
@@ -117,67 +127,87 @@ const status = defineCommand({
 
 export const main = defineCommand({
 	meta: {
-		name: "matuto",
+		name: "lisa-loop",
 		version: "0.1.0",
-		description: "O cabra que resolve suas issues",
+		description: "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	},
 	subCommands: { run, config, init, status },
 });
 
 async function runConfigWizard(): Promise<void> {
-	clack.intro(pc.cyan("matuto — o cabra que resolve suas issues"));
+	clack.intro(pc.cyan("lisa-loop — autonomous issue resolver"));
 
-	const provider = await clack.select({
-		message: "Which AI provider do you want to use?",
-		options: [
-			{ value: "claude", label: "Claude Code", hint: "recommended" },
-			{ value: "gemini", label: "Gemini CLI" },
-			{ value: "opencode", label: "OpenCode" },
-		],
-	});
-	if (clack.isCancel(provider)) return process.exit(0);
+	const providerLabels: Record<ProviderName, string> = {
+		claude: "Claude Code",
+		gemini: "Gemini CLI",
+		opencode: "OpenCode",
+	};
+
+	const available = await getAvailableProviders();
+
+	if (available.length === 0) {
+		clack.log.error("No AI providers found. Install claude, gemini, or opencode first.");
+		return process.exit(1);
+	}
+
+	let providerName: ProviderName;
+
+	if (available.length === 1) {
+		providerName = available[0]!.name;
+		clack.log.info(`Found provider: ${pc.bold(providerLabels[providerName])}`);
+	} else {
+		const selected = await clack.select({
+			message: "Which AI provider do you want to use?",
+			options: available.map((p) => ({
+				value: p.name,
+				label: providerLabels[p.name],
+			})),
+		});
+		if (clack.isCancel(selected)) return process.exit(0);
+		providerName = selected as ProviderName;
+	}
 
 	const source = await clack.select({
 		message: "Where do your issues live?",
 		options: [
 			{ value: "linear", label: "Linear" },
 			{ value: "trello", label: "Trello" },
-			{ value: "local", label: "Local", hint: ".matuto/issues/*.md" },
 		],
 	});
 	if (clack.isCancel(source)) return process.exit(0);
 
-	let team = "";
-	let project = "";
-	let label = "ready";
-
-	if (source !== "local") {
-		const teamAnswer = await clack.text({
-			message: source === "linear" ? "Linear team name?" : "Trello board name?",
-			initialValue: "Internal",
-		});
-		if (clack.isCancel(teamAnswer)) return process.exit(0);
-		team = teamAnswer as string;
-
-		const projectAnswer = await clack.text({
-			message: source === "linear" ? "Project name?" : "Trello list name?",
-			initialValue: "Zenixx",
-		});
-		if (clack.isCancel(projectAnswer)) return process.exit(0);
-		project = projectAnswer as string;
-
-		const labelAnswer = await clack.text({
-			message: "Label to pick up?",
-			initialValue: "ready",
-		});
-		if (clack.isCancel(labelAnswer)) return process.exit(0);
-		label = labelAnswer as string;
-	} else {
-		clack.log.info("Issues dir: .matuto/issues/");
+	// Validate env vars for the selected source
+	const missing = getMissingEnvVars(source as SourceName);
+	if (missing.length > 0) {
+		const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
+		clack.log.warning(
+			`Missing environment variables for ${source}:\n${missing.map((v) => `  ${pc.bold(v)}`).join("\n")}\n\nAdd them to your ${pc.cyan(shell)}:\n${missing.map((v) => `  export ${v}="your-key-here"`).join("\n")}\n\nThen run: ${pc.cyan(`source ${shell}`)}`,
+		);
 	}
 
-	const cfg: MatutoConfig = {
-		provider: provider as ProviderName,
+	const teamAnswer = await clack.text({
+		message: source === "linear" ? "Linear team name?" : "Trello board name?",
+		initialValue: "Internal",
+	});
+	if (clack.isCancel(teamAnswer)) return process.exit(0);
+	const team = teamAnswer as string;
+
+	const projectAnswer = await clack.text({
+		message: source === "linear" ? "Project name?" : "Trello list name?",
+		initialValue: "Zenixx",
+	});
+	if (clack.isCancel(projectAnswer)) return process.exit(0);
+	const project = projectAnswer as string;
+
+	const labelAnswer = await clack.text({
+		message: "Label to pick up?",
+		initialValue: "ready",
+	});
+	if (clack.isCancel(labelAnswer)) return process.exit(0);
+	const label = labelAnswer as string;
+
+	const cfg: LisaConfig = {
+		provider: providerName,
 		source: source as SourceName,
 		source_config: {
 			team,
@@ -188,11 +218,26 @@ async function runConfigWizard(): Promise<void> {
 		workspace: ".",
 		repos: [],
 		loop: { cooldown: 10, max_sessions: 0 },
-		logs: { dir: ".matuto/logs", format: "text" },
+		logs: { dir: ".lisa-loop/logs", format: "text" },
 	};
 
 	saveConfig(cfg);
-	clack.outro(pc.green("Config saved to .matuto/config.yaml"));
+	clack.outro(pc.green("Config saved to .lisa-loop/config.yaml"));
+}
+
+function getMissingEnvVars(source: SourceName): string[] {
+	const missing: string[] = [];
+
+	if (!process.env.GITHUB_TOKEN) missing.push("GITHUB_TOKEN");
+
+	if (source === "linear") {
+		if (!process.env.LINEAR_API_KEY) missing.push("LINEAR_API_KEY");
+	} else if (source === "trello") {
+		if (!process.env.TRELLO_API_KEY) missing.push("TRELLO_API_KEY");
+		if (!process.env.TRELLO_TOKEN) missing.push("TRELLO_TOKEN");
+	}
+
+	return missing;
 }
 
 export function runCli(): void {

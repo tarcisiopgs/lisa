@@ -1,23 +1,174 @@
-import type { Source, SourceConfig } from "../types.js";
+import type { Issue, Source, SourceConfig } from "../types.js";
+
+const API_URL = "https://api.linear.app/graphql";
+
+function getApiKey(): string {
+	const key = process.env.LINEAR_API_KEY;
+	if (!key) throw new Error("LINEAR_API_KEY is not set");
+	return key;
+}
+
+async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+	const res = await fetch(API_URL, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: getApiKey(),
+		},
+		body: JSON.stringify({ query, variables }),
+	});
+
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(`Linear API error (${res.status}): ${text}`);
+	}
+
+	const json = (await res.json()) as { data: T; errors?: { message: string }[] };
+	if (json.errors?.length) {
+		throw new Error(`Linear GraphQL error: ${json.errors.map((e) => e.message).join(", ")}`);
+	}
+	return json.data;
+}
 
 export class LinearSource implements Source {
 	name = "linear" as const;
 
-	buildFetchPrompt(config: SourceConfig): string {
-		return `Use the Linear MCP to list issues with label "${config.label}" in the "${config.team}" team, project "${config.project}", status "${config.status}", ordered by priority (urgent first). Return ONLY the issue identifier (e.g. INT-129) of the first issue. If no issues found, return exactly "NO_ISSUES".`;
+	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
+		const data = await gql<{
+			issues: {
+				nodes: {
+					id: string;
+					identifier: string;
+					title: string;
+					description: string;
+					url: string;
+					priority: number;
+				}[];
+			};
+		}>(
+			`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!) {
+				issues(
+					filter: {
+						team: { name: { eq: $teamName } }
+						project: { name: { eq: $projectName } }
+						labels: { name: { eq: $labelName } }
+						state: { name: { eq: $statusName } }
+					}
+					first: 20
+				) {
+					nodes {
+						id
+						identifier
+						title
+						description
+						url
+						priority
+					}
+				}
+			}`,
+			{
+				teamName: config.team,
+				projectName: config.project,
+				labelName: config.label,
+				statusName: config.status,
+			},
+		);
+
+		const issues = data.issues.nodes;
+		if (issues.length === 0) return null;
+
+		// Sort by priority: 1=urgent, 2=high, 3=medium, 4=low, 0=no priority
+		issues.sort((a, b) => {
+			const pa = a.priority === 0 ? 5 : a.priority;
+			const pb = b.priority === 0 ? 5 : b.priority;
+			return pa - pb;
+		});
+
+		const issue = issues[0]!;
+		return {
+			id: issue.identifier,
+			title: issue.title,
+			description: issue.description || "",
+			url: issue.url,
+		};
 	}
 
-	buildUpdatePrompt(issueId: string, status: string): string {
-		return `Use the Linear MCP to update issue ${issueId} status to "${status}".`;
+	async updateStatus(issueId: string, statusName: string): Promise<void> {
+		// Resolve issue internal ID and team
+		const issueData = await gql<{
+			issue: { id: string; team: { id: string } };
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					team { id }
+				}
+			}`,
+			{ identifier: issueId },
+		);
+
+		// Resolve status name to state ID
+		const statesData = await gql<{
+			workflowStates: { nodes: { id: string; name: string }[] };
+		}>(
+			`query($teamId: String!) {
+				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
+					nodes { id name }
+				}
+			}`,
+			{ teamId: issueData.issue.team.id },
+		);
+
+		const state = statesData.workflowStates.nodes.find(
+			(s) => s.name.toLowerCase() === statusName.toLowerCase(),
+		);
+		if (!state) {
+			const available = statesData.workflowStates.nodes.map((s) => s.name).join(", ");
+			throw new Error(`Status "${statusName}" not found. Available: ${available}`);
+		}
+
+		await gql(
+			`mutation($issueId: String!, $stateId: String!) {
+				issueUpdate(id: $issueId, input: { stateId: $stateId }) {
+					success
+				}
+			}`,
+			{ issueId: issueData.issue.id, stateId: state.id },
+		);
 	}
 
-	buildRemoveLabelPrompt(issueId: string, label: string): string {
-		return `Use the Linear MCP to remove label "${label}" from issue ${issueId}.`;
-	}
+	async removeLabel(issueId: string, labelName: string): Promise<void> {
+		// Get issue with current labels
+		const issueData = await gql<{
+			issue: { id: string; labels: { nodes: { id: string; name: string }[] } };
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					labels { nodes { id name } }
+				}
+			}`,
+			{ identifier: issueId },
+		);
 
-	parseIssueId(output: string): string | null {
-		if (output.includes("NO_ISSUES")) return null;
-		const match = output.match(/[A-Z]+-\d+/);
-		return match?.[0] ?? null;
+		const currentLabels = issueData.issue.labels.nodes;
+		const filtered = currentLabels.filter(
+			(l) => l.name.toLowerCase() !== labelName.toLowerCase(),
+		);
+
+		// If nothing changed, skip
+		if (filtered.length === currentLabels.length) return;
+
+		await gql(
+			`mutation($issueId: String!, $labelIds: [String!]!) {
+				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
+					success
+				}
+			}`,
+			{
+				issueId: issueData.issue.id,
+				labelIds: filtered.map((l) => l.id),
+			},
+		);
 	}
 }

@@ -1,6 +1,5 @@
 import { execa } from "execa";
-import * as logger from "../logger.js";
-import type { Effort, MatutoConfig, Provider, RunOptions, RunResult, Source } from "../types.js";
+import type { Effort, Provider, RunOptions, RunResult } from "../types.js";
 
 const MODEL_MAP: Record<Effort, string> = {
 	low: "haiku",
@@ -48,25 +47,6 @@ export class ClaudeProvider implements Provider {
 				output: err instanceof Error ? err.message : String(err),
 				duration: Date.now() - start,
 			};
-		}
-	}
-
-	async pickIssue(source: Source, config: MatutoConfig): Promise<string | null> {
-		const prompt = source.buildFetchPrompt(config.source_config);
-		const model = config.model || MODEL_MAP[config.effort || "medium"];
-
-		try {
-			const result = await execa(
-				"claude",
-				["-p", prompt, "--model", model, "--output-format", "text"],
-				{ timeout: 2 * 60 * 1000, reject: false },
-			);
-
-			logger.log(`Pick response: ${result.stdout.trim().substring(0, 200)}`);
-			return source.parseIssueId(result.stdout);
-		} catch (err) {
-			logger.error(`Failed to pick issue: ${err instanceof Error ? err.message : String(err)}`);
-			return null;
 		}
 	}
 }

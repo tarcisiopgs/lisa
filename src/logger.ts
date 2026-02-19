@@ -23,22 +23,22 @@ function writeToFile(level: string, message: string): void {
 }
 
 export function log(message: string): void {
-	console.log(`${pc.cyan("[matuto]")} ${pc.dim(timestamp())} ${message}`);
+	console.log(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	writeToFile("info", message);
 }
 
 export function warn(message: string): void {
-	console.log(`${pc.yellow("[matuto]")} ${pc.dim(timestamp())} ${message}`);
+	console.log(`${pc.yellow("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	writeToFile("warn", message);
 }
 
 export function error(message: string): void {
-	console.log(`${pc.red("[matuto]")} ${pc.dim(timestamp())} ${message}`);
+	console.log(`${pc.red("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	writeToFile("error", message);
 }
 
 export function ok(message: string): void {
-	console.log(`${pc.green("[matuto]")} ${pc.dim(timestamp())} ${message}`);
+	console.log(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	writeToFile("ok", message);
 }
 
@@ -49,9 +49,9 @@ export function divider(session: number): void {
 export function banner(): void {
 	console.log(
 		pc.cyan(`
-  ┌─────────────────────────────────────────┐
-  │  matuto — o cabra que resolve suas issues │
-  └─────────────────────────────────────────┘
+  ┌──────────────────────────────────────────┐
+  │  lisa-loop — autonomous issue resolver  │
+  └──────────────────────────────────────────┘
 `),
 	);
 }

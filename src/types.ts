@@ -1,5 +1,5 @@
 export type Effort = "low" | "medium" | "high";
-export type SourceName = "linear" | "trello" | "local";
+export type SourceName = "linear" | "trello";
 export type ProviderName = "claude" | "gemini" | "opencode";
 export type LogFormat = "text" | "json";
 
@@ -26,7 +26,7 @@ export interface LogsConfig {
 	format: LogFormat;
 }
 
-export interface MatutoConfig {
+export interface LisaConfig {
 	provider: ProviderName;
 	model?: string;
 	effort?: Effort;
@@ -63,15 +63,11 @@ export interface Provider {
 	name: ProviderName;
 	isAvailable(): Promise<boolean>;
 	run(prompt: string, opts: RunOptions): Promise<RunResult>;
-	pickIssue(source: Source, config: MatutoConfig): Promise<string | null>;
 }
 
 export interface Source {
 	name: SourceName;
-	buildFetchPrompt(config: SourceConfig): string;
-	buildUpdatePrompt(issueId: string, status: string): string;
-	buildRemoveLabelPrompt(issueId: string, label: string): string;
-	parseIssueId(output: string): string | null;
-	fetchNextLocal?(cwd: string): Promise<Issue | null>;
-	markDone?(issueId: string, cwd: string): Promise<void>;
+	fetchNextIssue(config: SourceConfig): Promise<Issue | null>;
+	updateStatus(issueId: string, status: string): Promise<void>;
+	removeLabel(issueId: string, label: string): Promise<void>;
 }

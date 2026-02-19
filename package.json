@@ -1,10 +1,10 @@
 {
-	"name": "matuto-cli",
+	"name": "@tarcisiopgs/lisa-loop",
 	"version": "0.1.0",
-	"description": "O cabra que resolve suas issues — AI agent loop for Linear/Notion",
+	"description": "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	"type": "module",
 	"bin": {
-		"matuto": "./dist/index.js"
+		"lisa-loop": "./dist/index.js"
 	},
 	"scripts": {
 		"build": "bun build src/index.ts --outdir dist --target node --format esm && node -e \"const fs=require('fs');const c=fs.readFileSync('dist/index.js','utf8');fs.writeFileSync('dist/index.js','#!/usr/bin/env node\\n'+c)\"",
@@ -23,5 +23,11 @@
 	"devDependencies": {
 		"@types/bun": "^1.2.4",
 		"typescript": "^5.7.3"
-	}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"dist"
+	]
 }

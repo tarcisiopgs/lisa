@@ -1,10 +1,11 @@
 import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
 import * as logger from "./logger.js";
-import { buildImplementPrompt, buildLocalImplementPrompt } from "./prompt.js";
+import { buildImplementPrompt } from "./prompt.js";
 import { createProvider } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import type { MatutoConfig } from "./types.js";
+import { createPullRequest, getRepoInfo } from "./github.js";
+import type { LisaConfig } from "./types.js";
 
 export interface LoopOptions {
 	once: boolean;
@@ -12,7 +13,7 @@ export interface LoopOptions {
 	dryRun: boolean;
 }
 
-export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<void> {
+export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<void> {
 	const provider = createProvider(config.provider);
 	const source = createSource(config.source);
 
@@ -41,55 +42,37 @@ export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<
 
 		logger.divider(session);
 
+		// 1. Fetch next issue via API
+		logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+
 		if (opts.dryRun) {
-			if (source.fetchNextLocal) {
-				logger.log(`[dry-run] Would pick next local issue from .matuto/issues/`);
-			} else {
-				logger.log(`[dry-run] Would pick issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
-			}
-			logger.log("[dry-run] Then implement and open PR");
+			logger.log(`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			logger.log("[dry-run] Then implement, push, create PR, and update issue status");
 			break;
 		}
 
-		// Pick issue — local source bypasses provider
-		let issueId: string | null;
-		let prompt: string;
+		const issue = await source.fetchNextIssue(config.source_config);
 
-		if (source.fetchNextLocal) {
-			logger.log("Scanning local issues...");
-			const issue = await source.fetchNextLocal(config.workspace);
-
-			if (!issue) {
-				logger.warn("No local issues found in .matuto/issues/. Sleeping...");
-				if (opts.once) break;
-				await sleep(config.loop.cooldown * 1000);
-				continue;
-			}
-
-			issueId = issue.id;
-			prompt = buildLocalImplementPrompt(issue, config);
-		} else {
-			logger.log(`Asking ${config.provider} to pick next '${config.source_config.label}' issue...`);
-			issueId = await provider.pickIssue(source, config);
-
-			if (!issueId) {
-				logger.warn(
-					`No issues with label '${config.source_config.label}' found. Sleeping ${config.loop.cooldown}s...`,
-				);
-				if (opts.once) break;
-				await sleep(config.loop.cooldown * 1000);
-				continue;
-			}
-
-			prompt = buildImplementPrompt(issueId, config);
+		if (!issue) {
+			logger.warn(
+				`No issues with label '${config.source_config.label}' found. Sleeping ${config.loop.cooldown}s...`,
+			);
+			if (opts.once) break;
+			await sleep(config.loop.cooldown * 1000);
+			continue;
 		}
 
-		logger.ok(`Picked up: ${issueId}`);
+		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
+
+		// 2. Build prompt with issue data inline
+		const prompt = buildImplementPrompt(issue, config);
+
 		logger.log(`Implementing... (log: ${logFile})`);
 		logger.initLogFile(logFile);
 
 		const workspace = resolve(config.workspace);
 
+		// 3. Run the AI agent to implement + commit + push
 		const result = await provider.run(prompt, {
 			model: config.model || "",
 			effort: config.effort || "medium",
@@ -104,21 +87,48 @@ export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<
 			// Ignore log write errors
 		}
 
-		if (result.success) {
-			logger.ok(
-				`Session ${session} complete for ${issueId} (${formatDuration(result.duration)})`,
-			);
-
-			// Post-processing: mark done if source supports it
-			if (source.markDone) {
-				await source.markDone(issueId, config.workspace);
-				logger.log(`Moved ${issueId} to done/`);
-			}
-		} else {
-			logger.error(
-				`Session ${session} failed for ${issueId}. Check ${logFile}`,
-			);
+		if (!result.success) {
+			logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+			if (opts.once) break;
+			await sleep(config.loop.cooldown * 1000);
+			continue;
 		}
+
+		// 4. Create PR via GitHub API
+		try {
+			const repoInfo = await getRepoInfo(workspace);
+			const pr = await createPullRequest({
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+				head: repoInfo.branch,
+				base: repoInfo.defaultBranch,
+				title: issue.title,
+				body: `Closes ${issue.url}\n\nImplemented by lisa-loop.`,
+			});
+			logger.ok(`PR created: ${pr.html_url}`);
+		} catch (err) {
+			logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		// 5. Update issue status via API
+		try {
+			await source.updateStatus(issue.id, "In Review");
+			logger.ok(`Updated ${issue.id} status to "In Review"`);
+		} catch (err) {
+			logger.error(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		// 6. Remove label via API
+		try {
+			await source.removeLabel(issue.id, config.source_config.label);
+			logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
+		} catch (err) {
+			logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		logger.ok(
+			`Session ${session} complete for ${issue.id} (${formatDuration(result.duration)})`,
+		);
 
 		if (opts.once) {
 			logger.log("Single iteration mode. Exiting.");
@@ -129,7 +139,7 @@ export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<
 		await sleep(config.loop.cooldown * 1000);
 	}
 
-	logger.ok(`matuto finished. ${session} session(s) run.`);
+	logger.ok(`lisa-loop finished. ${session} session(s) run.`);
 }
 
 function sleep(ms: number): Promise<void> {
