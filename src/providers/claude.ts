@@ -25,7 +25,7 @@ export class ClaudeProvider implements Provider {
 		try {
 			const proc = execa(
 				"claude",
-				["--dangerously-skip-permissions", "-p", prompt, "--output-format", "stream-json"],
+				["--dangerously-skip-permissions", "-p", prompt, "--output-format", "stream-json", "--include-partial-messages"],
 				{
 					cwd: opts.cwd,
 					timeout: 30 * 60 * 1000,

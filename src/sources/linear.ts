@@ -130,7 +130,7 @@ export class LinearSource implements Source {
 		}
 
 		await gql(
-			`mutation($issueId: ID!, $stateId: String!) {
+			`mutation($issueId: String!, $stateId: String!) {
 				issueUpdate(id: $issueId, input: { stateId: $stateId }) {
 					success
 				}
@@ -162,7 +162,7 @@ export class LinearSource implements Source {
 		if (filtered.length === currentLabels.length) return;
 
 		await gql(
-			`mutation($issueId: ID!, $labelIds: [String!]!) {
+			`mutation($issueId: String!, $labelIds: [String!]!) {
 				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
 					success
 				}
