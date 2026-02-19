@@ -139,6 +139,10 @@ export class LinearSource implements Source {
 		);
 	}
 
+	async attachPullRequest(_issueId: string, _prUrl: string): Promise<void> {
+		// Linear auto-links PRs via branch name — no manual attachment needed
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		// Get issue with current labels
 		const issueData = await gql<{

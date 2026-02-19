@@ -11,6 +11,7 @@ import {
 	getDefaultBranch,
 	generateBranchName,
 	determineRepoPath,
+	findBranchByIssueId,
 } from "./worktree.js";
 import type { LisaConfig } from "./types.js";
 
@@ -89,10 +90,18 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.warn(`Failed to update active status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		if (config.workflow === "worktree") {
-			await runWorktreeSession(config, issue, logFile, session);
-		} else {
-			await runBranchSession(config, issue, logFile, session);
+		const prUrl = config.workflow === "worktree"
+			? await runWorktreeSession(config, issue, logFile, session)
+			: await runBranchSession(config, issue, logFile, session);
+
+		// Attach PR link to issue card
+		if (prUrl) {
+			try {
+				await source.attachPullRequest(issue.id, prUrl);
+				logger.ok(`Attached PR to ${issue.id}`);
+			} catch (err) {
+				logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
+			}
 		}
 
 		// Update issue status + remove label (shared by both modes)
@@ -128,7 +137,7 @@ async function runWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-): Promise<void> {
+): Promise<string | undefined> {
 	const provider = createProvider(config.provider);
 	const workspace = resolve(config.workspace);
 
@@ -165,10 +174,11 @@ async function runWorktreeSession(
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
 		await cleanupWorktree(repoPath, worktreePath);
-		return;
+		return undefined;
 	}
 
 	// Create PR from worktree
+	let prUrl: string | undefined;
 	try {
 		const repoInfo = await getRepoInfo(worktreePath);
 		const pr = await createPullRequest({
@@ -177,9 +187,10 @@ async function runWorktreeSession(
 			head: branchName,
 			base: defaultBranch,
 			title: issue.title,
-			body: `Closes ${issue.url}\n\nImplemented by lisa.`,
+			body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
 		}, config.github);
 		logger.ok(`PR created: ${pr.html_url}`);
+		prUrl = pr.html_url;
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
@@ -187,6 +198,7 @@ async function runWorktreeSession(
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
+	return prUrl;
 }
 
 async function runBranchSession(
@@ -194,7 +206,7 @@ async function runBranchSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-): Promise<void> {
+): Promise<string | undefined> {
 	const provider = createProvider(config.provider);
 	const prompt = buildImplementPrompt(issue, config);
 	const workspace = resolve(config.workspace);
@@ -212,28 +224,42 @@ async function runBranchSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		return;
+		return undefined;
 	}
 
 	// In multi-repo workspaces, find the repo the agent worked in
 	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
 
+	let prUrl: string | undefined;
 	try {
 		const repoInfo = await getRepoInfo(repoPath);
+		let headBranch = repoInfo.branch;
+
+		// Agent may have switched back to the default branch after pushing —
+		// find the feature branch by matching the issue ID in branch names
+		if (headBranch === repoInfo.defaultBranch) {
+			const featureBranch = await findBranchByIssueId(repoPath, issue.id);
+			if (featureBranch) {
+				headBranch = featureBranch;
+			}
+		}
+
 		const pr = await createPullRequest({
 			owner: repoInfo.owner,
 			repo: repoInfo.repo,
-			head: repoInfo.branch,
+			head: headBranch,
 			base: repoInfo.defaultBranch,
 			title: issue.title,
-			body: `Closes ${issue.url}\n\nImplemented by lisa.`,
+			body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
 		}, config.github);
 		logger.ok(`PR created: ${pr.html_url}`);
+		prUrl = pr.html_url;
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
+	return prUrl;
 }
 
 async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<void> {

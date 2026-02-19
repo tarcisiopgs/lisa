@@ -69,6 +69,30 @@ export function ensureWorktreeGitignore(repoRoot: string): void {
 	}
 }
 
+export async function findBranchByIssueId(repoRoot: string, issueId: string): Promise<string | undefined> {
+	const needle = issueId.toLowerCase();
+
+	// Check local branches first
+	const { stdout: local } = await execa("git", [
+		"for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/",
+	], { cwd: repoRoot });
+
+	const localMatch = local.split("\n").map((b) => b.trim()).filter(Boolean)
+		.find((b) => b.toLowerCase().includes(needle));
+	if (localMatch) return localMatch;
+
+	// Fall back to remote tracking branches
+	const { stdout: remote } = await execa("git", [
+		"for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin/",
+	], { cwd: repoRoot });
+
+	const remoteMatch = remote.split("\n").map((b) => b.trim()).filter(Boolean)
+		.find((b) => b.toLowerCase().includes(needle));
+	if (remoteMatch) return remoteMatch.replace("origin/", "");
+
+	return undefined;
+}
+
 export function determineRepoPath(
 	repos: { name: string; path: string; match: string }[],
 	issue: { repo?: string; title: string },

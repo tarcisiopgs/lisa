@@ -71,4 +71,5 @@ export interface Source {
 	fetchNextIssue(config: SourceConfig): Promise<Issue | null>;
 	updateStatus(issueId: string, status: string): Promise<void>;
 	removeLabel(issueId: string, label: string): Promise<void>;
+	attachPullRequest(issueId: string, prUrl: string): Promise<void>;
 }

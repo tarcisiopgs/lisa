@@ -36,6 +36,10 @@ async function trelloPut<T>(path: string, params = ""): Promise<T> {
 	return trelloFetch<T>("PUT", path, params);
 }
 
+async function trelloPost<T>(path: string, params = ""): Promise<T> {
+	return trelloFetch<T>("POST", path, params);
+}
+
 async function trelloDelete(path: string): Promise<void> {
 	await trelloFetch<void>("DELETE", path);
 }
@@ -118,6 +122,10 @@ export class TrelloSource implements Source {
 		const card = await trelloGet<{ idBoard: string }>(`/cards/${cardId}`, "fields=idBoard");
 		const list = await findListByName(card.idBoard, listName);
 		await trelloPut(`/cards/${cardId}`, `idList=${list.id}`);
+	}
+
+	async attachPullRequest(cardId: string, prUrl: string): Promise<void> {
+		await trelloPost(`/cards/${cardId}/attachments`, `url=${encodeURIComponent(prUrl)}`);
 	}
 
 	async removeLabel(cardId: string, labelName: string): Promise<void> {
