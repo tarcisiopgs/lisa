@@ -1,18 +1,15 @@
-import { appendFileSync } from "node:fs";
-import { execa } from "execa";
+import { spawn, execSync } from "node:child_process";
+import { appendFileSync, writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Provider, RunOptions, RunResult } from "../types.js";
-
-interface StreamEvent {
-	type: string;
-	[key: string]: unknown;
-}
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;
 
 	async isAvailable(): Promise<boolean> {
 		try {
-			await execa("claude", ["--version"]);
+			execSync("claude --version", { stdio: "ignore" });
 			return true;
 		} catch {
 			return false;
@@ -22,72 +19,44 @@ export class ClaudeProvider implements Provider {
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
 
+		// Write prompt to temp file (avoids arg length limits, matches Ralph's pattern)
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-"));
+		const promptFile = join(tmpDir, "prompt.md");
+		writeFileSync(promptFile, prompt, "utf-8");
+
 		try {
-			const proc = execa(
-				"claude",
-				["--dangerously-skip-permissions", "-p", prompt, "--output-format", "stream-json", "--include-partial-messages"],
+			const proc = spawn(
+				"sh",
+				["-c", `claude -p --dangerously-skip-permissions "$(cat '${promptFile}')"`],
 				{
 					cwd: opts.cwd,
-					timeout: 30 * 60 * 1000,
-					reject: false,
+					stdio: ["ignore", "pipe", "pipe"],
+					env: { ...process.env, CLAUDECODE: undefined },
 				},
 			);
 
-			let buffer = "";
-			const textChunks: string[] = [];
+			const chunks: string[] = [];
 
-			proc.stdout?.on("data", (chunk: Buffer) => {
-				buffer += chunk.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() ?? "";
-
-				for (const line of lines) {
-					if (!line.trim()) continue;
-
-					// Write raw JSON to log file for full traceability
-					try { appendFileSync(opts.logFile, `${line}\n`); } catch {}
-
-					try {
-						const raw = JSON.parse(line) as StreamEvent;
-						const event = raw.type === "stream_event" && raw.event
-							? (raw.event as StreamEvent)
-							: raw;
-
-						// Show tool usage on terminal
-						if (event.type === "content_block_start") {
-							const block = event.content_block as Record<string, unknown> | undefined;
-							if (block?.type === "tool_use") {
-								process.stdout.write(`\n[tool] ${block.name as string}\n`);
-							}
-						}
-
-						// Stream text to terminal + collect for result
-						if (event.type === "content_block_delta") {
-							const delta = event.delta as Record<string, unknown> | undefined;
-							if (delta?.type === "text_delta") {
-								const text = delta.text as string;
-								process.stdout.write(text);
-								textChunks.push(text);
-							}
-						}
-					} catch {
-						// Not valid JSON, write raw to terminal
-						process.stdout.write(`${line}\n`);
-					}
-				}
+			proc.stdout.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				process.stdout.write(text);
+				chunks.push(text);
+				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			proc.stderr?.on("data", (chunk: Buffer) => {
+			proc.stderr.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				process.stderr.write(text);
 				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			const result = await proc;
+			const exitCode = await new Promise<number>((resolve) => {
+				proc.on("close", (code) => resolve(code ?? 1));
+			});
 
 			return {
-				success: result.exitCode === 0,
-				output: textChunks.join(""),
+				success: exitCode === 0,
+				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
 		} catch (err) {
@@ -96,6 +65,8 @@ export class ClaudeProvider implements Provider {
 				output: err instanceof Error ? err.message : String(err),
 				duration: Date.now() - start,
 			};
+		} finally {
+			try { unlinkSync(promptFile); } catch {}
 		}
 	}
 }

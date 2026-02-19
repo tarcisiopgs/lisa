@@ -1,18 +1,15 @@
-import { appendFileSync } from "node:fs";
-import { execa } from "execa";
+import { spawn, execSync } from "node:child_process";
+import { appendFileSync, writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Provider, RunOptions, RunResult } from "../types.js";
-
-interface StreamEvent {
-	type: string;
-	[key: string]: unknown;
-}
 
 export class GeminiProvider implements Provider {
 	name = "gemini" as const;
 
 	async isAvailable(): Promise<boolean> {
 		try {
-			await execa("gemini", ["--version"]);
+			execSync("gemini --version", { stdio: "ignore" });
 			return true;
 		} catch {
 			return false;
@@ -22,65 +19,42 @@ export class GeminiProvider implements Provider {
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
 
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-"));
+		const promptFile = join(tmpDir, "prompt.md");
+		writeFileSync(promptFile, prompt, "utf-8");
+
 		try {
-			const proc = execa(
-				"gemini",
-				["--yolo", "-p", prompt, "--output-format", "stream-json"],
+			const proc = spawn(
+				"sh",
+				["-c", `gemini --yolo -p "$(cat '${promptFile}')"`],
 				{
 					cwd: opts.cwd,
-					timeout: 30 * 60 * 1000,
-					reject: false,
+					stdio: ["ignore", "pipe", "pipe"],
 				},
 			);
 
-			let buffer = "";
-			const textChunks: string[] = [];
+			const chunks: string[] = [];
 
-			proc.stdout?.on("data", (chunk: Buffer) => {
-				buffer += chunk.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() ?? "";
-
-				for (const line of lines) {
-					if (!line.trim()) continue;
-
-					// Write raw JSON to log file
-					try { appendFileSync(opts.logFile, `${line}\n`); } catch {}
-
-					try {
-						const event = JSON.parse(line) as StreamEvent;
-
-						// Show tool usage on terminal
-						if (event.type === "tool_use") {
-							process.stdout.write(`\n[tool] ${event.tool_name as string}\n`);
-						}
-
-						// Show assistant messages + collect for result
-						if (event.type === "message" && event.role === "assistant") {
-							const content = event.content as string;
-							if (content) {
-								process.stdout.write(`${content}\n`);
-								textChunks.push(content);
-							}
-						}
-					} catch {
-						// Not valid JSON, write raw to terminal
-						process.stdout.write(`${line}\n`);
-					}
-				}
+			proc.stdout.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				process.stdout.write(text);
+				chunks.push(text);
+				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			proc.stderr?.on("data", (chunk: Buffer) => {
+			proc.stderr.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				process.stderr.write(text);
 				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			const result = await proc;
+			const exitCode = await new Promise<number>((resolve) => {
+				proc.on("close", (code) => resolve(code ?? 1));
+			});
 
 			return {
-				success: result.exitCode === 0,
-				output: textChunks.join("\n"),
+				success: exitCode === 0,
+				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
 		} catch (err) {
@@ -89,6 +63,8 @@ export class GeminiProvider implements Provider {
 				output: err instanceof Error ? err.message : String(err),
 				duration: Date.now() - start,
 			};
+		} finally {
+			try { unlinkSync(promptFile); } catch {}
 		}
 	}
 }

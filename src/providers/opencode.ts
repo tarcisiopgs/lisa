@@ -1,5 +1,7 @@
-import { appendFileSync } from "node:fs";
-import { execa } from "execa";
+import { spawn, execSync } from "node:child_process";
+import { appendFileSync, writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class OpenCodeProvider implements Provider {
@@ -7,7 +9,7 @@ export class OpenCodeProvider implements Provider {
 
 	async isAvailable(): Promise<boolean> {
 		try {
-			await execa("opencode", ["--version"]);
+			execSync("opencode --version", { stdio: "ignore" });
 			return true;
 		} catch {
 			return false;
@@ -17,36 +19,41 @@ export class OpenCodeProvider implements Provider {
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
 
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-"));
+		const promptFile = join(tmpDir, "prompt.md");
+		writeFileSync(promptFile, prompt, "utf-8");
+
 		try {
-			const proc = execa(
-				"opencode",
-				["run", prompt],
+			const proc = spawn(
+				"sh",
+				["-c", `opencode run "$(cat '${promptFile}')"`],
 				{
 					cwd: opts.cwd,
-					timeout: 30 * 60 * 1000,
-					reject: false,
+					stdio: ["ignore", "pipe", "pipe"],
 				},
 			);
 
 			const chunks: string[] = [];
 
-			proc.stdout?.on("data", (chunk: Buffer) => {
+			proc.stdout.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				process.stdout.write(text);
 				chunks.push(text);
 				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			proc.stderr?.on("data", (chunk: Buffer) => {
+			proc.stderr.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				process.stderr.write(text);
 				try { appendFileSync(opts.logFile, text); } catch {}
 			});
 
-			const result = await proc;
+			const exitCode = await new Promise<number>((resolve) => {
+				proc.on("close", (code) => resolve(code ?? 1));
+			});
 
 			return {
-				success: result.exitCode === 0,
+				success: exitCode === 0,
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
@@ -56,6 +63,8 @@ export class OpenCodeProvider implements Provider {
 				output: err instanceof Error ? err.message : String(err),
 				duration: Date.now() - start,
 			};
+		} finally {
+			try { unlinkSync(promptFile); } catch {}
 		}
 	}
 }
