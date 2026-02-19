@@ -1,0 +1,36 @@
+provider: claude
+model: claude-sonnet-4-6
+effort: medium
+
+source: linear
+source_config:
+  team: Internal
+  project: Zenixx
+  label: ready
+  status: Backlog
+
+workspace: .
+repos:
+  - name: app
+    path: ./app
+    match: "App:"
+  - name: api
+    path: ./api
+    match: "API:"
+  - name: admin
+    path: ./admin
+    match: "Admin:"
+  - name: store
+    path: ./store
+    match: "Store:"
+  - name: website
+    path: ./website
+    match: "Website:"
+
+loop:
+  cooldown: 10
+  max_sessions: 0
+
+logs:
+  dir: .matuto/logs
+  format: text

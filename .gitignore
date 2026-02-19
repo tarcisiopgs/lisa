@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.matuto/logs/
+*.log
+.DS_Store

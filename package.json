@@ -1,0 +1,27 @@
+{
+	"name": "matuto-cli",
+	"version": "0.1.0",
+	"description": "O cabra que resolve suas issues — AI agent loop for Linear/Notion",
+	"type": "module",
+	"bin": {
+		"matuto": "./dist/index.js"
+	},
+	"scripts": {
+		"build": "bun build src/index.ts --outdir dist --target node --format esm && node -e \"const fs=require('fs');const c=fs.readFileSync('dist/index.js','utf8');fs.writeFileSync('dist/index.js','#!/usr/bin/env node\\n'+c)\"",
+		"dev": "bun run src/index.ts",
+		"check": "biome check src/",
+		"format": "biome format --write src/",
+		"lint": "biome lint src/"
+	},
+	"dependencies": {
+		"@clack/prompts": "^0.10.0",
+		"citty": "^0.1.6",
+		"execa": "^9.5.2",
+		"picocolors": "^1.1.1",
+		"yaml": "^2.7.0"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.2.4",
+		"typescript": "^5.7.3"
+	}
+}
