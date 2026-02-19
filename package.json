@@ -1,7 +1,8 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "0.9.0",
+	"version": "0.9.1",
 	"description": "Autonomous issue resolver — AI agent loop for Linear/Trello",
+	"license": "MIT",
 	"type": "module",
 	"bin": {
 		"lisa": "dist/index.js"

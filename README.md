@@ -4,7 +4,9 @@
   <img src="src/assets/lisa.png" width="200" alt="Lisa" />
 </p>
 
-Autonomous issue resolver — picks up issues from Linear or Trello, sends them to an AI coding agent (Claude Code, Gemini CLI, or OpenCode), and opens PRs via the GitHub API. No MCP servers required.
+While the Ralphs of the world flooded GitHub with mindless agent loops — brute-forcing their way through issues with no context, no workflow awareness, and no regard for the mess they leave behind — Lisa takes a different approach. She reads the issue, understands the workspace, picks the right repo, creates the branch, validates her work, and opens the PR. Then she moves on to the next one. When there's nothing left to do, she stops.
+
+Named after the smartest Simpson, Lisa is an autonomous issue resolver that connects your project tracker (Linear or Trello) to an AI coding agent (Claude Code, Gemini CLI, or OpenCode) and delivers pull requests via the GitHub API. No MCP servers. No prompt chains. No blind retries. Just structured, end-to-end execution.
 
 ## Install
 
@@ -14,7 +16,7 @@ npm install -g @tarcisiopgs/lisa
 
 ## Environment Variables
 
-lisa calls external APIs directly. Set these in your shell profile (`~/.zshrc` or `~/.bashrc`):
+Lisa calls external APIs directly. Set these in your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
 # Required (always)
@@ -77,7 +79,7 @@ All providers stream output to stdout and to the session log file in real time. 
 
 ## Workflow Modes
 
-lisa supports two workflow modes, configured during `lisa init`:
+Lisa supports two workflow modes, configured during `lisa init`:
 
 ### Branch (default)
 
@@ -85,9 +87,9 @@ The AI agent creates a branch directly in your current checkout, implements the 
 
 ### Worktree
 
-lisa creates an isolated [git worktree](https://git-scm.com/docs/git-worktree) for each issue under `.worktrees/`. The AI agent works inside the worktree without touching your main checkout. After the PR is created, the worktree is cleaned up automatically.
+Lisa creates an isolated [git worktree](https://git-scm.com/docs/git-worktree) for each issue under `.worktrees/`. The AI agent works inside the worktree without touching your main checkout. After the PR is created, the worktree is cleaned up automatically.
 
-Worktree mode is ideal when you want to keep working in the repo while lisa resolves issues in the background.
+Worktree mode is ideal when you want to keep working in the repo while Lisa resolves issues in the background.
 
 ## Configuration
 
@@ -167,9 +169,13 @@ lisa run --provider gemini --label "urgent"
 
 ## How It Works
 
-1. **Fetch** — Calls the Linear GraphQL API or Trello REST API to get the next issue matching the configured label, team, and project. Issues are sorted by priority.
-2. **Activate** — Moves the issue to the configured `in_progress` status (e.g. "In Progress") so your team can see it's being worked on.
-3. **Implement** — Builds a prompt with the issue context and sends it to the AI coding agent. In branch mode, the agent creates a branch and works in the current checkout. In worktree mode, lisa creates an isolated worktree first.
-4. **PR** — Creates a pull request via the GitHub API (CLI or token) referencing the original issue. In multi-repo workspaces, the correct repo is detected automatically.
-5. **Update** — Moves the issue to the configured `done` status and removes the pickup label via the source API.
-6. **Loop** — Waits `cooldown` seconds, then picks the next issue. Repeats until no issues remain or the limit is reached.
+1. **Fetch** — Pulls the next issue from Linear or Trello matching the configured label, team, and project. Issues are sorted by priority.
+2. **Activate** — Moves the issue to the `in_progress` status so your team knows it's being worked on.
+3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent creates a branch, implements, validates (lint, typecheck, tests), commits, and pushes.
+4. **PR** — Detects every repo the agent touched and creates a pull request for each, referencing the original issue. Multi-repo workspaces are handled automatically.
+5. **Update** — Moves the issue to the `done` status and removes the pickup label.
+6. **Next** — Picks the next issue. When there are no more issues, Lisa stops. No idle polling, no wasted cycles.
+
+## License
+
+[MIT](LICENSE)
