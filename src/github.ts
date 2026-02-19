@@ -2,6 +2,15 @@ import { execa } from "execa";
 
 const API_URL = "https://api.github.com";
 
+export async function isGhCliAvailable(): Promise<boolean> {
+	try {
+		await execa("gh", ["auth", "status"]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function getToken(): string {
 	const token = process.env.GITHUB_TOKEN;
 	if (!token) throw new Error("GITHUB_TOKEN is not set");
@@ -23,6 +32,10 @@ export interface PullRequestResult {
 }
 
 export async function createPullRequest(opts: PullRequestOptions): Promise<PullRequestResult> {
+	if (!process.env.GITHUB_TOKEN && await isGhCliAvailable()) {
+		return createPullRequestWithGhCli(opts);
+	}
+
 	const res = await fetch(`${API_URL}/repos/${opts.owner}/${opts.repo}/pulls`, {
 		method: "POST",
 		headers: {
@@ -45,6 +58,24 @@ export async function createPullRequest(opts: PullRequestOptions): Promise<PullR
 
 	const data = (await res.json()) as { number: number; html_url: string };
 	return { number: data.number, html_url: data.html_url };
+}
+
+async function createPullRequestWithGhCli(opts: PullRequestOptions): Promise<PullRequestResult> {
+	const result = await execa("gh", [
+		"pr", "create",
+		"--repo", `${opts.owner}/${opts.repo}`,
+		"--head", opts.head,
+		"--base", opts.base,
+		"--title", opts.title,
+		"--body", opts.body,
+	]);
+
+	// gh pr create outputs the PR URL
+	const url = result.stdout.trim();
+	const prNumberMatch = url.match(/\/pull\/(\d+)/);
+	const number = prNumberMatch ? Number.parseInt(prNumberMatch[1]!, 10) : 0;
+
+	return { number, html_url: url };
 }
 
 export interface RepoInfo {

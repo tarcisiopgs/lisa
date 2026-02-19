@@ -9,6 +9,7 @@ import {
 } from "./config.js";
 import { banner, log } from "./logger.js";
 import { runLoop } from "./loop.js";
+import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
 import type { Effort, LisaConfig, ProviderName, SourceName } from "./types.js";
 
@@ -36,7 +37,7 @@ const run = defineCommand({
 		});
 
 		// Validate env vars before running
-		const missingVars = getMissingEnvVars(merged.source);
+		const missingVars = await getMissingEnvVars(merged.source);
 		if (missingVars.length > 0) {
 			const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
 			console.error(pc.red(`Missing required environment variables:\n${missingVars.map((v) => `  ${v}`).join("\n")}`));
@@ -146,7 +147,14 @@ async function runConfigWizard(): Promise<void> {
 	const available = await getAvailableProviders();
 
 	if (available.length === 0) {
-		clack.log.error("No AI providers found. Install claude, gemini, or opencode first.");
+		clack.log.error("No compatible AI providers found.");
+		clack.log.info(
+			`Install at least one of the following providers to continue:\n\n` +
+			`  ${pc.bold("Claude Code")}   ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
+			`  ${pc.bold("Gemini CLI")}    ${pc.dim("npm i -g @anthropic-ai/gemini-cli")}\n` +
+			`  ${pc.bold("OpenCode")}      ${pc.dim("npm i -g opencode")}\n\n` +
+			`After installing, run ${pc.cyan("lisa-loop init")} again.`,
+		);
 		return process.exit(1);
 	}
 
@@ -177,11 +185,11 @@ async function runConfigWizard(): Promise<void> {
 	if (clack.isCancel(source)) return process.exit(0);
 
 	// Validate env vars for the selected source
-	const missing = getMissingEnvVars(source as SourceName);
+	const missing = await getMissingEnvVars(source as SourceName);
 	if (missing.length > 0) {
 		const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
 		clack.log.warning(
-			`Missing environment variables for ${source}:\n${missing.map((v) => `  ${pc.bold(v)}`).join("\n")}\n\nAdd them to your ${pc.cyan(shell)}:\n${missing.map((v) => `  export ${v}="your-key-here"`).join("\n")}\n\nThen run: ${pc.cyan(`source ${shell}`)}`,
+			`Missing environment variables:\n${missing.map((v) => `  ${pc.bold(v)}`).join("\n")}\n\nAdd them to your environment variables:\n${missing.map((v) => `  export ${v}="your-key-here"`).join("\n")}\n\nThen run: ${pc.cyan(`source ${shell}`)}`,
 		);
 	}
 
@@ -225,10 +233,13 @@ async function runConfigWizard(): Promise<void> {
 	clack.outro(pc.green("Config saved to .lisa-loop/config.yaml"));
 }
 
-function getMissingEnvVars(source: SourceName): string[] {
+async function getMissingEnvVars(source: SourceName): Promise<string[]> {
 	const missing: string[] = [];
 
-	if (!process.env.GITHUB_TOKEN) missing.push("GITHUB_TOKEN");
+	if (!process.env.GITHUB_TOKEN) {
+		const ghAvailable = await isGhCliAvailable();
+		if (!ghAvailable) missing.push("GITHUB_TOKEN");
+	}
 
 	if (source === "linear") {
 		if (!process.env.LINEAR_API_KEY) missing.push("LINEAR_API_KEY");

@@ -1,8 +1,8 @@
 {
 	"compilerOptions": {
 		"target": "ESNext",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
 		"strict": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
@@ -12,7 +12,7 @@
 		"resolveJsonModule": true,
 		"isolatedModules": true,
 		"noUncheckedIndexedAccess": true,
-		"types": ["bun"]
+		"types": ["node"]
 	},
 	"include": ["src/**/*.ts"]
 }
