@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import type { LisaConfig } from "./types.js";
 
-const CONFIG_DIR = ".lisa-loop";
+const CONFIG_DIR = ".lisa";
 const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {

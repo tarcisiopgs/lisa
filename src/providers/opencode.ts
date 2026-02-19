@@ -17,7 +17,7 @@ export class OpenCodeProvider implements Provider {
 		const start = Date.now();
 
 		try {
-			const result = await execa(
+			const proc = execa(
 				"opencode",
 				["run", prompt],
 				{
@@ -27,6 +27,10 @@ export class OpenCodeProvider implements Provider {
 				},
 			);
 
+			proc.stdout?.pipe(process.stdout);
+			proc.stderr?.pipe(process.stderr);
+
+			const result = await proc;
 			const output = result.stdout + (result.stderr ? `\n${result.stderr}` : "");
 
 			return {

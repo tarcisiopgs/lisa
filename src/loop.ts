@@ -109,7 +109,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				head: repoInfo.branch,
 				base: repoInfo.defaultBranch,
 				title: issue.title,
-				body: `Closes ${issue.url}\n\nImplemented by lisa-loop.`,
+				body: `Closes ${issue.url}\n\nImplemented by lisa.`,
 			}, config.github);
 			logger.ok(`PR created: ${pr.html_url}`);
 		} catch (err) {
@@ -145,7 +145,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		await sleep(config.loop.cooldown * 1000);
 	}
 
-	logger.ok(`lisa-loop finished. ${session} session(s) run.`);
+	logger.ok(`lisa finished. ${session} session(s) run.`);
 }
 
 function sleep(ms: number): Promise<void> {

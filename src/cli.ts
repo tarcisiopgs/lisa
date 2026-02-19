@@ -74,7 +74,7 @@ const config = defineCommand({
 		if (args.set) {
 			const [key, value] = args.set.split("=");
 			if (!key || !value) {
-				console.error(pc.red("Usage: lisa-loop config --set key=value"));
+				console.error(pc.red("Usage: lisa config --set key=value"));
 				process.exit(1);
 			}
 			const cfg = loadConfig();
@@ -90,7 +90,7 @@ const config = defineCommand({
 });
 
 const init = defineCommand({
-	meta: { name: "init", description: "Initialize lisa-loop configuration" },
+	meta: { name: "init", description: "Initialize lisa configuration" },
 	async run() {
 		if (!process.stdin.isTTY) {
 			console.error(pc.red("Interactive mode requires a TTY. Cannot run init in non-interactive environments."));
@@ -145,7 +145,7 @@ function getVersion(): string {
 
 export const main = defineCommand({
 	meta: {
-		name: "lisa-loop",
+		name: "lisa",
 		version: getVersion(),
 		description: "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	},
@@ -207,7 +207,7 @@ const LISA_ART = pc.yellow(`
 
 async function runConfigWizard(): Promise<void> {
 	console.log(LISA_ART);
-	clack.intro(pc.cyan("lisa-loop — autonomous issue resolver"));
+	clack.intro(pc.cyan("lisa — autonomous issue resolver"));
 
 	const providerLabels: Record<ProviderName, string> = {
 		claude: "Claude Code",
@@ -224,7 +224,7 @@ async function runConfigWizard(): Promise<void> {
 			`  ${pc.bold("Claude Code")}   ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
 			`  ${pc.bold("Gemini CLI")}    ${pc.dim("npm i -g @anthropic-ai/gemini-cli")}\n` +
 			`  ${pc.bold("OpenCode")}      ${pc.dim("npm i -g opencode")}\n\n` +
-			`After installing, run ${pc.cyan("lisa-loop init")} again.`,
+			`After installing, run ${pc.cyan("lisa init")} again.`,
 		);
 		return process.exit(1);
 	}
@@ -304,11 +304,11 @@ async function runConfigWizard(): Promise<void> {
 		workspace: ".",
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
-		logs: { dir: ".lisa-loop/logs", format: "text" },
+		logs: { dir: ".lisa/logs", format: "text" },
 	};
 
 	saveConfig(cfg);
-	clack.outro(pc.green("Config saved to .lisa-loop/config.yaml"));
+	clack.outro(pc.green("Config saved to .lisa/config.yaml"));
 }
 
 async function detectGitHubMethod(): Promise<GitHubMethod> {

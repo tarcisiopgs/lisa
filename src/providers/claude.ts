@@ -17,16 +17,20 @@ export class ClaudeProvider implements Provider {
 		const start = Date.now();
 
 		try {
-			const result = await execa(
+			const proc = execa(
 				"claude",
 				["--dangerously-skip-permissions", "-p", prompt, "--output-format", "text"],
 				{
 					cwd: opts.cwd,
-					timeout: 30 * 60 * 1000, // 30 min
+					timeout: 30 * 60 * 1000,
 					reject: false,
 				},
 			);
 
+			proc.stdout?.pipe(process.stdout);
+			proc.stderr?.pipe(process.stderr);
+
+			const result = await proc;
 			const output = result.stdout + (result.stderr ? `\n${result.stderr}` : "");
 
 			return {

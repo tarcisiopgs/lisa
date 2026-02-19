@@ -1,16 +1,16 @@
-# lisa-loop
+# lisa
 
 Autonomous issue resolver — picks up issues from Linear or Trello, sends them to an AI coding agent (Claude Code, Gemini CLI, or OpenCode), and opens PRs via the GitHub API. No MCP servers required.
 
 ## Install
 
 ```bash
-npm install -g @tarcisiopgs/lisa-loop
+npm install -g @tarcisiopgs/lisa
 ```
 
 ## Environment Variables
 
-lisa-loop calls external APIs directly. Set these in your shell profile (`~/.zshrc` or `~/.bashrc`):
+lisa calls external APIs directly. Set these in your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
 # Required (always)
@@ -30,34 +30,34 @@ The CLI will warn you if any required variable is missing.
 
 ```bash
 # Interactive setup
-lisa-loop init
+lisa init
 
 # Run continuously
-lisa-loop run
+lisa run
 
 # Single issue
-lisa-loop run --once
+lisa run --once
 
 # Preview without executing
-lisa-loop run --dry-run
+lisa run --dry-run
 
 # Override provider
-lisa-loop run --provider gemini --once
+lisa run --provider gemini --once
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `lisa-loop run` | Run the agent loop |
-| `lisa-loop run --once` | Process a single issue |
-| `lisa-loop run --limit N` | Process up to N issues |
-| `lisa-loop run --dry-run` | Preview without executing |
-| `lisa-loop config` | Interactive config wizard |
-| `lisa-loop config --show` | Show current config |
-| `lisa-loop config --set key=value` | Set a config value |
-| `lisa-loop init` | Create `.lisa-loop/config.yaml` |
-| `lisa-loop status` | Show session stats |
+| `lisa run` | Run the agent loop |
+| `lisa run --once` | Process a single issue |
+| `lisa run --limit N` | Process up to N issues |
+| `lisa run --dry-run` | Preview without executing |
+| `lisa config` | Interactive config wizard |
+| `lisa config --show` | Show current config |
+| `lisa config --set key=value` | Set a config value |
+| `lisa init` | Create `.lisa/config.yaml` |
+| `lisa status` | Show session stats |
 
 ## Providers
 
@@ -71,7 +71,7 @@ At least one provider must be installed and available in your PATH.
 
 ## Configuration
 
-Config lives in `.lisa-loop/config.yaml`:
+Config lives in `.lisa/config.yaml`:
 
 ```yaml
 provider: claude
@@ -94,14 +94,14 @@ loop:
   max_sessions: 0
 
 logs:
-  dir: .lisa-loop/logs
+  dir: .lisa/logs
   format: text
 ```
 
 CLI flags override config values:
 
 ```bash
-lisa-loop run --provider gemini --label "urgent"
+lisa run --provider gemini --label "urgent"
 ```
 
 ## How It Works

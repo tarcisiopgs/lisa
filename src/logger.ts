@@ -79,9 +79,9 @@ export function banner(): void {
 	if (outputMode !== "default") return;
 	console.log(
 		pc.cyan(`
-  ┌──────────────────────────────────────────┐
-  │  lisa-loop — autonomous issue resolver  │
-  └──────────────────────────────────────────┘
+  ┌─────────────────────────────────────┐
+  │  lisa — autonomous issue resolver  │
+  └─────────────────────────────────────┘
 `),
 	);
 }
