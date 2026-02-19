@@ -3,3 +3,4 @@ dist/
 .lisa-loop/logs/
 *.log
 .DS_Store
+package-lock.json
