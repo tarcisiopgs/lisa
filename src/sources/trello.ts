@@ -1,43 +1,43 @@
 import type { Issue, Source, SourceConfig } from "../types.js";
 
 const API_URL = "https://api.trello.com/1";
+const REQUEST_TIMEOUT_MS = 30_000;
 
-function getAuth(): string {
+function getAuthHeaders(): Record<string, string> {
 	const key = process.env.TRELLO_API_KEY;
 	const token = process.env.TRELLO_TOKEN;
 	if (!key || !token) throw new Error("TRELLO_API_KEY and TRELLO_TOKEN must be set");
-	return `key=${key}&token=${token}`;
+	return {
+		Authorization: `OAuth oauth_consumer_key="${key}", oauth_token="${token}"`,
+	};
+}
+
+async function trelloFetch<T>(method: string, path: string, params = ""): Promise<T> {
+	const sep = params ? "?" : "";
+	const url = `${API_URL}${path}${sep}${params}`;
+	const res = await fetch(url, {
+		method,
+		headers: getAuthHeaders(),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(`Trello API error (${res.status}): ${text}`);
+	}
+	if (method === "DELETE") return undefined as T;
+	return (await res.json()) as T;
 }
 
 async function trelloGet<T>(path: string, params = ""): Promise<T> {
-	const sep = params ? "&" : "";
-	const url = `${API_URL}${path}?${getAuth()}${sep}${params}`;
-	const res = await fetch(url);
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Trello API error (${res.status}): ${text}`);
-	}
-	return (await res.json()) as T;
+	return trelloFetch<T>("GET", path, params);
 }
 
 async function trelloPut<T>(path: string, params = ""): Promise<T> {
-	const sep = params ? "&" : "";
-	const url = `${API_URL}${path}?${getAuth()}${sep}${params}`;
-	const res = await fetch(url, { method: "PUT" });
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Trello API error (${res.status}): ${text}`);
-	}
-	return (await res.json()) as T;
+	return trelloFetch<T>("PUT", path, params);
 }
 
 async function trelloDelete(path: string): Promise<void> {
-	const url = `${API_URL}${path}?${getAuth()}`;
-	const res = await fetch(url, { method: "DELETE" });
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Trello API error (${res.status}): ${text}`);
-	}
+	await trelloFetch<void>("DELETE", path);
 }
 
 interface TrelloBoard {

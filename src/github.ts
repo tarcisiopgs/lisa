@@ -2,6 +2,7 @@ import { execa } from "execa";
 import type { GitHubMethod } from "./types.js";
 
 const API_URL = "https://api.github.com";
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export async function isGhCliAvailable(): Promise<boolean> {
 	try {
@@ -50,6 +51,7 @@ export async function createPullRequest(opts: PullRequestOptions, method: GitHub
 			head: opts.head,
 			base: opts.base,
 		}),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	});
 
 	if (!res.ok) {

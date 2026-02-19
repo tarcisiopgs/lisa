@@ -1,5 +1,5 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, resolve as resolvePath } from "node:path";
 import { defineCommand, runMain } from "citty";
 import * as clack from "@clack/prompts";
 import pc from "picocolors";
@@ -9,7 +9,7 @@ import {
 	mergeWithFlags,
 	saveConfig,
 } from "./config.js";
-import { banner, log } from "./logger.js";
+import { banner, log, setOutputMode } from "./logger.js";
 import { runLoop } from "./loop.js";
 import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
@@ -25,8 +25,12 @@ const run = defineCommand({
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 		github: { type: "string", description: "GitHub method: cli or token" },
+		json: { type: "boolean", description: "Output as JSON lines", default: false },
+		quiet: { type: "boolean", description: "Suppress non-essential output", default: false },
 	},
 	async run({ args }) {
+		if (args.json) setOutputMode("json");
+		else if (args.quiet) setOutputMode("quiet");
 		banner();
 		const config = loadConfig();
 		const merged = mergeWithFlags(config, {
@@ -88,6 +92,10 @@ const config = defineCommand({
 const init = defineCommand({
 	meta: { name: "init", description: "Initialize lisa-loop configuration" },
 	async run() {
+		if (!process.stdin.isTTY) {
+			console.error(pc.red("Interactive mode requires a TTY. Cannot run init in non-interactive environments."));
+			process.exit(1);
+		}
 		if (configExists()) {
 			const overwrite = await clack.confirm({
 				message: "Config already exists. Overwrite?",
@@ -125,10 +133,20 @@ const status = defineCommand({
 	},
 });
 
+function getVersion(): string {
+	try {
+		const pkgPath = resolvePath(new URL(".", import.meta.url).pathname, "../package.json");
+		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
+		return pkg.version;
+	} catch {
+		return "0.0.0";
+	}
+}
+
 export const main = defineCommand({
 	meta: {
 		name: "lisa-loop",
-		version: "0.1.0",
+		version: getVersion(),
 		description: "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	},
 	subCommands: { run, config, init, status },

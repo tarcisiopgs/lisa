@@ -51,7 +51,15 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			break;
 		}
 
-		const issue = await source.fetchNextIssue(config.source_config);
+		let issue: Awaited<ReturnType<typeof source.fetchNextIssue>>;
+		try {
+			issue = await source.fetchNextIssue(config.source_config);
+		} catch (err) {
+			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
+			if (opts.once) break;
+			await sleep(config.loop.cooldown * 1000);
+			continue;
+		}
 
 		if (!issue) {
 			logger.warn(
