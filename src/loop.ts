@@ -8,7 +8,6 @@ import { createPullRequest, getRepoInfo } from "./github.js";
 import {
 	createWorktree,
 	removeWorktree,
-	getDefaultBranch,
 	generateBranchName,
 	determineRepoPath,
 	findBranchByIssueId,
@@ -132,6 +131,12 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	logger.ok(`lisa finished. ${session} session(s) run.`);
 }
 
+function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
+	const workspace = resolve(config.workspace);
+	const repo = config.repos.find((r) => resolve(workspace, r.path) === repoPath);
+	return repo?.base_branch ?? config.base_branch;
+}
+
 async function runWorktreeSession(
 	config: LisaConfig,
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
@@ -144,7 +149,7 @@ async function runWorktreeSession(
 	// Determine target repo root
 	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
 
-	const defaultBranch = await getDefaultBranch(repoPath);
+	const defaultBranch = resolveBaseBranch(config, repoPath);
 	const branchName = generateBranchName(issue.id, issue.title);
 
 	logger.log(`Creating worktree for ${branchName} (base: ${defaultBranch})...`);
@@ -230,6 +235,8 @@ async function runBranchSession(
 	// In multi-repo workspaces, find the repo the agent worked in
 	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
 
+	const baseBranch = resolveBaseBranch(config, repoPath);
+
 	let prUrl: string | undefined;
 	try {
 		const repoInfo = await getRepoInfo(repoPath);
@@ -237,7 +244,7 @@ async function runBranchSession(
 
 		// Agent may have switched back to the default branch after pushing —
 		// find the feature branch by matching the issue ID in branch names
-		if (headBranch === repoInfo.defaultBranch) {
+		if (headBranch === baseBranch) {
 			const featureBranch = await findBranchByIssueId(repoPath, issue.id);
 			if (featureBranch) {
 				headBranch = featureBranch;
@@ -248,7 +255,7 @@ async function runBranchSession(
 			owner: repoInfo.owner,
 			repo: repoInfo.repo,
 			head: headBranch,
-			base: repoInfo.defaultBranch,
+			base: baseBranch,
 			title: issue.title,
 			body: `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa).`,
 		}, config.github);

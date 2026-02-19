@@ -20,6 +20,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 	github: "cli",
 	workflow: "branch",
 	workspace: "",
+	base_branch: "main",
 	repos: [],
 	loop: {
 		cooldown: 0,
@@ -49,13 +50,21 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const raw = readFileSync(configPath, "utf-8");
 	const parsed = parse(raw) as Partial<LisaConfig>;
 
-	return {
+	const config = {
 		...DEFAULT_CONFIG,
 		...parsed,
 		source_config: { ...DEFAULT_CONFIG.source_config, ...parsed.source_config },
 		loop: { ...DEFAULT_CONFIG.loop, ...parsed.loop },
 		logs: { ...DEFAULT_CONFIG.logs, ...parsed.logs },
 	};
+
+	// Backward compat: fill base_branch if missing
+	if (!config.base_branch) config.base_branch = "main";
+	for (const repo of config.repos) {
+		if (!repo.base_branch) repo.base_branch = config.base_branch;
+	}
+
+	return config;
 }
 
 export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): void {

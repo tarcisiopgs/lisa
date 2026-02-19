@@ -60,8 +60,12 @@ ${issue.description}
 function buildBranchPrompt(issue: Issue, config: LisaConfig): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
-		.map((r) => `   - If it says "Repo: ${r.name}" or title starts with "${r.match}" → \`${resolve(workspace, r.path)}\``)
+		.map((r) => `   - If it says "Repo: ${r.name}" or title starts with "${r.match}" → \`${resolve(workspace, r.path)}\` (base branch: \`${r.base_branch}\`)`)
 		.join("\n");
+
+	const baseBranchInstruction = config.repos.length > 0
+		? "From the repo's base branch (listed above)"
+		: `From \`${config.base_branch}\``;
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, commit, and push the branch.
@@ -82,7 +86,7 @@ ${issue.description}
 ${repoEntries}
    - If it references multiple repos, pick the PRIMARY one (the one with the most files listed).
 
-2. **Create a branch**: From the repo's main branch, create a branch named after the issue
+2. **Create a branch**: ${baseBranchInstruction}, create a branch named after the issue
    (e.g., \`feat/${issue.id.toLowerCase()}-short-description\`).
 
 3. **Implement**: Follow the issue description exactly:

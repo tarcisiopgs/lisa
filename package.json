@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "0.6.1",
+	"version": "0.7.0",
 	"description": "Autonomous issue resolver — AI agent loop for Linear/Trello",
 	"type": "module",
 	"bin": {
@@ -28,6 +28,10 @@
 	},
 	"publishConfig": {
 		"access": "public"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/tarcisiopgs/lisa.git"
 	},
 	"files": [
 		"dist"

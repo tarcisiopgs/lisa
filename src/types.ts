@@ -8,6 +8,7 @@ export interface RepoConfig {
 	name: string;
 	path: string;
 	match: string;
+	base_branch: string;
 }
 
 export interface SourceConfig {
@@ -36,6 +37,7 @@ export interface LisaConfig {
 	github: GitHubMethod;
 	workflow: WorkflowMode;
 	workspace: string;
+	base_branch: string;
 	repos: RepoConfig[];
 	loop: LoopConfig;
 	logs: LogsConfig;

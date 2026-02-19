@@ -219,6 +219,11 @@ async function runConfigWizard(): Promise<void> {
 		);
 	}
 
+	// Detect GitHub method
+	const githubMethod = await detectGitHubMethod();
+
+	// --- Issue source config ---
+
 	const teamAnswer = await clack.text({
 		message: source === "linear" ? "Linear team name?" : "Trello board name?",
 	});
@@ -283,10 +288,8 @@ async function runConfigWizard(): Promise<void> {
 		doneStatus = doneAnswer as string;
 	}
 
-	// Detect GitHub method
-	const githubMethod = await detectGitHubMethod();
+	// --- Git workflow ---
 
-	// Workflow mode
 	const workflowAnswer = await clack.select({
 		message: "How should Lisa work on issues?",
 		options: [
@@ -300,9 +303,33 @@ async function runConfigWizard(): Promise<void> {
 	// Auto-detect repos
 	const repos = await detectGitRepos();
 
+	// Ask for base branch
+	let baseBranch = "main";
+	const cwd = process.cwd();
+
+	if (repos.length === 0) {
+		const detected = detectDefaultBranch(cwd);
+		const branchAnswer = await clack.text({
+			message: "Base branch?",
+			initialValue: detected,
+		});
+		if (clack.isCancel(branchAnswer)) return process.exit(0);
+		baseBranch = branchAnswer as string;
+	} else {
+		for (const repo of repos) {
+			const repoPath = resolvePath(cwd, repo.path);
+			const detected = detectDefaultBranch(repoPath);
+			const branchAnswer = await clack.text({
+				message: `Base branch for ${repo.name}?`,
+				initialValue: detected,
+			});
+			if (clack.isCancel(branchAnswer)) return process.exit(0);
+			repo.base_branch = branchAnswer as string;
+		}
+	}
+
 	// Setup .worktrees gitignore if worktree mode
 	if (workflow === "worktree") {
-		const cwd = process.cwd();
 		if (repos.length === 0) {
 			ensureWorktreeGitignore(cwd);
 		} else {
@@ -327,6 +354,7 @@ async function runConfigWizard(): Promise<void> {
 		github: githubMethod,
 		workflow,
 		workspace: ".",
+		base_branch: baseBranch,
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
 		logs: { dir: ".lisa/logs", format: "text" },
@@ -396,7 +424,20 @@ async function detectGitRepos(): Promise<RepoConfig[]> {
 		name: getGitRepoName(join(cwd, dir)) ?? dir,
 		path: `./${dir}`,
 		match: "",
+		base_branch: "",
 	}));
+}
+
+function detectDefaultBranch(repoPath: string): string {
+	try {
+		const ref = execSync("git symbolic-ref refs/remotes/origin/HEAD --short", {
+			cwd: repoPath,
+			encoding: "utf-8",
+		}).trim();
+		return ref.replace("origin/", "");
+	} catch {
+		return "main";
+	}
 }
 
 function getGitRepoName(repoPath: string): string | null {
