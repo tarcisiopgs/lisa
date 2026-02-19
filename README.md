@@ -8,6 +8,17 @@ While the Ralphs of the world flooded GitHub with mindless agent loops — brute
 
 Named after the smartest Simpson, Lisa is an autonomous issue resolver that connects your project tracker (Linear or Trello) to an AI coding agent (Claude Code, Gemini CLI, or OpenCode) and delivers pull requests via the GitHub API. No MCP servers. No prompt chains. No blind retries. Just structured, end-to-end execution.
 
+## Why Lisa?
+
+Most AI agent loops work like Ralph — they grab an issue, throw it at a model, and hope for the best. If it fails, retry. If there's nothing to do, keep polling. Every cycle burns tokens, every retry burns money, and you get no visibility into what went wrong.
+
+Lisa is deterministic. She follows a structured pipeline with clear stages (fetch, activate, implement, validate, PR, update) and stops when the work is done. This means:
+
+- **Token efficiency** — Each issue gets one focused prompt with full context (description, acceptance criteria, repo conventions). No wasted retries, no speculative exploration, no idle polling burning API calls.
+- **Multi-repo awareness** — Lisa detects which repos the agent actually touched and creates a PR for each. No guessing, no hardcoded paths.
+- **Workflow integration** — Issues move through your board in real time (Todo, In Progress, In Review). Your team always knows what's being worked on.
+- **Predictable cost** — One issue = one agent session = one set of PRs. You can estimate cost per issue instead of hoping the loop eventually converges.
+
 ## Install
 
 ```bash
