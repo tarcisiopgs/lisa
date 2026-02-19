@@ -53,7 +53,7 @@ export class OpenCodeProvider implements Provider {
 
 	async pickIssue(source: Source, config: MatutoConfig): Promise<string | null> {
 		const prompt = source.buildFetchPrompt(config.source_config);
-		const model = config.model || MODEL_MAP[config.effort];
+		const model = config.model || MODEL_MAP[config.effort || "medium"];
 
 		try {
 			const result = await execa(

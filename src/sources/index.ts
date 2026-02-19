@@ -1,10 +1,12 @@
 import type { Source, SourceName } from "../types.js";
 import { LinearSource } from "./linear.js";
-import { NotionSource } from "./notion.js";
+import { LocalSource } from "./local.js";
+import { TrelloSource } from "./trello.js";
 
 const sources: Record<SourceName, () => Source> = {
 	linear: () => new LinearSource(),
-	notion: () => new NotionSource(),
+	trello: () => new TrelloSource(),
+	local: () => new LocalSource(),
 };
 
 export function createSource(name: SourceName): Source {

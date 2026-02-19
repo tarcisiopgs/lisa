@@ -20,7 +20,7 @@ const run = defineCommand({
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		model: { type: "string", description: "Model ID override" },
 		effort: { type: "string", description: "Effort level (low, medium, high)" },
-		source: { type: "string", description: "Issue source (linear, notion)" },
+		source: { type: "string", description: "Issue source (linear, trello, local)" },
 		label: { type: "string", description: "Label to filter issues" },
 	},
 	async run({ args }) {
@@ -63,7 +63,7 @@ const config = defineCommand({
 				process.exit(1);
 			}
 			const cfg = loadConfig();
-			(cfg as Record<string, unknown>)[key] = value;
+			(cfg as unknown as Record<string, unknown>)[key] = value;
 			saveConfig(cfg);
 			log(`Set ${key} = ${value}`);
 			return;
@@ -97,7 +97,7 @@ const status = defineCommand({
 		const config = loadConfig();
 		console.log(pc.cyan("Configuration:"));
 		console.log(`  Provider: ${pc.bold(config.provider)}`);
-		console.log(`  Model:    ${pc.bold(config.model)}`);
+		console.log(`  Model:    ${pc.bold(config.model || "(provider default)")}`);
 		console.log(`  Source:   ${pc.bold(config.source)}`);
 		console.log(`  Label:    ${pc.bold(config.source_config.label)}`);
 		console.log(`  Team:     ${pc.bold(config.source_config.team)}`);
@@ -137,75 +137,52 @@ async function runConfigWizard(): Promise<void> {
 	});
 	if (clack.isCancel(provider)) return process.exit(0);
 
-	const modelOptions: Record<string, { value: string; label: string; hint?: string }[]> = {
-		claude: [
-			{ value: "claude-sonnet-4-6", label: "claude-sonnet-4-6", hint: "fast, good quality" },
-			{ value: "claude-opus-4-6", label: "claude-opus-4-6", hint: "best quality, slower" },
-			{ value: "claude-haiku-4-5", label: "claude-haiku-4-5", hint: "fastest, lighter tasks" },
-		],
-		gemini: [
-			{ value: "gemini-2.5-pro", label: "gemini-2.5-pro", hint: "best quality" },
-			{ value: "gemini-2.5-flash", label: "gemini-2.5-flash", hint: "fast" },
-		],
-		opencode: [
-			{ value: "anthropic/claude-sonnet", label: "claude-sonnet", hint: "fast, good quality" },
-			{ value: "anthropic/claude-opus", label: "claude-opus", hint: "best quality" },
-			{ value: "anthropic/claude-haiku", label: "claude-haiku", hint: "fastest" },
-		],
-	};
-
-	const model = await clack.select({
-		message: "Which model?",
-		options: modelOptions[provider as string] ?? modelOptions.claude!,
-	});
-	if (clack.isCancel(model)) return process.exit(0);
-
-	const effort = await clack.select({
-		message: "Effort level?",
-		options: [
-			{ value: "medium", label: "Medium", hint: "default" },
-			{ value: "low", label: "Low", hint: "quick fixes" },
-			{ value: "high", label: "High", hint: "complex features" },
-		],
-	});
-	if (clack.isCancel(effort)) return process.exit(0);
-
 	const source = await clack.select({
 		message: "Where do your issues live?",
 		options: [
 			{ value: "linear", label: "Linear" },
-			{ value: "notion", label: "Notion" },
+			{ value: "trello", label: "Trello" },
+			{ value: "local", label: "Local", hint: ".matuto/issues/*.md" },
 		],
 	});
 	if (clack.isCancel(source)) return process.exit(0);
 
-	const team = await clack.text({
-		message: `${source === "linear" ? "Linear" : "Notion"} team name?`,
-		initialValue: "Internal",
-	});
-	if (clack.isCancel(team)) return process.exit(0);
+	let team = "";
+	let project = "";
+	let label = "ready";
 
-	const project = await clack.text({
-		message: "Project name?",
-		initialValue: "Zenixx",
-	});
-	if (clack.isCancel(project)) return process.exit(0);
+	if (source !== "local") {
+		const teamAnswer = await clack.text({
+			message: source === "linear" ? "Linear team name?" : "Trello board name?",
+			initialValue: "Internal",
+		});
+		if (clack.isCancel(teamAnswer)) return process.exit(0);
+		team = teamAnswer as string;
 
-	const label = await clack.text({
-		message: "Label to pick up?",
-		initialValue: "ready",
-	});
-	if (clack.isCancel(label)) return process.exit(0);
+		const projectAnswer = await clack.text({
+			message: source === "linear" ? "Project name?" : "Trello list name?",
+			initialValue: "Zenixx",
+		});
+		if (clack.isCancel(projectAnswer)) return process.exit(0);
+		project = projectAnswer as string;
+
+		const labelAnswer = await clack.text({
+			message: "Label to pick up?",
+			initialValue: "ready",
+		});
+		if (clack.isCancel(labelAnswer)) return process.exit(0);
+		label = labelAnswer as string;
+	} else {
+		clack.log.info("Issues dir: .matuto/issues/");
+	}
 
 	const cfg: MatutoConfig = {
 		provider: provider as ProviderName,
-		model: model as string,
-		effort: effort as Effort,
 		source: source as SourceName,
 		source_config: {
-			team: team as string,
-			project: project as string,
-			label: label as string,
+			team,
+			project,
+			label,
 			status: "Backlog",
 		},
 		workspace: ".",

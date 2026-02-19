@@ -1,5 +1,5 @@
 export type Effort = "low" | "medium" | "high";
-export type SourceName = "linear" | "notion";
+export type SourceName = "linear" | "trello" | "local";
 export type ProviderName = "claude" | "gemini" | "opencode";
 export type LogFormat = "text" | "json";
 
@@ -28,8 +28,8 @@ export interface LogsConfig {
 
 export interface MatutoConfig {
 	provider: ProviderName;
-	model: string;
-	effort: Effort;
+	model?: string;
+	effort?: Effort;
 	source: SourceName;
 	source_config: SourceConfig;
 	workspace: string;
@@ -72,4 +72,6 @@ export interface Source {
 	buildUpdatePrompt(issueId: string, status: string): string;
 	buildRemoveLabelPrompt(issueId: string, label: string): string;
 	parseIssueId(output: string): string | null;
+	fetchNextLocal?(cwd: string): Promise<Issue | null>;
+	markDone?(issueId: string, cwd: string): Promise<void>;
 }

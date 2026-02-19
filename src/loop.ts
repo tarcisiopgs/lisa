@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
 import * as logger from "./logger.js";
-import { buildImplementPrompt } from "./prompt.js";
+import { buildImplementPrompt, buildLocalImplementPrompt } from "./prompt.js";
 import { createProvider } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type { MatutoConfig } from "./types.js";
@@ -40,37 +40,59 @@ export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<
 		const logFile = resolve(config.logs.dir, `session_${session}_${timestamp}.log`);
 
 		logger.divider(session);
-		logger.log(`Asking ${config.provider} to pick next '${config.source_config.label}' issue...`);
 
 		if (opts.dryRun) {
-			logger.log(`[dry-run] Would pick issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			if (source.fetchNextLocal) {
+				logger.log(`[dry-run] Would pick next local issue from .matuto/issues/`);
+			} else {
+				logger.log(`[dry-run] Would pick issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			}
 			logger.log("[dry-run] Then implement and open PR");
 			break;
 		}
 
-		// Pick issue
-		const issueId = await provider.pickIssue(source, config);
+		// Pick issue — local source bypasses provider
+		let issueId: string | null;
+		let prompt: string;
 
-		if (!issueId) {
-			logger.warn(
-				`No issues with label '${config.source_config.label}' found. Sleeping ${config.loop.cooldown}s...`,
-			);
-			if (opts.once) break;
-			await sleep(config.loop.cooldown * 1000);
-			continue;
+		if (source.fetchNextLocal) {
+			logger.log("Scanning local issues...");
+			const issue = await source.fetchNextLocal(config.workspace);
+
+			if (!issue) {
+				logger.warn("No local issues found in .matuto/issues/. Sleeping...");
+				if (opts.once) break;
+				await sleep(config.loop.cooldown * 1000);
+				continue;
+			}
+
+			issueId = issue.id;
+			prompt = buildLocalImplementPrompt(issue, config);
+		} else {
+			logger.log(`Asking ${config.provider} to pick next '${config.source_config.label}' issue...`);
+			issueId = await provider.pickIssue(source, config);
+
+			if (!issueId) {
+				logger.warn(
+					`No issues with label '${config.source_config.label}' found. Sleeping ${config.loop.cooldown}s...`,
+				);
+				if (opts.once) break;
+				await sleep(config.loop.cooldown * 1000);
+				continue;
+			}
+
+			prompt = buildImplementPrompt(issueId, config);
 		}
 
 		logger.ok(`Picked up: ${issueId}`);
 		logger.log(`Implementing... (log: ${logFile})`);
 		logger.initLogFile(logFile);
 
-		// Build and run implementation prompt
-		const prompt = buildImplementPrompt(issueId, config);
 		const workspace = resolve(config.workspace);
 
 		const result = await provider.run(prompt, {
-			model: config.model,
-			effort: config.effort,
+			model: config.model || "",
+			effort: config.effort || "medium",
 			logFile,
 			cwd: workspace,
 		});
@@ -86,6 +108,12 @@ export async function runLoop(config: MatutoConfig, opts: LoopOptions): Promise<
 			logger.ok(
 				`Session ${session} complete for ${issueId} (${formatDuration(result.duration)})`,
 			);
+
+			// Post-processing: mark done if source supports it
+			if (source.markDone) {
+				await source.markDone(issueId, config.workspace);
+				logger.log(`Moved ${issueId} to done/`);
+			}
 		} else {
 			logger.error(
 				`Session ${session} failed for ${issueId}. Check ${logFile}`,

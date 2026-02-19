@@ -8,7 +8,7 @@ const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: MatutoConfig = {
 	provider: "claude",
-	model: "claude-sonnet-4-6",
+	model: "",
 	effort: "medium",
 	source: "linear",
 	source_config: {
