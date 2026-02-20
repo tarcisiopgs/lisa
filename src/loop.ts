@@ -38,8 +38,18 @@ function resolveModels(config: LisaConfig): ProviderName[] {
 	return [config.provider];
 }
 
-function buildPrBody(issue: { url: string }, providerUsed: ProviderName): string {
-	return `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`;
+function buildPrBody(providerUsed: ProviderName, description?: string): string {
+	const lines: string[] = [];
+
+	if (description) {
+		lines.push(description, "");
+	}
+
+	lines.push(
+		`Implemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`,
+	);
+
+	return lines.join("\n");
 }
 
 const PR_TITLE_FILE = ".pr-title";
@@ -67,6 +77,7 @@ interface LisaManifest {
 	repoPath?: string;
 	branch?: string;
 	prTitle?: string;
+	prBody?: string;
 }
 
 function readLisaManifest(dir: string): LisaManifest | null {
@@ -667,6 +678,7 @@ async function runWorktreeSession(
 	// Create PR from worktree
 	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest?.prTitle ?? readPrTitle(worktreePath) ?? issue.title;
+	const prBody = manifest?.prBody;
 	cleanupPrTitle(worktreePath);
 	cleanupManifest(worktreePath);
 
@@ -680,7 +692,7 @@ async function runWorktreeSession(
 				head: effectiveBranch,
 				base: defaultBranch,
 				title: prTitle,
-				body: buildPrBody(issue, result.providerUsed),
+				body: buildPrBody(result.providerUsed, prBody),
 			},
 			config.github,
 		);
@@ -795,6 +807,7 @@ async function runWorktreeMultiRepoSession(
 	// Create PR
 	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest.prTitle ?? issue.title;
+	const prBody = manifest.prBody;
 	const prUrls: string[] = [];
 	try {
 		const repoInfo = await getRepoInfo(effectiveCwd);
@@ -805,7 +818,7 @@ async function runWorktreeMultiRepoSession(
 				head: manifest.branch,
 				base: baseBranch,
 				title: prTitle,
-				body: buildPrBody(issue, result.providerUsed),
+				body: buildPrBody(result.providerUsed, prBody),
 			},
 			config.github,
 		);
@@ -933,6 +946,7 @@ async function runBranchSession(
 
 	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest?.prTitle ?? readPrTitle(workspace) ?? issue.title;
+	const prBody = manifest?.prBody;
 	cleanupPrTitle(workspace);
 
 	const prUrls: string[] = [];
@@ -949,7 +963,7 @@ async function runBranchSession(
 					head: branch,
 					base: baseBranch,
 					title: prTitle,
-					body: buildPrBody(issue, result.providerUsed),
+					body: buildPrBody(result.providerUsed, prBody),
 				},
 				config.github,
 			);
