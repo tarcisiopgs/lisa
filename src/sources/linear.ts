@@ -210,7 +210,9 @@ export class LinearSource implements Source {
 			throw new Error(`Status "${statusName}" not found. Available: ${available}`);
 		}
 
-		await gql(
+		const mutationResult = await gql<{
+			issueUpdate: { success: boolean };
+		}>(
 			`mutation($issueId: String!, $stateId: String!) {
 				issueUpdate(id: $issueId, input: { stateId: $stateId }) {
 					success
@@ -218,6 +220,12 @@ export class LinearSource implements Source {
 			}`,
 			{ issueId: issueData.issue.id, stateId: state.id },
 		);
+
+		if (!mutationResult.issueUpdate.success) {
+			throw new Error(
+				`issueUpdate returned success=false for ${issueId} (stateId: ${state.id}, stateName: ${state.name})`,
+			);
+		}
 	}
 
 	async attachPullRequest(_issueId: string, _prUrl: string): Promise<void> {
@@ -244,7 +252,9 @@ export class LinearSource implements Source {
 		// If nothing changed, skip
 		if (filtered.length === currentLabels.length) return;
 
-		await gql(
+		const mutationResult = await gql<{
+			issueUpdate: { success: boolean };
+		}>(
 			`mutation($issueId: String!, $labelIds: [String!]!) {
 				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
 					success
@@ -255,6 +265,12 @@ export class LinearSource implements Source {
 				labelIds: filtered.map((l) => l.id),
 			},
 		);
+
+		if (!mutationResult.issueUpdate.success) {
+			throw new Error(
+				`issueUpdate returned success=false when removing label "${labelName}" from ${issueId}`,
+			);
+		}
 	}
 }
 

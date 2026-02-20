@@ -297,16 +297,18 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			}
 		}
 
-		// Update issue status + remove label
+		// Update issue status + remove label (only remove label if status update succeeds)
+		let statusUpdated = false;
 		try {
 			const doneStatus = config.source_config.done;
 			await source.updateStatus(issue.id, doneStatus);
 			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
+			statusUpdated = true;
 		} catch (err) {
 			logger.error(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		if (!opts.issueId) {
+		if (statusUpdated && !opts.issueId) {
 			try {
 				await source.removeLabel(issue.id, config.source_config.label);
 				logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
