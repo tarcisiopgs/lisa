@@ -97,7 +97,7 @@ export class TrelloSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const board = await findBoardByName(config.team);
-		const list = await findListByName(board.id, config.project);
+		const list = await findListByName(board.id, config.pick_from);
 		const label = await findLabelByName(board.id, config.label);
 
 		const cards = await trelloGet<TrelloCard[]>(
