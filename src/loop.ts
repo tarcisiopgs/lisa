@@ -640,23 +640,31 @@ async function runWorktreeMultiRepoSession(
 	const worktreePath = join(manifest.repoPath, ".worktrees", manifest.branch);
 	const baseBranch = resolveBaseBranch(config, manifest.repoPath);
 
-	// Validate tests from within the worktree
-	const testsPassed = await runTestValidation(worktreePath);
+	// Use the worktree if the agent created it; fall back to repo root otherwise
+	// (agent may skip worktree creation if the branch already exists with the implementation)
+	const hasWorktree = existsSync(worktreePath);
+	const effectiveCwd = hasWorktree ? worktreePath : manifest.repoPath;
+	if (!hasWorktree) {
+		logger.warn(`Worktree not found at ${worktreePath} — using repo root for git operations`);
+	}
+
+	// Validate tests from within the worktree (or repo root if no worktree)
+	const testsPassed = await runTestValidation(effectiveCwd);
 	if (!testsPassed) {
 		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
-		await cleanupWorktree(manifest.repoPath, worktreePath);
+		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
 		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
 	// Push branch to remote (Lisa always pushes — never the agent)
 	try {
-		await execa("git", ["push", "-u", "origin", manifest.branch], { cwd: worktreePath });
+		await execa("git", ["push", "-u", "origin", manifest.branch], { cwd: effectiveCwd });
 	} catch (err) {
 		logger.error(
 			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
 		);
-		await cleanupWorktree(manifest.repoPath, worktreePath);
+		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
 		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
@@ -665,7 +673,7 @@ async function runWorktreeMultiRepoSession(
 	const prTitle = manifest.prTitle ?? issue.title;
 	const prUrls: string[] = [];
 	try {
-		const repoInfo = await getRepoInfo(worktreePath);
+		const repoInfo = await getRepoInfo(effectiveCwd);
 		const pr = await createPullRequest(
 			{
 				owner: repoInfo.owner,
@@ -684,7 +692,7 @@ async function runWorktreeMultiRepoSession(
 	}
 
 	cleanupManifest(workspace);
-	await cleanupWorktree(manifest.repoPath, worktreePath);
+	if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
