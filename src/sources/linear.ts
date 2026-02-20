@@ -232,6 +232,76 @@ export class LinearSource implements Source {
 		// Linear auto-links PRs via branch name — no manual attachment needed
 	}
 
+	async completeIssue(issueId: string, statusName: string, labelToRemove?: string): Promise<void> {
+		// Resolve issue internal ID, team, and current labels in a single query
+		const issueData = await gql<{
+			issue: {
+				id: string;
+				team: { id: string };
+				labels: { nodes: { id: string; name: string }[] };
+			};
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					team { id }
+					labels { nodes { id name } }
+				}
+			}`,
+			{ identifier: issueId },
+		);
+
+		// Resolve status name to state ID
+		const statesData = await gql<{
+			workflowStates: { nodes: { id: string; name: string }[] };
+		}>(
+			`query($teamId: ID!) {
+				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
+					nodes { id name }
+				}
+			}`,
+			{ teamId: issueData.issue.team.id },
+		);
+
+		const state = statesData.workflowStates.nodes.find(
+			(s) => s.name.toLowerCase() === statusName.toLowerCase(),
+		);
+		if (!state) {
+			const available = statesData.workflowStates.nodes.map((s) => s.name).join(", ");
+			throw new Error(`Status "${statusName}" not found. Available: ${available}`);
+		}
+
+		// Build a single issueUpdate input with both stateId and labelIds
+		const input: Record<string, unknown> = { stateId: state.id };
+
+		if (labelToRemove) {
+			const currentLabels = issueData.issue.labels.nodes;
+			const filtered = currentLabels.filter(
+				(l) => l.name.toLowerCase() !== labelToRemove.toLowerCase(),
+			);
+			if (filtered.length !== currentLabels.length) {
+				input.labelIds = filtered.map((l) => l.id);
+			}
+		}
+
+		const mutationResult = await gql<{
+			issueUpdate: { success: boolean };
+		}>(
+			`mutation($issueId: String!, $input: IssueUpdateInput!) {
+				issueUpdate(id: $issueId, input: $input) {
+					success
+				}
+			}`,
+			{ issueId: issueData.issue.id, input },
+		);
+
+		if (!mutationResult.issueUpdate.success) {
+			throw new Error(
+				`issueUpdate returned success=false for ${issueId} (stateId: ${state.id}, stateName: ${state.name})`,
+			);
+		}
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		// Get issue with current labels
 		const issueData = await gql<{

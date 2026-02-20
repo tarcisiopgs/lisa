@@ -149,6 +149,13 @@ export class TrelloSource implements Source {
 		await trelloPost(`/cards/${cardId}/attachments`, `url=${encodeURIComponent(prUrl)}`);
 	}
 
+	async completeIssue(cardId: string, listName: string, labelToRemove?: string): Promise<void> {
+		await this.updateStatus(cardId, listName);
+		if (labelToRemove) {
+			await this.removeLabel(cardId, labelToRemove);
+		}
+	}
+
 	async removeLabel(cardId: string, labelName: string): Promise<void> {
 		const card = await trelloGet<{ idBoard: string; idLabels: string[] }>(
 			`/cards/${cardId}`,

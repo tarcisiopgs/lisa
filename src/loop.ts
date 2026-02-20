@@ -403,24 +403,17 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			}
 		}
 
-		// Update issue status + remove label (only remove label if status update succeeds)
-		let statusUpdated = false;
+		// Update issue status + remove label atomically (single API call for Linear)
 		try {
 			const doneStatus = config.source_config.done;
-			await source.updateStatus(issue.id, doneStatus);
+			const labelToRemove = opts.issueId ? undefined : config.source_config.label;
+			await source.completeIssue(issue.id, doneStatus, labelToRemove);
 			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
-			statusUpdated = true;
-		} catch (err) {
-			logger.error(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
-		}
-
-		if (statusUpdated && !opts.issueId) {
-			try {
-				await source.removeLabel(issue.id, config.source_config.label);
-				logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
-			} catch (err) {
-				logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+			if (labelToRemove) {
+				logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
 			}
+		} catch (err) {
+			logger.error(`Failed to complete issue: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
 		activeCleanup = null;
