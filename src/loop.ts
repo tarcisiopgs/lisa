@@ -1,18 +1,18 @@
-import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createPullRequest, getRepoInfo } from "./github.js";
 import * as logger from "./logger.js";
 import { buildImplementPrompt } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import { createPullRequest, getRepoInfo } from "./github.js";
+import type { FallbackResult, LisaConfig, ProviderName } from "./types.js";
 import {
 	createWorktree,
-	removeWorktree,
-	generateBranchName,
-	determineRepoPath,
 	detectFeatureBranches,
+	determineRepoPath,
+	generateBranchName,
+	removeWorktree,
 } from "./worktree.js";
-import type { LisaConfig, FallbackResult, ProviderName } from "./types.js";
 
 export interface LoopOptions {
 	once: boolean;
@@ -56,7 +56,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
 
 		if (opts.dryRun) {
-			logger.log(`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			logger.log(
+				`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`,
+			);
 			logger.log(`[dry-run] Workflow mode: ${config.workflow}`);
 			logger.log(`[dry-run] Models priority: ${models.join(" → ")}`);
 			logger.log("[dry-run] Then implement, push, create PR, and update issue status");
@@ -90,9 +92,10 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		const sessionResult = config.workflow === "worktree"
-			? await runWorktreeSession(config, issue, logFile, session, models)
-			: await runBranchSession(config, issue, logFile, session, models);
+		const sessionResult =
+			config.workflow === "worktree"
+				? await runWorktreeSession(config, issue, logFile, session, models)
+				: await runBranchSession(config, issue, logFile, session, models);
 
 		if (!sessionResult.success) {
 			// All models failed — revert issue to previous status
@@ -102,7 +105,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				await source.updateStatus(issue.id, previousStatus);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (err) {
-				logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
+				logger.error(
+					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 
 			if (opts.once) {
@@ -198,7 +203,12 @@ async function runWorktreeSession(
 		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
 	} catch (err) {
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
-		return { success: false, providerUsed: models[0]!, prUrls: [], fallback: { success: false, output: "", duration: 0, providerUsed: models[0]!, attempts: [] } };
+		return {
+			success: false,
+			providerUsed: models[0]!,
+			prUrls: [],
+			fallback: { success: false, output: "", duration: 0, providerUsed: models[0]!, attempts: [] },
+		};
 	}
 
 	logger.ok(`Worktree created at ${worktreePath}`);
@@ -210,7 +220,10 @@ async function runWorktreeSession(
 	const result = await runWithFallback(models, prompt, { logFile, cwd: worktreePath });
 
 	try {
-		appendFileSync(logFile, `\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`);
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+		);
 	} catch {
 		// Ignore log write errors
 	}
@@ -225,14 +238,17 @@ async function runWorktreeSession(
 	const prUrls: string[] = [];
 	try {
 		const repoInfo = await getRepoInfo(worktreePath);
-		const pr = await createPullRequest({
-			owner: repoInfo.owner,
-			repo: repoInfo.repo,
-			head: branchName,
-			base: defaultBranch,
-			title: issue.title,
-			body: buildPrBody(issue, result.providerUsed),
-		}, config.github);
+		const pr = await createPullRequest(
+			{
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+				head: branchName,
+				base: defaultBranch,
+				title: issue.title,
+				body: buildPrBody(issue, result.providerUsed),
+			},
+			config.github,
+		);
 		logger.ok(`PR created: ${pr.html_url}`);
 		prUrls.push(pr.html_url);
 	} catch (err) {
@@ -261,7 +277,10 @@ async function runBranchSession(
 	const result = await runWithFallback(models, prompt, { logFile, cwd: workspace });
 
 	try {
-		appendFileSync(logFile, `\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`);
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+		);
 	} catch {
 		// Ignore log write errors
 	}
@@ -272,7 +291,12 @@ async function runBranchSession(
 	}
 
 	// Scan all repos to find where feature branches were created (may span multiple repos)
-	const detected = await detectFeatureBranches(config.repos, issue.id, workspace, config.base_branch);
+	const detected = await detectFeatureBranches(
+		config.repos,
+		issue.id,
+		workspace,
+		config.base_branch,
+	);
 
 	if (detected.length === 0) {
 		logger.error(`Could not detect feature branch for ${issue.id} — skipping PR creation`);
@@ -287,14 +311,17 @@ async function runBranchSession(
 
 		try {
 			const repoInfo = await getRepoInfo(repoPath);
-			const pr = await createPullRequest({
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-				head: branch,
-				base: baseBranch,
-				title: issue.title,
-				body: buildPrBody(issue, result.providerUsed),
-			}, config.github);
+			const pr = await createPullRequest(
+				{
+					owner: repoInfo.owner,
+					repo: repoInfo.repo,
+					head: branch,
+					base: baseBranch,
+					title: issue.title,
+					body: buildPrBody(issue, result.providerUsed),
+				},
+				config.github,
+			);
 			logger.ok(`PR created: ${pr.html_url}`);
 			prUrls.push(pr.html_url);
 		} catch (err) {

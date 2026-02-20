@@ -1,4 +1,4 @@
-import type { Provider, ProviderName, RunOptions, FallbackResult, ModelAttempt } from "../types.js";
+import type { FallbackResult, ModelAttempt, Provider, ProviderName, RunOptions } from "../types.js";
 import { ClaudeProvider } from "./claude.js";
 import { GeminiProvider } from "./gemini.js";
 import { OpenCodeProvider } from "./opencode.js";
