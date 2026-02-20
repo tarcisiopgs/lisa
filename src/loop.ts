@@ -12,6 +12,7 @@ import {
 } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
+import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./terminal.js";
 import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
 import {
 	createWorktree,
@@ -168,6 +169,8 @@ function installSignalHandlers(): void {
 			process.exit(1);
 		}
 		shuttingDown = true;
+		stopSpinner();
+		resetTitle();
 		logger.warn(`Received ${signal}. Reverting active issue...`);
 
 		if (activeCleanup) {
@@ -263,6 +266,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		logger.divider(session);
 
 		// 1. Fetch issue — either by ID or from queue
+		startSpinner("fetching issue...");
 		if (opts.issueId) {
 			logger.log(`Fetching issue '${opts.issueId}' from ${config.source}...`);
 		} else {
@@ -270,6 +274,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		if (opts.dryRun) {
+			stopSpinner();
 			if (opts.issueId) {
 				logger.log(`[dry-run] Would fetch issue '${opts.issueId}' from ${config.source}`);
 			} else {
@@ -289,11 +294,15 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				? await source.fetchIssueById(opts.issueId)
 				: await source.fetchNextIssue(config.source_config);
 		} catch (err) {
+			stopSpinner();
 			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
 			if (opts.once) break;
+			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
 			continue;
 		}
+
+		stopSpinner();
 
 		if (!issue) {
 			if (opts.issueId) {
@@ -305,6 +314,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
+		setTitle(`Lisa \u2014 ${issue.id}`);
 
 		// Move issue to in-progress status before starting work
 		const previousStatus = config.source_config.pick_from;
@@ -326,6 +336,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 					? await runWorktreeSession(config, issue, logFile, session, models)
 					: await runBranchSession(config, issue, logFile, session, models);
 		} catch (err) {
+			stopSpinner();
 			logger.error(
 				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
 			);
@@ -338,8 +349,10 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				);
 			}
 			activeCleanup = null;
+			notify();
 			if (opts.once) break;
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
 			continue;
 		}
@@ -357,12 +370,14 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				);
 			}
 			activeCleanup = null;
+			notify();
 
 			if (opts.once) {
 				logger.log("Single iteration mode. Exiting.");
 				break;
 			}
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
 			continue;
 		}
@@ -383,12 +398,14 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				);
 			}
 			activeCleanup = null;
+			notify();
 
 			if (opts.once) {
 				logger.log("Single iteration mode. Exiting.");
 				break;
 			}
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
 			continue;
 		}
@@ -417,6 +434,8 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		activeCleanup = null;
+		stopSpinner(`\u2713 Lisa \u2014 ${issue.id} \u2014 PR created`);
+		notify();
 
 		if (opts.once) {
 			logger.log("Single iteration mode. Exiting.");
@@ -424,9 +443,11 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+		setTitle("Lisa \u2014 cooling down...");
 		await sleep(config.loop.cooldown * 1000);
 	}
 
+	resetTitle();
 	logger.ok(`lisa finished. ${session} session(s) run.`);
 }
 
@@ -506,12 +527,14 @@ async function runWorktreeSession(
 	const defaultBranch = resolveBaseBranch(config, repoPath);
 	const branchName = generateBranchName(issue.id, issue.title);
 
+	startSpinner(`${issue.id} \u2014 creating worktree...`);
 	logger.log(`Creating worktree for ${branchName} (base: ${defaultBranch})...`);
 
 	let worktreePath: string;
 	try {
 		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
 	} catch (err) {
+		stopSpinner();
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
 		return {
 			success: false,
@@ -527,12 +550,15 @@ async function runWorktreeSession(
 		};
 	}
 
+	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
 	if (repo?.lifecycle) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const started = await startResources(repo, worktreePath);
+		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
 			await cleanupWorktree(repoPath, worktreePath);
@@ -558,6 +584,7 @@ async function runWorktreeSession(
 	}
 
 	const prompt = buildImplementPrompt(issue, config, testRunner);
+	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -568,6 +595,7 @@ async function runWorktreeSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
+	stopSpinner();
 
 	try {
 		appendFileSync(
@@ -590,7 +618,9 @@ async function runWorktreeSession(
 	}
 
 	// Validate tests before creating PR
+	startSpinner(`${issue.id} \u2014 validating tests...`);
 	const testsPassed = await runTestValidation(worktreePath);
+	stopSpinner();
 	if (!testsPassed) {
 		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
 		await cleanupWorktree(repoPath, worktreePath);
@@ -616,6 +646,7 @@ async function runWorktreeSession(
 	}
 
 	// Ensure branch is pushed to remote before creating PR (with hook recovery)
+	startSpinner(`${issue.id} \u2014 pushing...`);
 	const pushResult = await pushWithRecovery({
 		branch: effectiveBranch,
 		cwd: worktreePath,
@@ -625,6 +656,7 @@ async function runWorktreeSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
+	stopSpinner();
 	if (!pushResult.success) {
 		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
 		cleanupManifest(worktreePath);
@@ -633,6 +665,7 @@ async function runWorktreeSession(
 	}
 
 	// Create PR from worktree
+	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest?.prTitle ?? readPrTitle(worktreePath) ?? issue.title;
 	cleanupPrTitle(worktreePath);
 	cleanupManifest(worktreePath);
@@ -656,6 +689,7 @@ async function runWorktreeSession(
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
+	stopSpinner();
 
 	await cleanupWorktree(repoPath, worktreePath);
 
@@ -676,6 +710,7 @@ async function runWorktreeMultiRepoSession(
 	cleanupManifest(workspace);
 
 	const prompt = buildWorktreeMultiRepoPrompt(issue, config);
+	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Multi-repo worktree session for ${issue.id} (agent selects repo and branch name)`);
 	logger.log(`Implementing (agent selects repo)... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -687,6 +722,7 @@ async function runWorktreeMultiRepoSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
+	stopSpinner();
 
 	try {
 		appendFileSync(
@@ -727,7 +763,9 @@ async function runWorktreeMultiRepoSession(
 	}
 
 	// Validate tests from within the worktree (or repo root if no worktree)
+	startSpinner(`${issue.id} \u2014 validating tests...`);
 	const testsPassed = await runTestValidation(effectiveCwd);
+	stopSpinner();
 	if (!testsPassed) {
 		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
 		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
@@ -736,6 +774,7 @@ async function runWorktreeMultiRepoSession(
 	}
 
 	// Push branch to remote with hook recovery (Lisa always pushes — never the agent)
+	startSpinner(`${issue.id} \u2014 pushing...`);
 	const pushResult = await pushWithRecovery({
 		branch: manifest.branch,
 		cwd: effectiveCwd,
@@ -745,6 +784,7 @@ async function runWorktreeMultiRepoSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
+	stopSpinner();
 	if (!pushResult.success) {
 		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
 		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
@@ -753,6 +793,7 @@ async function runWorktreeMultiRepoSession(
 	}
 
 	// Create PR
+	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest.prTitle ?? issue.title;
 	const prUrls: string[] = [];
 	try {
@@ -773,6 +814,7 @@ async function runWorktreeMultiRepoSession(
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
+	stopSpinner();
 
 	cleanupManifest(workspace);
 	if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
@@ -804,8 +846,10 @@ async function runBranchSession(
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
 	if (repo?.lifecycle) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const cwd = resolve(workspace, repo.path);
 		const started = await startResources(repo, cwd);
+		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
 			return {
@@ -823,6 +867,7 @@ async function runBranchSession(
 		}
 	}
 
+	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -833,6 +878,7 @@ async function runBranchSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
+	stopSpinner();
 
 	try {
 		appendFileSync(
@@ -854,7 +900,9 @@ async function runBranchSession(
 	}
 
 	// Validate tests before creating PR
+	startSpinner(`${issue.id} \u2014 validating tests...`);
 	const testsPassed = await runTestValidation(workspace);
+	stopSpinner();
 	if (!testsPassed) {
 		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
 		cleanupManifest(workspace);
@@ -883,6 +931,7 @@ async function runBranchSession(
 		return { success: true, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
+	startSpinner(`${issue.id} \u2014 creating PR...`);
 	const prTitle = manifest?.prTitle ?? readPrTitle(workspace) ?? issue.title;
 	cleanupPrTitle(workspace);
 
@@ -910,6 +959,7 @@ async function runBranchSession(
 			logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
+	stopSpinner();
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
