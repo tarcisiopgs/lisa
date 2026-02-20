@@ -1,3 +1,4 @@
+import * as logger from "../logger.js";
 import type { Issue, Source, SourceConfig } from "../types.js";
 
 const API_URL = "https://api.linear.app/graphql";
@@ -45,6 +46,15 @@ export class LinearSource implements Source {
 					description: string;
 					url: string;
 					priority: number;
+					inverseRelations: {
+						nodes: {
+							type: string;
+							issue: {
+								identifier: string;
+								state: { type: string };
+							};
+						}[];
+					};
 				}[];
 			};
 		}>(
@@ -56,7 +66,7 @@ export class LinearSource implements Source {
 						labels: { name: { eq: $labelName } }
 						state: { name: { eq: $statusName } }
 					}
-					first: 20
+					first: 50
 				) {
 					nodes {
 						id
@@ -65,6 +75,15 @@ export class LinearSource implements Source {
 						description
 						url
 						priority
+						inverseRelations(first: 50) {
+							nodes {
+								type
+								issue {
+									identifier
+									state { type }
+								}
+							}
+						}
 					}
 				}
 			}`,
@@ -79,14 +98,45 @@ export class LinearSource implements Source {
 		const issues = data.issues.nodes;
 		if (issues.length === 0) return null;
 
+		// Separate unblocked from blocked issues based on dependency relations
+		const unblocked: typeof issues = [];
+		const blocked: { identifier: string; blockers: string[] }[] = [];
+
+		for (const issue of issues) {
+			const activeBlockers = issue.inverseRelations.nodes
+				.filter((r) => r.type === "blocks")
+				.filter(
+					(r) => r.issue.state.type !== "completed" && r.issue.state.type !== "canceled",
+				)
+				.map((r) => r.issue.identifier);
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ identifier: issue.identifier, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  ${entry.identifier} — blocked by: ${entry.blockers.join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority: 1=urgent, 2=high, 3=medium, 4=low, 0=no priority
-		issues.sort((a, b) => {
+		unblocked.sort((a, b) => {
 			const pa = a.priority === 0 ? 5 : a.priority;
 			const pb = b.priority === 0 ? 5 : b.priority;
 			return pa - pb;
 		});
 
-		const issue = issues[0]!;
+		const issue = unblocked[0]!;
 		return {
 			id: issue.identifier,
 			title: issue.title,
