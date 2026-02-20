@@ -162,10 +162,10 @@ ${readmeBlock}${hookBlock}
      "repoPath": "<absolute path to the chosen repo>",
      "branch": "<your English branch name>",
      "prTitle": "<PR title in English, conventional commit format>",
-     "prBody": "<English summary of what was implemented and why, 2-5 sentences>"
+     "prBody": "<markdown-formatted English summary>"
    }
    \`\`\`
-   The \`prBody\` should describe WHAT was changed and WHY, not just repeat the title. Mention key files modified, new behavior added, or bugs fixed. Write in English.
+   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
    Do NOT commit this file.
 
 ## Rules
@@ -226,9 +226,9 @@ ${testBlock}${readmeBlock}${hookBlock}
 
 4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
    \`\`\`json
-   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<English summary of what was implemented and why, 2-5 sentences>"}
+   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` should describe WHAT was changed and WHY, not just repeat the title. Mention key files modified, new behavior added, or bugs fixed. Write in English.
+   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
    Do NOT commit this file.
 
 ## Rules
@@ -306,9 +306,9 @@ ${testBlock}${readmeBlock}${hookBlock}
 
 6. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
    \`\`\`json
-   {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<English summary of what was implemented and why, 2-5 sentences>"}
+   {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` should describe WHAT was changed and WHY, not just repeat the title. Mention key files modified, new behavior added, or bugs fixed. Write in English.
+   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
    Do NOT commit this file.
 
 ## Rules

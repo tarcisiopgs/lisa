@@ -42,10 +42,12 @@ function buildPrBody(providerUsed: ProviderName, description?: string): string {
 	const lines: string[] = [];
 
 	if (description) {
-		lines.push(description, "");
+		lines.push("## Summary", "", description, "");
 	}
 
 	lines.push(
+		"---",
+		"",
 		`Implemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`,
 	);
 
