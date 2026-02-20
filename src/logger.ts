@@ -119,7 +119,7 @@ export function banner(): void {
                    @@@@%%@##%
 `;
 
-	const title = " lisa — deterministic autonomous issue resolver ";
+	const title = " Lisa — deterministic autonomous issue resolver ";
 	const border = "─".repeat(title.length);
 
 	console.log(pc.yellow(art));
