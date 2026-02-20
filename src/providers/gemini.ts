@@ -30,9 +30,7 @@ export class GeminiProvider implements Provider {
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
-			const overseer = opts.overseer?.enabled
-				? startOverseer(proc, opts.cwd, opts.overseer)
-				: null;
+			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 
 			const chunks: string[] = [];
 

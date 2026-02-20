@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import type { LisaConfig, LogFormat, OverseerConfig, ProviderName, SourceConfig, SourceName } from "./types.js";
+import type {
+	LisaConfig,
+	LogFormat,
+	OverseerConfig,
+	ProviderName,
+	SourceConfig,
+	SourceName,
+} from "./types.js";
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
 	enabled: false,
@@ -79,7 +86,10 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		source_config: sourceConfig,
 		loop: { ...DEFAULT_CONFIG.loop, ...((parsed.loop ?? {}) as LisaConfig["loop"]) },
 		logs: { ...DEFAULT_CONFIG.logs, ...((parsed.logs ?? {}) as LisaConfig["logs"]) },
-		overseer: { ...DEFAULT_OVERSEER_CONFIG, ...((parsed.overseer ?? {}) as Partial<OverseerConfig>) },
+		overseer: {
+			...DEFAULT_OVERSEER_CONFIG,
+			...((parsed.overseer ?? {}) as Partial<OverseerConfig>),
+		},
 	};
 
 	// Backward compat: fill base_branch if missing
