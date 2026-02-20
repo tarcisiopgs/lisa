@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import type { LisaConfig, SourceConfig } from "./types.js";
+import type { LisaConfig, LogFormat, ProviderName, SourceConfig, SourceName } from "./types.js";
 
 const CONFIG_DIR = ".lisa";
 const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {
-	provider: "",
-	source: "",
+	provider: "" as ProviderName,
+	source: "" as SourceName,
 	source_config: {
 		team: "",
 		project: "",
@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 	},
 	logs: {
 		dir: "",
-		format: "",
+		format: "" as LogFormat,
 	},
 };
 
