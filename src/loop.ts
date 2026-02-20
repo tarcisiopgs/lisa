@@ -1,11 +1,12 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createPullRequest, getRepoInfo } from "./github.js";
+import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
 import { buildImplementPrompt } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import type { FallbackResult, LisaConfig, ProviderName, Source } from "./types.js";
+import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
 import {
 	createWorktree,
 	detectFeatureBranches,
@@ -22,6 +23,7 @@ export interface LoopOptions {
 	once: boolean;
 	limit: number;
 	dryRun: boolean;
+	issueId?: string;
 }
 
 function resolveModels(config: LisaConfig): ProviderName[] {
@@ -134,13 +136,21 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		logger.divider(session);
 
-		// 1. Fetch next issue via API
-		logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+		// 1. Fetch issue — either by ID or from queue
+		if (opts.issueId) {
+			logger.log(`Fetching issue '${opts.issueId}' from ${config.source}...`);
+		} else {
+			logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+		}
 
 		if (opts.dryRun) {
-			logger.log(
-				`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`,
-			);
+			if (opts.issueId) {
+				logger.log(`[dry-run] Would fetch issue '${opts.issueId}' from ${config.source}`);
+			} else {
+				logger.log(
+					`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`,
+				);
+			}
 			logger.log(`[dry-run] Workflow mode: ${config.workflow}`);
 			logger.log(`[dry-run] Models priority: ${models.join(" → ")}`);
 			logger.log("[dry-run] Then implement, push, create PR, and update issue status");
@@ -149,7 +159,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		let issue: Awaited<ReturnType<typeof source.fetchNextIssue>>;
 		try {
-			issue = await source.fetchNextIssue(config.source_config);
+			issue = opts.issueId
+				? await source.fetchIssueById(opts.issueId)
+				: await source.fetchNextIssue(config.source_config);
 		} catch (err) {
 			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
 			if (opts.once) break;
@@ -158,7 +170,11 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		if (!issue) {
-			logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+			if (opts.issueId) {
+				logger.error(`Issue '${opts.issueId}' not found.`);
+			} else {
+				logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+			}
 			break;
 		}
 
@@ -270,11 +286,13 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.error(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		try {
-			await source.removeLabel(issue.id, config.source_config.label);
-			logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
-		} catch (err) {
-			logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+		if (!opts.issueId) {
+			try {
+				await source.removeLabel(issue.id, config.source_config.label);
+				logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
+			} catch (err) {
+				logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+			}
 		}
 
 		activeCleanup = null;
@@ -313,6 +331,24 @@ function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
 	return repo?.base_branch ?? config.base_branch;
 }
 
+function findRepoConfig(
+	config: LisaConfig,
+	issue: { repo?: string; title: string },
+): RepoConfig | undefined {
+	if (config.repos.length === 0) return undefined;
+
+	if (issue.repo) {
+		const match = config.repos.find((r) => r.name === issue.repo);
+		if (match) return match;
+	}
+
+	for (const r of config.repos) {
+		if (r.match && issue.title.startsWith(r.match)) return r;
+	}
+
+	return config.repos[0];
+}
+
 async function runWorktreeSession(
 	config: LisaConfig,
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
@@ -345,6 +381,28 @@ async function runWorktreeSession(
 
 	logger.ok(`Worktree created at ${worktreePath}`);
 
+	// Start lifecycle resources before implementation
+	const repo = findRepoConfig(config, issue);
+	if (repo?.lifecycle) {
+		const started = await startResources(repo, worktreePath);
+		if (!started) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return {
+				success: false,
+				providerUsed: models[0]!,
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]!,
+					attempts: [],
+				},
+			};
+		}
+	}
+
 	const prompt = buildImplementPrompt(issue, config);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -358,6 +416,11 @@ async function runWorktreeSession(
 		);
 	} catch {
 		// Ignore log write errors
+	}
+
+	// Stop lifecycle resources after implementation
+	if (repo?.lifecycle) {
+		await stopResources();
 	}
 
 	if (!result.success) {
@@ -403,6 +466,28 @@ async function runBranchSession(
 	const prompt = buildImplementPrompt(issue, config);
 	const workspace = resolve(config.workspace);
 
+	// Start lifecycle resources before implementation
+	const repo = findRepoConfig(config, issue);
+	if (repo?.lifecycle) {
+		const cwd = resolve(workspace, repo.path);
+		const started = await startResources(repo, cwd);
+		if (!started) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return {
+				success: false,
+				providerUsed: models[0]!,
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]!,
+					attempts: [],
+				},
+			};
+		}
+	}
+
 	logger.log(`Implementing... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -415,6 +500,11 @@ async function runBranchSession(
 		);
 	} catch {
 		// Ignore log write errors
+	}
+
+	// Stop lifecycle resources after implementation
+	if (repo?.lifecycle) {
+		await stopResources();
 	}
 
 	if (!result.success) {
