@@ -26,12 +26,51 @@ export function generateBranchName(issueId: string, title: string): string {
 	return `feat/${issueId.toLowerCase()}-${slug}`;
 }
 
+/**
+ * Removes an orphaned worktree and its associated local branch, if they exist.
+ * Returns true if cleanup was performed, false if there was nothing to clean up.
+ */
+export async function cleanupOrphanedWorktree(
+	repoRoot: string,
+	branchName: string,
+): Promise<boolean> {
+	// Check if branch exists locally
+	const { stdout: branchList } = await execa("git", ["branch", "--list", branchName], {
+		cwd: repoRoot,
+		reject: false,
+	});
+
+	if (!branchList.trim()) {
+		return false;
+	}
+
+	// Check if there is an associated worktree and remove it
+	const worktreePath = join(repoRoot, WORKTREES_DIR, branchName);
+	const { stdout: worktreeList } = await execa("git", ["worktree", "list", "--porcelain"], {
+		cwd: repoRoot,
+		reject: false,
+	});
+
+	if (worktreeList.includes(worktreePath)) {
+		await execa("git", ["worktree", "remove", worktreePath, "--force"], { cwd: repoRoot });
+		await execa("git", ["worktree", "prune"], { cwd: repoRoot });
+	}
+
+	// Delete the local branch
+	await execa("git", ["branch", "-D", branchName], { cwd: repoRoot });
+
+	return true;
+}
+
 export async function createWorktree(
 	repoRoot: string,
 	branchName: string,
 	baseBranch: string,
 ): Promise<string> {
 	const worktreePath = join(repoRoot, WORKTREES_DIR, branchName);
+
+	// Remove any orphaned worktree/branch before creating a fresh one
+	await cleanupOrphanedWorktree(repoRoot, branchName);
 
 	await execa("git", ["fetch", "origin", baseBranch], { cwd: repoRoot });
 	await execa("git", ["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`], {
