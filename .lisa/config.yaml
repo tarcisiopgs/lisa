@@ -1,0 +1,20 @@
+provider: gemini
+source: linear
+source_config:
+  team: Internal
+  project: Lisa
+  label: ready
+  pick_from: Backlog
+  in_progress: In Progress
+  done: In Review
+github: cli
+workflow: worktree
+workspace: .
+base_branch: main
+repos: []
+loop:
+  cooldown: 10
+  max_sessions: 0
+logs:
+  dir: .lisa/logs
+  format: text
