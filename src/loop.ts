@@ -5,7 +5,7 @@ import * as logger from "./logger.js";
 import { buildImplementPrompt } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import type { FallbackResult, LisaConfig, ProviderName } from "./types.js";
+import type { FallbackResult, LisaConfig, ProviderName, Source } from "./types.js";
 import {
 	createWorktree,
 	detectFeatureBranches,
@@ -13,6 +13,10 @@ import {
 	generateBranchName,
 	removeWorktree,
 } from "./worktree.js";
+
+// === Module-level state for signal handler cleanup ===
+let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;
+let shuttingDown = false;
 
 export interface LoopOptions {
 	once: boolean;
@@ -29,13 +33,91 @@ function buildPrBody(issue: { url: string }, providerUsed: ProviderName): string
 	return `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`;
 }
 
+function installSignalHandlers(): void {
+	const cleanup = async (signal: string): Promise<void> => {
+		if (shuttingDown) {
+			logger.warn("Force exiting...");
+			process.exit(1);
+		}
+		shuttingDown = true;
+		logger.warn(`Received ${signal}. Reverting active issue...`);
+
+		if (activeCleanup) {
+			const { issueId, previousStatus, source } = activeCleanup;
+			try {
+				await Promise.race([
+					source.updateStatus(issueId, previousStatus),
+					new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error("Revert timed out")), 5000),
+					),
+				]);
+				logger.ok(`Reverted ${issueId} to "${previousStatus}"`);
+			} catch (err) {
+				logger.error(
+					`Failed to revert ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		}
+
+		process.exit(1);
+	};
+
+	process.on("SIGINT", () => {
+		cleanup("SIGINT");
+	});
+	process.on("SIGTERM", () => {
+		cleanup("SIGTERM");
+	});
+}
+
+async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<void> {
+	const orphanConfig = {
+		...config.source_config,
+		pick_from: config.source_config.in_progress,
+	};
+
+	while (true) {
+		let orphan: Awaited<ReturnType<typeof source.fetchNextIssue>>;
+		try {
+			orphan = await source.fetchNextIssue(orphanConfig);
+		} catch (err) {
+			logger.warn(
+				`Failed to check for orphan issues: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			break;
+		}
+
+		if (!orphan) break;
+
+		logger.warn(
+			`Found orphan issue ${orphan.id} stuck in "${config.source_config.in_progress}". Reverting to "${config.source_config.pick_from}".`,
+		);
+		try {
+			await source.updateStatus(orphan.id, config.source_config.pick_from);
+			logger.ok(`Recovered orphan ${orphan.id}`);
+		} catch (err) {
+			logger.error(
+				`Failed to recover orphan ${orphan.id}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			break;
+		}
+	}
+}
+
 export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<void> {
 	const source = createSource(config.source);
 	const models = resolveModels(config);
 
+	installSignalHandlers();
+
 	logger.log(
 		`Starting loop (models: ${models.join(" → ")}, source: ${config.source}, label: ${config.source_config.label}, workflow: ${config.workflow})`,
 	);
+
+	// Recover orphan issues stuck in in_progress from previous interrupted runs
+	if (!opts.dryRun) {
+		await recoverOrphanIssues(source, config);
+	}
 
 	let session = 0;
 
@@ -92,10 +174,33 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		const sessionResult =
-			config.workflow === "worktree"
-				? await runWorktreeSession(config, issue, logFile, session, models)
-				: await runBranchSession(config, issue, logFile, session, models);
+		// Register active issue for signal handler cleanup
+		activeCleanup = { issueId: issue.id, previousStatus, source };
+
+		let sessionResult: SessionResult;
+		try {
+			sessionResult =
+				config.workflow === "worktree"
+					? await runWorktreeSession(config, issue, logFile, session, models)
+					: await runBranchSession(config, issue, logFile, session, models);
+		} catch (err) {
+			logger.error(
+				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			try {
+				await source.updateStatus(issue.id, previousStatus);
+				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			} catch (revertErr) {
+				logger.error(
+					`Failed to revert status: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}`,
+				);
+			}
+			activeCleanup = null;
+			if (opts.once) break;
+			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			await sleep(config.loop.cooldown * 1000);
+			continue;
+		}
 
 		if (!sessionResult.success) {
 			// All models failed — revert issue to previous status
@@ -109,6 +214,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
 				);
 			}
+			activeCleanup = null;
 
 			if (opts.once) {
 				logger.log("Single iteration mode. Exiting.");
@@ -121,6 +227,30 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		logger.ok(`Completed with provider: ${sessionResult.providerUsed}`);
 
+		// Only move to done if PRs were actually created
+		if (sessionResult.prUrls.length === 0) {
+			logger.warn(
+				`Session succeeded but no PRs created for ${issue.id}. Reverting to "${previousStatus}".`,
+			);
+			try {
+				await source.updateStatus(issue.id, previousStatus);
+				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			} catch (err) {
+				logger.error(
+					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+			activeCleanup = null;
+
+			if (opts.once) {
+				logger.log("Single iteration mode. Exiting.");
+				break;
+			}
+			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			await sleep(config.loop.cooldown * 1000);
+			continue;
+		}
+
 		// Attach PR links to issue card
 		for (const prUrl of sessionResult.prUrls) {
 			try {
@@ -131,7 +261,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			}
 		}
 
-		// Update issue status + remove label (shared by both modes)
+		// Update issue status + remove label
 		try {
 			const doneStatus = config.source_config.done;
 			await source.updateStatus(issue.id, doneStatus);
@@ -146,6 +276,8 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		} catch (err) {
 			logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
 		}
+
+		activeCleanup = null;
 
 		if (opts.once) {
 			logger.log("Single iteration mode. Exiting.");
