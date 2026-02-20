@@ -1,4 +1,4 @@
-provider: gemini
+provider: claude
 source: linear
 source_config:
   team: Internal
