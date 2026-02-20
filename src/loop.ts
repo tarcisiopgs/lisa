@@ -1,9 +1,10 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { execa } from "execa";
 import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
-import { buildImplementPrompt } from "./prompt.js";
+import { buildImplementPrompt, detectTestRunner } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
@@ -349,6 +350,22 @@ function findRepoConfig(
 	return config.repos[0];
 }
 
+async function runTestValidation(cwd: string): Promise<boolean> {
+	const testRunner = detectTestRunner(cwd);
+	if (!testRunner) return true;
+
+	logger.log(`Running test validation (${testRunner} detected)...`);
+	try {
+		await execa("npm", ["run", "test"], { cwd, stdio: "pipe" });
+		logger.ok("Tests passed.");
+		return true;
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		logger.error(`Tests failed: ${message}`);
+		return false;
+	}
+}
+
 async function runWorktreeSession(
 	config: LisaConfig,
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
@@ -403,7 +420,13 @@ async function runWorktreeSession(
 		}
 	}
 
-	const prompt = buildImplementPrompt(issue, config);
+	// Detect test runner for prompt enhancement
+	const testRunner = detectTestRunner(worktreePath);
+	if (testRunner) {
+		logger.log(`Detected test runner: ${testRunner}`);
+	}
+
+	const prompt = buildImplementPrompt(issue, config, testRunner);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -425,6 +448,14 @@ async function runWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Validate tests before creating PR
+	const testsPassed = await runTestValidation(worktreePath);
+	if (!testsPassed) {
+		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
@@ -463,8 +494,15 @@ async function runBranchSession(
 	session: number,
 	models: ProviderName[],
 ): Promise<SessionResult> {
-	const prompt = buildImplementPrompt(issue, config);
 	const workspace = resolve(config.workspace);
+
+	// Detect test runner for prompt enhancement
+	const testRunner = detectTestRunner(workspace);
+	if (testRunner) {
+		logger.log(`Detected test runner: ${testRunner}`);
+	}
+
+	const prompt = buildImplementPrompt(issue, config, testRunner);
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
@@ -509,6 +547,13 @@ async function runBranchSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Validate tests before creating PR
+	const testsPassed = await runTestValidation(workspace);
+	if (!testsPassed) {
+		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
