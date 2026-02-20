@@ -1,10 +1,10 @@
-import { appendFileSync, readFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
 import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
-import { buildImplementPrompt, detectTestRunner } from "./prompt.js";
+import { buildImplementPrompt, buildWorktreeMultiRepoPrompt, detectTestRunner } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
@@ -50,6 +50,33 @@ function readPrTitle(cwd: string): string | null {
 function cleanupPrTitle(cwd: string): void {
 	try {
 		unlinkSync(join(cwd, PR_TITLE_FILE));
+	} catch {
+		// File may not exist — ignore
+	}
+}
+
+const MANIFEST_FILE = ".lisa-manifest.json";
+
+interface LisaManifest {
+	repoPath: string;
+	prTitle?: string;
+}
+
+function readLisaManifest(workspace: string): LisaManifest | null {
+	const manifestPath = join(workspace, MANIFEST_FILE);
+	if (!existsSync(manifestPath)) return null;
+	try {
+		const parsed = JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
+		if (!parsed.repoPath || typeof parsed.repoPath !== "string") return null;
+		return parsed;
+	} catch {
+		return null;
+	}
+}
+
+function cleanupManifest(workspace: string): void {
+	try {
+		unlinkSync(join(workspace, MANIFEST_FILE));
 	} catch {
 		// File may not exist — ignore
 	}
@@ -394,6 +421,11 @@ async function runWorktreeSession(
 	session: number,
 	models: ProviderName[],
 ): Promise<SessionResult> {
+	// Multi-repo: delegate repo selection and worktree creation to the provider
+	if (config.repos.length > 1) {
+		return runWorktreeMultiRepoSession(config, issue, logFile, session, models);
+	}
+
 	const workspace = resolve(config.workspace);
 
 	// Determine target repo root
@@ -529,6 +561,110 @@ async function runWorktreeSession(
 	}
 
 	await cleanupWorktree(repoPath, worktreePath);
+
+	logger.ok(`Session ${session} complete for ${issue.id}`);
+	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+}
+
+async function runWorktreeMultiRepoSession(
+	config: LisaConfig,
+	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	logFile: string,
+	session: number,
+	models: ProviderName[],
+): Promise<SessionResult> {
+	const workspace = resolve(config.workspace);
+	const branchName = generateBranchName(issue.id, issue.title);
+
+	// Clean stale manifest from a previous interrupted run
+	cleanupManifest(workspace);
+
+	const prompt = buildWorktreeMultiRepoPrompt(issue, config, branchName);
+	logger.log(`Multi-repo worktree session for ${issue.id} (branch: ${branchName})`);
+	logger.log(`Implementing (agent selects repo)... (log: ${logFile})`);
+	logger.initLogFile(logFile);
+
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: workspace,
+		guardrailsDir: workspace,
+		issueId: issue.id,
+		overseer: config.overseer,
+	});
+
+	try {
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+		);
+	} catch {
+		// Ignore log write errors
+	}
+
+	if (!result.success) {
+		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		cleanupManifest(workspace);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Read manifest written by the provider
+	const manifest = readLisaManifest(workspace);
+	if (!manifest) {
+		logger.error(`Agent did not produce a valid .lisa-manifest.json for ${issue.id}. Aborting.`);
+		cleanupManifest(workspace);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	logger.ok(`Provider chose repo: ${manifest.repoPath}`);
+
+	const worktreePath = join(manifest.repoPath, ".worktrees", branchName);
+	const baseBranch = resolveBaseBranch(config, manifest.repoPath);
+
+	// Validate tests from within the worktree
+	const testsPassed = await runTestValidation(worktreePath);
+	if (!testsPassed) {
+		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
+		await cleanupWorktree(manifest.repoPath, worktreePath);
+		cleanupManifest(workspace);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Push branch to remote (Lisa always pushes — never the agent)
+	try {
+		await execa("git", ["push", "-u", "origin", branchName], { cwd: worktreePath });
+	} catch (err) {
+		logger.error(
+			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
+		);
+		await cleanupWorktree(manifest.repoPath, worktreePath);
+		cleanupManifest(workspace);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Create PR
+	const prTitle = manifest.prTitle ?? issue.title;
+	const prUrls: string[] = [];
+	try {
+		const repoInfo = await getRepoInfo(worktreePath);
+		const pr = await createPullRequest(
+			{
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+				head: branchName,
+				base: baseBranch,
+				title: prTitle,
+				body: buildPrBody(issue, result.providerUsed),
+			},
+			config.github,
+		);
+		logger.ok(`PR created: ${pr.html_url}`);
+		prUrls.push(pr.html_url);
+	} catch (err) {
+		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+	}
+
+	cleanupManifest(workspace);
+	await cleanupWorktree(manifest.repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };

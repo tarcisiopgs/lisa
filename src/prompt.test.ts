@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildImplementPrompt, detectTestRunner } from "./prompt.js";
+import { buildImplementPrompt, buildWorktreeMultiRepoPrompt, detectTestRunner } from "./prompt.js";
 import type { Issue, LisaConfig } from "./types.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
@@ -159,6 +159,67 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("Configuration schema changes");
 			expect(prompt).toContain("Do NOT update README.md for");
 			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+		});
+	});
+
+	describe("worktree mode — multi-repo", () => {
+		const multiRepoConfig = makeConfig({
+			workflow: "worktree",
+			workspace: "/tmp/workspace",
+			repos: [
+				{ name: "api", path: "./api", match: "API:", base_branch: "main" },
+				{ name: "admin", path: "./admin", match: "Admin:", base_branch: "main" },
+			],
+		});
+
+		it("includes the pre-generated branch name", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(
+				makeIssue(),
+				multiRepoConfig,
+				"feat/int-100-my-branch",
+			);
+			expect(prompt).toContain("feat/int-100-my-branch");
+		});
+
+		it("lists all repo absolute paths", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("/tmp/workspace/api");
+			expect(prompt).toContain("/tmp/workspace/admin");
+		});
+
+		it("lists the worktree path for each repo", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("/tmp/workspace/api/.worktrees/feat/int-100-x");
+			expect(prompt).toContain("/tmp/workspace/admin/.worktrees/feat/int-100-x");
+		});
+
+		it("includes the manifest file path", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain(".lisa-manifest.json");
+			expect(prompt).toContain("/tmp/workspace/.lisa-manifest.json");
+		});
+
+		it("instructs agent NOT to push", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("do NOT push");
+			expect(prompt).toContain("Do NOT push");
+		});
+
+		it("includes issue details", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("INT-100");
+			expect(prompt).toContain("Add feature X");
+			expect(prompt).toContain("Implement the feature X as described.");
+		});
+
+		it("includes README evaluation instructions", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("README.md Evaluation");
+		});
+
+		it("includes the workspace root path", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			expect(prompt).toContain("/tmp/workspace");
 		});
 	});
 

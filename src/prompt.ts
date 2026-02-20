@@ -71,6 +71,106 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
+export function buildWorktreeMultiRepoPrompt(
+	issue: Issue,
+	config: LisaConfig,
+	branchName: string,
+): string {
+	const workspace = resolve(config.workspace);
+
+	const repoBlock = config.repos
+		.map((r) => {
+			const absPath = resolve(workspace, r.path);
+			const worktreePath = join(absPath, ".worktrees", branchName);
+			return [
+				`- **${r.name}**: \`${absPath}\``,
+				`  - Base branch: \`${r.base_branch}\``,
+				`  - Worktree path: \`${worktreePath}\``,
+			].join("\n");
+		})
+		.join("\n\n");
+
+	const readmeBlock = buildReadmeInstructions();
+	const manifestPath = join(workspace, ".lisa-manifest.json");
+
+	return `You are an autonomous implementation agent working in a multi-repository workspace.
+Your job is to determine the correct repository, set up a worktree, implement the issue, commit, and write a manifest file.
+
+You are in the workspace: \`${workspace}\`
+
+## Issue
+
+- **ID:** ${issue.id}
+- **Title:** ${issue.title}
+- **URL:** ${issue.url}
+
+### Description
+
+${issue.description}
+
+## Available Repositories
+
+${repoBlock}
+
+## Branch to use
+
+\`${branchName}\`
+
+## Instructions
+
+1. **Identify the correct repository**: Read the issue title and description carefully.
+   Determine which single repository above is the right target. Consider:
+   - File paths or module names mentioned in the description
+   - Technologies and frameworks referenced
+   - The nature of the change (e.g., API endpoint → api repo, UI component → frontend repo)
+
+2. **Set up the worktree**: In the chosen repo, run:
+   \`\`\`
+   git fetch origin <base_branch>
+   git worktree add -b ${branchName} <worktreePath> origin/<base_branch>
+   cd <worktreePath>
+   \`\`\`
+   Use the exact worktree path shown for the chosen repository above.
+
+3. **Implement**: Work inside the worktree. Follow the issue description exactly:
+   - Read all relevant files listed in the description first (if present)
+   - Follow the implementation instructions exactly
+   - Verify each acceptance criteria (if present)
+   - Respect any stack or technical constraints (if present)
+${readmeBlock}
+4. **Validate**: Run the project's linter/typecheck/tests if available:
+   - Check \`package.json\` for lint, typecheck, check, or test scripts.
+   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`, \`npm run test\`).
+   - Fix any errors before proceeding.
+
+5. **Commit (do NOT push)**: Make atomic commits with conventional commit messages.
+   Do NOT run \`git push\` — the caller handles pushing.
+   **IMPORTANT — Language rules:**
+   - All commit messages MUST be in English.
+   - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
+
+6. **Write the manifest**: After committing, create \`${manifestPath}\` with JSON:
+   \`\`\`json
+   {
+     "repoPath": "<absolute path to the chosen repo>",
+     "prTitle": "<PR title in English, conventional commit format>"
+   }
+   \`\`\`
+   Do NOT commit this file.
+
+## Rules
+
+- **ALL git commits, PR titles, and PR descriptions MUST be in English.**
+- The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT push — the caller handles that.
+- Do NOT create pull requests — the caller handles that.
+- Do NOT update the issue tracker — the caller handles that.
+- Do NOT install new dependencies unless the issue explicitly requires it.
+- If you get stuck or the issue is unclear, STOP and explain why.
+- One issue only. Do not pick up additional issues.
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+}
+
 function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
 	const testBlock = buildTestInstructions(testRunner ?? null);
 	const readmeBlock = buildReadmeInstructions();
