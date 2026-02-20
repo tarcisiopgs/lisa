@@ -58,25 +58,24 @@ function cleanupPrTitle(cwd: string): void {
 const MANIFEST_FILE = ".lisa-manifest.json";
 
 interface LisaManifest {
-	repoPath: string;
+	repoPath?: string;
+	branch?: string;
 	prTitle?: string;
 }
 
-function readLisaManifest(workspace: string): LisaManifest | null {
-	const manifestPath = join(workspace, MANIFEST_FILE);
+function readLisaManifest(dir: string): LisaManifest | null {
+	const manifestPath = join(dir, MANIFEST_FILE);
 	if (!existsSync(manifestPath)) return null;
 	try {
-		const parsed = JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
-		if (!parsed.repoPath || typeof parsed.repoPath !== "string") return null;
-		return parsed;
+		return JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
 	} catch {
 		return null;
 	}
 }
 
-function cleanupManifest(workspace: string): void {
+function cleanupManifest(dir: string): void {
 	try {
-		unlinkSync(join(workspace, MANIFEST_FILE));
+		unlinkSync(join(dir, MANIFEST_FILE));
 	} catch {
 		// File may not exist — ignore
 	}
@@ -525,20 +524,40 @@ async function runWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
+	// Read manifest written by agent — used for English branch name and PR title
+	const manifest = readLisaManifest(worktreePath);
+
+	// Use agent's English branch name if provided and differs from the pre-generated name
+	let effectiveBranch = branchName;
+	if (manifest?.branch && manifest.branch !== branchName) {
+		logger.log(`Renaming branch to English name: ${manifest.branch}`);
+		try {
+			await execa("git", ["branch", "-m", branchName, manifest.branch], { cwd: worktreePath });
+			effectiveBranch = manifest.branch;
+			logger.ok(`Branch renamed to ${effectiveBranch}`);
+		} catch (err) {
+			logger.warn(
+				`Branch rename failed, using original: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+
 	// Ensure branch is pushed to remote before creating PR
 	try {
-		await execa("git", ["push", "-u", "origin", branchName], { cwd: worktreePath });
+		await execa("git", ["push", "-u", "origin", effectiveBranch], { cwd: worktreePath });
 	} catch (err) {
 		logger.error(
 			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
 		);
+		cleanupManifest(worktreePath);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
 	// Create PR from worktree
-	const prTitle = readPrTitle(worktreePath) ?? issue.title;
+	const prTitle = manifest?.prTitle ?? readPrTitle(worktreePath) ?? issue.title;
 	cleanupPrTitle(worktreePath);
+	cleanupManifest(worktreePath);
 
 	const prUrls: string[] = [];
 	try {
@@ -547,7 +566,7 @@ async function runWorktreeSession(
 			{
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
-				head: branchName,
+				head: effectiveBranch,
 				base: defaultBranch,
 				title: prTitle,
 				body: buildPrBody(issue, result.providerUsed),
@@ -574,13 +593,12 @@ async function runWorktreeMultiRepoSession(
 	models: ProviderName[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
-	const branchName = generateBranchName(issue.id, issue.title);
 
 	// Clean stale manifest from a previous interrupted run
 	cleanupManifest(workspace);
 
-	const prompt = buildWorktreeMultiRepoPrompt(issue, config, branchName);
-	logger.log(`Multi-repo worktree session for ${issue.id} (branch: ${branchName})`);
+	const prompt = buildWorktreeMultiRepoPrompt(issue, config);
+	logger.log(`Multi-repo worktree session for ${issue.id} (agent selects repo and branch name)`);
 	logger.log(`Implementing (agent selects repo)... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -609,15 +627,17 @@ async function runWorktreeMultiRepoSession(
 
 	// Read manifest written by the provider
 	const manifest = readLisaManifest(workspace);
-	if (!manifest) {
-		logger.error(`Agent did not produce a valid .lisa-manifest.json for ${issue.id}. Aborting.`);
+	if (!manifest?.repoPath || !manifest.branch) {
+		logger.error(
+			`Agent did not produce a valid .lisa-manifest.json (requires repoPath + branch) for ${issue.id}. Aborting.`,
+		);
 		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	logger.ok(`Provider chose repo: ${manifest.repoPath}`);
+	logger.ok(`Provider chose repo: ${manifest.repoPath}, branch: ${manifest.branch}`);
 
-	const worktreePath = join(manifest.repoPath, ".worktrees", branchName);
+	const worktreePath = join(manifest.repoPath, ".worktrees", manifest.branch);
 	const baseBranch = resolveBaseBranch(config, manifest.repoPath);
 
 	// Validate tests from within the worktree
@@ -631,7 +651,7 @@ async function runWorktreeMultiRepoSession(
 
 	// Push branch to remote (Lisa always pushes — never the agent)
 	try {
-		await execa("git", ["push", "-u", "origin", branchName], { cwd: worktreePath });
+		await execa("git", ["push", "-u", "origin", manifest.branch], { cwd: worktreePath });
 	} catch (err) {
 		logger.error(
 			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
@@ -650,7 +670,7 @@ async function runWorktreeMultiRepoSession(
 			{
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
-				head: branchName,
+				head: manifest.branch,
 				base: baseBranch,
 				title: prTitle,
 				body: buildPrBody(issue, result.providerUsed),
@@ -678,6 +698,9 @@ async function runBranchSession(
 	models: ProviderName[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
+
+	// Clean any stale manifest from a previous interrupted run
+	cleanupManifest(workspace);
 
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(workspace);
@@ -743,16 +766,25 @@ async function runBranchSession(
 	const testsPassed = await runTestValidation(workspace);
 	if (!testsPassed) {
 		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
+		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Scan all repos to find where feature branches were created (may span multiple repos)
-	const detected = await detectFeatureBranches(
-		config.repos,
-		issue.id,
-		workspace,
-		config.base_branch,
-	);
+	// Prefer manifest (agent writes repoPath + English branch name) over heuristic detection
+	const manifest = readLisaManifest(workspace);
+	let detected: { repoPath: string; branch: string }[];
+
+	if (manifest?.repoPath && manifest.branch) {
+		logger.ok(`Using manifest: repo=${manifest.repoPath}, branch=${manifest.branch}`);
+		detected = [{ repoPath: manifest.repoPath, branch: manifest.branch }];
+	} else {
+		if (manifest) {
+			logger.warn(`Manifest found but missing repoPath or branch — falling back to detection`);
+		}
+		detected = await detectFeatureBranches(config.repos, issue.id, workspace, config.base_branch);
+	}
+
+	cleanupManifest(workspace);
 
 	if (detected.length === 0) {
 		logger.error(`Could not detect feature branch for ${issue.id} — skipping PR creation`);
@@ -760,7 +792,7 @@ async function runBranchSession(
 		return { success: true, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	const prTitle = readPrTitle(workspace) ?? issue.title;
+	const prTitle = manifest?.prTitle ?? readPrTitle(workspace) ?? issue.title;
 	cleanupPrTitle(workspace);
 
 	const prUrls: string[] = [];

@@ -71,21 +71,16 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
-export function buildWorktreeMultiRepoPrompt(
-	issue: Issue,
-	config: LisaConfig,
-	branchName: string,
-): string {
+export function buildWorktreeMultiRepoPrompt(issue: Issue, config: LisaConfig): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
 		.map((r) => {
 			const absPath = resolve(workspace, r.path);
-			const worktreePath = join(absPath, ".worktrees", branchName);
 			return [
 				`- **${r.name}**: \`${absPath}\``,
 				`  - Base branch: \`${r.base_branch}\``,
-				`  - Worktree path: \`${worktreePath}\``,
+				`  - Worktrees dir: \`${join(absPath, ".worktrees")}\``,
 			].join("\n");
 		})
 		.join("\n\n");
@@ -94,7 +89,7 @@ export function buildWorktreeMultiRepoPrompt(
 	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	return `You are an autonomous implementation agent working in a multi-repository workspace.
-Your job is to determine the correct repository, set up a worktree, implement the issue, commit, and write a manifest file.
+Your job is to determine the correct repository, create an English-named branch, implement the issue, commit, and write a manifest file.
 
 You are in the workspace: \`${workspace}\`
 
@@ -112,10 +107,6 @@ ${issue.description}
 
 ${repoBlock}
 
-## Branch to use
-
-\`${branchName}\`
-
 ## Instructions
 
 1. **Identify the correct repository**: Read the issue title and description carefully.
@@ -124,35 +115,40 @@ ${repoBlock}
    - Technologies and frameworks referenced
    - The nature of the change (e.g., API endpoint → api repo, UI component → frontend repo)
 
-2. **Set up the worktree**: In the chosen repo, run:
+2. **Choose an English branch name**: Create a slug in English following:
+   \`feat/${issue.id.toLowerCase()}-short-english-description\`
+   The description part MUST be in English regardless of the issue title language.
+   Example: for "${issue.id} Implementar rate limiting na API" → \`feat/${issue.id.toLowerCase()}-add-rate-limiting-to-api\`
+
+3. **Set up the worktree**: In the chosen repo, run:
    \`\`\`
    git fetch origin <base_branch>
-   git worktree add -b ${branchName} <worktreePath> origin/<base_branch>
-   cd <worktreePath>
+   git worktree add -b <your-english-branch> <repoPath>/.worktrees/<your-english-branch> origin/<base_branch>
+   cd <repoPath>/.worktrees/<your-english-branch>
    \`\`\`
-   Use the exact worktree path shown for the chosen repository above.
 
-3. **Implement**: Work inside the worktree. Follow the issue description exactly:
+4. **Implement**: Work inside the worktree. Follow the issue description exactly:
    - Read all relevant files listed in the description first (if present)
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
 ${readmeBlock}
-4. **Validate**: Run the project's linter/typecheck/tests if available:
+5. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`, \`npm run test\`).
    - Fix any errors before proceeding.
 
-5. **Commit (do NOT push)**: Make atomic commits with conventional commit messages.
+6. **Commit (do NOT push)**: Make atomic commits with conventional commit messages.
    Do NOT run \`git push\` — the caller handles pushing.
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. **Write the manifest**: After committing, create \`${manifestPath}\` with JSON:
+7. **Write the manifest**: After committing, create \`${manifestPath}\` with JSON:
    \`\`\`json
    {
      "repoPath": "<absolute path to the chosen repo>",
+     "branch": "<your English branch name>",
      "prTitle": "<PR title in English, conventional commit format>"
    }
    \`\`\`
@@ -160,7 +156,7 @@ ${readmeBlock}
 
 ## Rules
 
-- **ALL git commits, PR titles, and PR descriptions MUST be in English.**
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
 - Do NOT push — the caller handles that.
 - Do NOT create pull requests — the caller handles that.
@@ -204,21 +200,26 @@ ${testBlock}${readmeBlock}
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 
-3. **Commit & Push**: Make atomic commits with conventional commit messages.
-   Push the branch to origin.
+3. **Commit**: Make atomic commits with conventional commit messages.
+   **Branch name must be in English.** The branch was pre-created with an auto-generated name.
+   If that name contains non-English words, rename it before committing:
+   \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
+   Do NOT push — the caller handles pushing.
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-4. **PR Metadata**: Before finishing, create a file named \`.pr-title\` at the repository root
-   containing a single line with the PR title in **English** using conventional commit format
-   (e.g., \`feat: add user authentication\`, \`fix: resolve null pointer in login flow\`).
-   This file is used by the caller to create the pull request. Do NOT commit this file.
+4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+   \`\`\`json
+   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>"}
+   \`\`\`
+   Do NOT commit this file.
 
 ## Rules
 
-- **ALL git commits, PR titles, and PR descriptions MUST be in English.**
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT push — the caller handles that.
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
 - One issue only. Do not pick up additional issues.
@@ -243,6 +244,7 @@ function buildBranchPrompt(issue: Issue, config: LisaConfig, testRunner?: TestRu
 
 	const testBlock = buildTestInstructions(testRunner ?? null);
 	const readmeBlock = buildReadmeInstructions();
+	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, commit, and push the branch.
@@ -263,8 +265,10 @@ ${issue.description}
 ${repoEntries}
    - If it references multiple repos, pick the PRIMARY one (the one with the most files listed).
 
-2. **Create a branch**: ${baseBranchInstruction}, create a branch named after the issue
-   (e.g., \`feat/${issue.id.toLowerCase()}-short-description\`).
+2. **Create a branch**: ${baseBranchInstruction}, create a branch with an **English** slug:
+   \`feat/${issue.id.toLowerCase()}-short-english-description\`
+   The description MUST be in English — translate or summarize the issue title if it's in another language.
+   Example: "Implementar rate limiting na API" → \`feat/${issue.id.toLowerCase()}-add-rate-limiting-to-api\`
 
 3. **Implement**: Follow the issue description exactly:
    - Read all relevant files listed in the description first (if present)
@@ -283,10 +287,11 @@ ${testBlock}${readmeBlock}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. **PR Metadata**: Before finishing, create a file named \`.pr-title\` at the repository root
-   containing a single line with the PR title in **English** using conventional commit format
-   (e.g., \`feat: add user authentication\`, \`fix: resolve null pointer in login flow\`).
-   This file is used by the caller to create the pull request. Do NOT commit this file.
+6. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
+   \`\`\`json
+   {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>"}
+   \`\`\`
+   Do NOT commit this file.
 
 ## Rules
 

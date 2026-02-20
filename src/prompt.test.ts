@@ -172,63 +172,61 @@ describe("buildImplementPrompt", () => {
 			],
 		});
 
-		it("includes the pre-generated branch name", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(
-				makeIssue(),
-				multiRepoConfig,
-				"feat/int-100-my-branch",
-			);
-			expect(prompt).toContain("feat/int-100-my-branch");
+		it("instructs agent to generate an English branch name", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
+			expect(prompt).toContain("English branch name");
+			expect(prompt).toContain("feat/int-100");
 		});
 
 		it("lists all repo absolute paths", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("/tmp/workspace/api");
 			expect(prompt).toContain("/tmp/workspace/admin");
 		});
 
-		it("lists the worktree path for each repo", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
-			expect(prompt).toContain("/tmp/workspace/api/.worktrees/feat/int-100-x");
-			expect(prompt).toContain("/tmp/workspace/admin/.worktrees/feat/int-100-x");
+		it("lists the worktrees directory for each repo", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
+			expect(prompt).toContain("/tmp/workspace/api/.worktrees");
+			expect(prompt).toContain("/tmp/workspace/admin/.worktrees");
 		});
 
 		it("includes the manifest file path", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain(".lisa-manifest.json");
 			expect(prompt).toContain("/tmp/workspace/.lisa-manifest.json");
 		});
 
 		it("instructs agent NOT to push", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("do NOT push");
 			expect(prompt).toContain("Do NOT push");
 		});
 
 		it("includes issue details", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("INT-100");
 			expect(prompt).toContain("Add feature X");
 			expect(prompt).toContain("Implement the feature X as described.");
 		});
 
 		it("includes README evaluation instructions", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("README.md Evaluation");
 		});
 
 		it("includes the workspace root path", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig, "feat/int-100-x");
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("/tmp/workspace");
 		});
 	});
 
 	describe("branch mode", () => {
-		it("includes branch-specific instructions", () => {
+		it("includes branch-specific instructions with English name requirement", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
 
 			expect(prompt).toContain("Create a branch");
-			expect(prompt).toContain("feat/int-100-short-description");
+			expect(prompt).toContain("feat/int-100-short-english-description");
+			expect(prompt).toContain("MUST be in English");
 		});
 
 		it("includes repo entries when repos are configured", () => {
