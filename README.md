@@ -16,7 +16,7 @@ Lisa is deterministic. She follows a structured pipeline with clear stages (fetc
 
 - **Token efficiency** — Each issue gets one focused prompt with full context. No wasted retries, no speculative exploration, no idle polling.
 - **Multi-repo awareness** — Lisa detects which repos the agent touched and creates one PR per repo. Monorepos with multiple packages just work.
-- **Provider fallback** — Configure a chain of models (`claude → gemini → opencode`). Transient errors (429, quota, timeout) trigger the next provider; non-transient errors stop the chain.
+- **Model fallback** — Configure a chain of models (`claude → gemini → opencode`). Transient errors (429, quota, timeout) trigger the next model; non-transient errors stop the chain.
 - **Workflow integration** — Issues move through your board in real time (Backlog → In Progress → In Review). Your team always knows what's being worked on.
 - **Self-healing** — Orphan issues (stuck in "In Progress" from interrupted runs) are automatically recovered on startup. Pre-push hook failures trigger the agent to fix and retry.
 - **Guardrails** — Past failures are logged and injected into future prompts so the agent avoids repeating mistakes.
@@ -99,7 +99,7 @@ All providers use `child_process.spawn` with `sh -c`. Prompts are written to a t
 
 ### Fallback Chain
 
-Configure multiple providers in the `models` array. Lisa tries them in order — transient errors (429, quota, timeout, network) trigger the next provider. Non-transient errors stop the chain immediately.
+Configure multiple models in the `models` array. Lisa tries them in order — transient errors (429, quota, timeout, network) trigger the next model. Non-transient errors stop the chain immediately.
 
 ```yaml
 models:
