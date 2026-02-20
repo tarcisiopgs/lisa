@@ -1,3 +1,9 @@
+import {
+	appendEntry,
+	buildGuardrailsSection,
+	extractContext,
+	extractErrorType,
+} from "../guardrails.js";
 import type { FallbackResult, ModelAttempt, Provider, ProviderName, RunOptions } from "../types.js";
 import { ClaudeProvider } from "./claude.js";
 import { GeminiProvider } from "./gemini.js";
@@ -73,7 +79,10 @@ export async function runWithFallback(
 			continue;
 		}
 
-		const result = await provider.run(prompt, opts);
+		const guardrailsSection = opts.guardrailsDir ? buildGuardrailsSection(opts.guardrailsDir) : "";
+		const fullPrompt = guardrailsSection ? `${prompt}${guardrailsSection}` : prompt;
+
+		const result = await provider.run(fullPrompt, opts);
 
 		if (result.success) {
 			attempts.push({
@@ -88,6 +97,16 @@ export async function runWithFallback(
 				providerUsed: model,
 				attempts,
 			};
+		}
+
+		if (opts.guardrailsDir && opts.issueId) {
+			appendEntry(opts.guardrailsDir, {
+				issueId: opts.issueId,
+				date: new Date().toISOString().slice(0, 10),
+				provider: model,
+				errorType: extractErrorType(result.output),
+				context: extractContext(result.output),
+			});
 		}
 
 		const eligible = isEligibleForFallback(result.output);

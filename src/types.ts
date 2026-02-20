@@ -70,6 +70,8 @@ export interface Issue {
 export interface RunOptions {
 	logFile: string;
 	cwd: string;
+	guardrailsDir?: string;
+	issueId?: string;
 }
 
 export interface RunResult {

@@ -455,7 +455,12 @@ async function runWorktreeSession(
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
-	const result = await runWithFallback(models, prompt, { logFile, cwd: worktreePath });
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: worktreePath,
+		guardrailsDir: repoPath,
+		issueId: issue.id,
+	});
 
 	try {
 		appendFileSync(
@@ -557,7 +562,12 @@ async function runBranchSession(
 	logger.log(`Implementing... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
-	const result = await runWithFallback(models, prompt, { logFile, cwd: workspace });
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: workspace,
+		guardrailsDir: workspace,
+		issueId: issue.id,
+	});
 
 	try {
 		appendFileSync(
