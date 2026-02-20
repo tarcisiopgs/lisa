@@ -95,6 +95,40 @@ export class LinearSource implements Source {
 		};
 	}
 
+	async fetchIssueById(id: string): Promise<Issue | null> {
+		const identifier = parseLinearIdentifier(id);
+
+		const data = await gql<{
+			issue: {
+				id: string;
+				identifier: string;
+				title: string;
+				description: string;
+				url: string;
+			} | null;
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					identifier
+					title
+					description
+					url
+				}
+			}`,
+			{ identifier },
+		);
+
+		if (!data.issue) return null;
+
+		return {
+			id: data.issue.identifier,
+			title: data.issue.title,
+			description: data.issue.description || "",
+			url: data.issue.url,
+		};
+	}
+
 	async updateStatus(issueId: string, statusName: string): Promise<void> {
 		// Resolve issue internal ID and team
 		const issueData = await gql<{
@@ -158,9 +192,7 @@ export class LinearSource implements Source {
 		);
 
 		const currentLabels = issueData.issue.labels.nodes;
-		const filtered = currentLabels.filter(
-			(l) => l.name.toLowerCase() !== labelName.toLowerCase(),
-		);
+		const filtered = currentLabels.filter((l) => l.name.toLowerCase() !== labelName.toLowerCase());
 
 		// If nothing changed, skip
 		if (filtered.length === currentLabels.length) return;
@@ -177,4 +209,13 @@ export class LinearSource implements Source {
 			},
 		);
 	}
+}
+
+function parseLinearIdentifier(input: string): string {
+	// Extract identifier from Linear URL: https://linear.app/team/issue/INT-150/slug
+	const urlMatch = input.match(/\/issue\/([A-Z]+-\d+)/);
+	if (urlMatch?.[1]) return urlMatch[1];
+
+	// Already an identifier like INT-150
+	return input;
 }

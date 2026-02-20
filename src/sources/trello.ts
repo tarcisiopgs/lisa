@@ -117,6 +117,26 @@ export class TrelloSource implements Source {
 		};
 	}
 
+	async fetchIssueById(id: string): Promise<Issue | null> {
+		const shortLink = parseTrelloIdentifier(id);
+
+		try {
+			const card = await trelloGet<TrelloCard>(
+				`/cards/${shortLink}`,
+				"fields=name,desc,url,idLabels,idList",
+			);
+
+			return {
+				id: card.id,
+				title: card.name,
+				description: card.desc || "",
+				url: card.url,
+			};
+		} catch {
+			return null;
+		}
+	}
+
 	async updateStatus(cardId: string, listName: string): Promise<void> {
 		// Get the card to find its board
 		const card = await trelloGet<{ idBoard: string }>(`/cards/${cardId}`, "fields=idBoard");
@@ -138,4 +158,13 @@ export class TrelloSource implements Source {
 		if (!card.idLabels.includes(label.id)) return;
 		await trelloDelete(`/cards/${cardId}/idLabels/${label.id}`);
 	}
+}
+
+function parseTrelloIdentifier(input: string): string {
+	// Extract shortLink from Trello URL: https://trello.com/c/H0TZyzbK/title
+	const urlMatch = input.match(/\/c\/([a-zA-Z0-9]+)/);
+	if (urlMatch?.[1]) return urlMatch[1];
+
+	// Already a shortLink like H0TZyzbK
+	return input;
 }
