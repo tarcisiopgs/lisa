@@ -1,7 +1,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import type { LisaConfig, LogFormat, ProviderName, SourceConfig, SourceName } from "./types.js";
+import type {
+	LisaConfig,
+	LogFormat,
+	OverseerConfig,
+	ProviderName,
+	SourceConfig,
+	SourceName,
+} from "./types.js";
+
+export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
+	enabled: false,
+	check_interval: 30,
+	stuck_threshold: 300,
+};
 
 const CONFIG_DIR = ".lisa";
 const CONFIG_FILE = "config.yaml";
@@ -30,6 +43,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 		dir: "",
 		format: "" as LogFormat,
 	},
+	overseer: { ...DEFAULT_OVERSEER_CONFIG },
 };
 
 export function getConfigPath(cwd: string = process.cwd()): string {
@@ -72,6 +86,10 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		source_config: sourceConfig,
 		loop: { ...DEFAULT_CONFIG.loop, ...((parsed.loop ?? {}) as LisaConfig["loop"]) },
 		logs: { ...DEFAULT_CONFIG.logs, ...((parsed.logs ?? {}) as LisaConfig["logs"]) },
+		overseer: {
+			...DEFAULT_OVERSEER_CONFIG,
+			...((parsed.overseer ?? {}) as Partial<OverseerConfig>),
+		},
 	};
 
 	// Backward compat: fill base_branch if missing

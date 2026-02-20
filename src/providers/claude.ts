@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { STUCK_MESSAGE, startOverseer } from "../overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class ClaudeProvider implements Provider {
@@ -35,6 +36,8 @@ export class ClaudeProvider implements Provider {
 				},
 			);
 
+			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+
 			const chunks: string[] = [];
 
 			proc.stdout.on("data", (chunk: Buffer) => {
@@ -55,11 +58,18 @@ export class ClaudeProvider implements Provider {
 			});
 
 			const exitCode = await new Promise<number>((resolve) => {
-				proc.on("close", (code) => resolve(code ?? 1));
+				proc.on("close", (code) => {
+					overseer?.stop();
+					resolve(code ?? 1);
+				});
 			});
 
+			if (overseer?.wasKilled()) {
+				chunks.push(STUCK_MESSAGE);
+			}
+
 			return {
-				success: exitCode === 0,
+				success: exitCode === 0 && !overseer?.wasKilled(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};

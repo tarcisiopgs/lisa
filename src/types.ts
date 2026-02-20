@@ -40,6 +40,12 @@ export interface LoopConfig {
 	max_sessions: number;
 }
 
+export interface OverseerConfig {
+	enabled: boolean;
+	check_interval: number;
+	stuck_threshold: number;
+}
+
 export interface LogsConfig {
 	dir: string;
 	format: LogFormat;
@@ -57,6 +63,7 @@ export interface LisaConfig {
 	repos: RepoConfig[];
 	loop: LoopConfig;
 	logs: LogsConfig;
+	overseer?: OverseerConfig;
 }
 
 export interface Issue {
@@ -72,6 +79,7 @@ export interface RunOptions {
 	cwd: string;
 	guardrailsDir?: string;
 	issueId?: string;
+	overseer?: OverseerConfig;
 }
 
 export interface RunResult {
