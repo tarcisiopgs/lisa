@@ -108,7 +108,8 @@ export class TrelloSource implements Source {
 		const matching = cards.filter((c) => c.idLabels.includes(label.id));
 		if (matching.length === 0) return null;
 
-		const card = matching[0]!;
+		const card = matching[0];
+		if (!card) return null;
 		return {
 			id: card.id,
 			title: card.name,

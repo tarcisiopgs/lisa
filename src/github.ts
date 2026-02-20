@@ -33,8 +33,11 @@ export interface PullRequestResult {
 	html_url: string;
 }
 
-export async function createPullRequest(opts: PullRequestOptions, method: GitHubMethod = "cli"): Promise<PullRequestResult> {
-	if (method === "cli" && await isGhCliAvailable()) {
+export async function createPullRequest(
+	opts: PullRequestOptions,
+	method: GitHubMethod = "cli",
+): Promise<PullRequestResult> {
+	if (method === "cli" && (await isGhCliAvailable())) {
 		return createPullRequestWithGhCli(opts);
 	}
 
@@ -65,18 +68,24 @@ export async function createPullRequest(opts: PullRequestOptions, method: GitHub
 
 async function createPullRequestWithGhCli(opts: PullRequestOptions): Promise<PullRequestResult> {
 	const result = await execa("gh", [
-		"pr", "create",
-		"--repo", `${opts.owner}/${opts.repo}`,
-		"--head", opts.head,
-		"--base", opts.base,
-		"--title", opts.title,
-		"--body", opts.body,
+		"pr",
+		"create",
+		"--repo",
+		`${opts.owner}/${opts.repo}`,
+		"--head",
+		opts.head,
+		"--base",
+		opts.base,
+		"--title",
+		opts.title,
+		"--body",
+		opts.body,
 	]);
 
 	// gh pr create outputs the PR URL
 	const url = result.stdout.trim();
 	const prNumberMatch = url.match(/\/pull\/(\d+)/);
-	const number = prNumberMatch ? Number.parseInt(prNumberMatch[1]!, 10) : 0;
+	const number = prNumberMatch ? Number.parseInt(prNumberMatch[1] ?? "0", 10) : 0;
 
 	return { number, html_url: url };
 }
@@ -100,11 +109,11 @@ export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
 	const httpsMatch = remoteUrl.match(/github\.com\/(.+?)\/(.+?)(?:\.git)?$/);
 
 	if (sshMatch) {
-		owner = sshMatch[1]!;
-		repo = sshMatch[2]!;
+		owner = sshMatch[1] ?? "";
+		repo = sshMatch[2] ?? "";
 	} else if (httpsMatch) {
-		owner = httpsMatch[1]!;
-		repo = httpsMatch[2]!;
+		owner = httpsMatch[1] ?? "";
+		repo = httpsMatch[2] ?? "";
 	} else {
 		throw new Error(`Cannot parse GitHub owner/repo from remote URL: ${remoteUrl}`);
 	}

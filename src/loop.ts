@@ -409,9 +409,15 @@ async function runWorktreeSession(
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
 		return {
 			success: false,
-			providerUsed: models[0]!,
+			providerUsed: models[0] ?? "claude",
 			prUrls: [],
-			fallback: { success: false, output: "", duration: 0, providerUsed: models[0]!, attempts: [] },
+			fallback: {
+				success: false,
+				output: "",
+				duration: 0,
+				providerUsed: models[0] ?? "claude",
+				attempts: [],
+			},
 		};
 	}
 
@@ -426,13 +432,13 @@ async function runWorktreeSession(
 			await cleanupWorktree(repoPath, worktreePath);
 			return {
 				success: false,
-				providerUsed: models[0]!,
+				providerUsed: models[0] ?? "claude",
 				prUrls: [],
 				fallback: {
 					success: false,
 					output: "",
 					duration: 0,
-					providerUsed: models[0]!,
+					providerUsed: models[0] ?? "claude",
 					attempts: [],
 				},
 			};
@@ -535,13 +541,13 @@ async function runBranchSession(
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
 			return {
 				success: false,
-				providerUsed: models[0]!,
+				providerUsed: models[0] ?? "claude",
 				prUrls: [],
 				fallback: {
 					success: false,
 					output: "",
 					duration: 0,
-					providerUsed: models[0]!,
+					providerUsed: models[0] ?? "claude",
 					attempts: [],
 				},
 			};

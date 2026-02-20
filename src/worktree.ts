@@ -1,15 +1,14 @@
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
 
 const WORKTREES_DIR = ".worktrees";
 
 export async function getDefaultBranch(repoRoot: string): Promise<string> {
-	const { stdout } = await execa(
-		"git",
-		["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
-		{ cwd: repoRoot, reject: false },
-	).then(
+	const { stdout } = await execa("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], {
+		cwd: repoRoot,
+		reject: false,
+	}).then(
 		(r) => r,
 		() => ({ stdout: "origin/main" }),
 	);
@@ -35,19 +34,14 @@ export async function createWorktree(
 	const worktreePath = join(repoRoot, WORKTREES_DIR, branchName);
 
 	await execa("git", ["fetch", "origin", baseBranch], { cwd: repoRoot });
-	await execa(
-		"git",
-		["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`],
-		{ cwd: repoRoot },
-	);
+	await execa("git", ["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`], {
+		cwd: repoRoot,
+	});
 
 	return worktreePath;
 }
 
-export async function removeWorktree(
-	repoRoot: string,
-	worktreePath: string,
-): Promise<void> {
+export async function removeWorktree(repoRoot: string, worktreePath: string): Promise<void> {
 	await execa("git", ["worktree", "remove", worktreePath, "--force"], {
 		cwd: repoRoot,
 	});
@@ -69,33 +63,49 @@ export function ensureWorktreeGitignore(repoRoot: string): void {
 	}
 }
 
-export async function findBranchByIssueId(repoRoot: string, issueId: string): Promise<string | undefined> {
+export async function findBranchByIssueId(
+	repoRoot: string,
+	issueId: string,
+): Promise<string | undefined> {
 	const needle = issueId.toLowerCase();
 
 	// Check local branches first
-	const { stdout: local } = await execa("git", [
-		"for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/",
-	], { cwd: repoRoot });
+	const { stdout: local } = await execa(
+		"git",
+		["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/"],
+		{ cwd: repoRoot },
+	);
 
-	const localMatch = local.split("\n").map((b) => b.trim()).filter(Boolean)
+	const localMatch = local
+		.split("\n")
+		.map((b) => b.trim())
+		.filter(Boolean)
 		.find((b) => b.toLowerCase().includes(needle));
 	if (localMatch) return localMatch;
 
 	// Check local remote-tracking refs
-	const { stdout: remote } = await execa("git", [
-		"for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin/",
-	], { cwd: repoRoot });
+	const { stdout: remote } = await execa(
+		"git",
+		["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin/"],
+		{ cwd: repoRoot },
+	);
 
-	const remoteMatch = remote.split("\n").map((b) => b.trim()).filter(Boolean)
+	const remoteMatch = remote
+		.split("\n")
+		.map((b) => b.trim())
+		.filter(Boolean)
 		.find((b) => b.toLowerCase().includes(needle));
 	if (remoteMatch) return remoteMatch.replace("origin/", "");
 
 	// Fall back to querying the actual remote (local refs may be stale)
-	const { stdout: lsRemote } = await execa("git", [
-		"ls-remote", "--heads", "origin",
-	], { cwd: repoRoot });
+	const { stdout: lsRemote } = await execa("git", ["ls-remote", "--heads", "origin"], {
+		cwd: repoRoot,
+	});
 
-	const lsMatch = lsRemote.split("\n").map((l) => l.trim()).filter(Boolean)
+	const lsMatch = lsRemote
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean)
 		.map((l) => l.split("\t")[1]?.replace("refs/heads/", "") ?? "")
 		.find((b) => b.toLowerCase().includes(needle));
 	if (lsMatch) return lsMatch;
@@ -124,7 +134,8 @@ export function determineRepoPath(
 	}
 
 	// Default to first repo
-	return join(workspace, repos[0]!.path);
+	const first = repos[0];
+	return first ? join(workspace, first.path) : undefined;
 }
 
 /**
@@ -143,9 +154,10 @@ export async function detectFeatureBranches(
 	workspace: string,
 	globalBaseBranch: string,
 ): Promise<{ repoPath: string; branch: string }[]> {
-	const entries = repos.length > 0
-		? repos.map((r) => ({ path: resolve(workspace, r.path), baseBranch: r.base_branch }))
-		: [{ path: workspace, baseBranch: globalBaseBranch }];
+	const entries =
+		repos.length > 0
+			? repos.map((r) => ({ path: resolve(workspace, r.path), baseBranch: r.base_branch }))
+			: [{ path: workspace, baseBranch: globalBaseBranch }];
 
 	const needle = issueId.toLowerCase();
 	const results: { repoPath: string; branch: string }[] = [];
@@ -158,7 +170,7 @@ export async function detectFeatureBranches(
 			const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: entry.path });
 			const current = stdout.trim();
 			currentBranches.push({ ...entry, current });
-			if (current && current.toLowerCase().includes(needle)) {
+			if (current?.toLowerCase().includes(needle)) {
 				results.push({ repoPath: entry.path, branch: current });
 				matched.add(entry.path);
 			}

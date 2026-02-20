@@ -105,9 +105,7 @@ export class LinearSource implements Source {
 		for (const issue of issues) {
 			const activeBlockers = issue.inverseRelations.nodes
 				.filter((r) => r.type === "blocks")
-				.filter(
-					(r) => r.issue.state.type !== "completed" && r.issue.state.type !== "canceled",
-				)
+				.filter((r) => r.issue.state.type !== "completed" && r.issue.state.type !== "canceled")
 				.map((r) => r.issue.identifier);
 
 			if (activeBlockers.length === 0) {
@@ -121,9 +119,7 @@ export class LinearSource implements Source {
 			if (blocked.length > 0) {
 				logger.warn("No unblocked issues found. Blocked issues:");
 				for (const entry of blocked) {
-					logger.warn(
-						`  ${entry.identifier} — blocked by: ${entry.blockers.join(", ")}`,
-					);
+					logger.warn(`  ${entry.identifier} — blocked by: ${entry.blockers.join(", ")}`);
 				}
 			}
 			return null;
@@ -136,7 +132,8 @@ export class LinearSource implements Source {
 			return pa - pb;
 		});
 
-		const issue = unblocked[0]!;
+		const issue = unblocked[0];
+		if (!issue) return null;
 		return {
 			id: issue.identifier,
 			title: issue.title,

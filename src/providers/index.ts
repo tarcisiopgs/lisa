@@ -114,7 +114,7 @@ export async function runWithFallback(
 		success: false,
 		output: formatAttemptsReport(attempts),
 		duration: totalDuration,
-		providerUsed: attempts[attempts.length - 1]?.provider ?? models[0]!,
+		providerUsed: attempts[attempts.length - 1]?.provider ?? models[0] ?? "claude",
 		attempts,
 	};
 }

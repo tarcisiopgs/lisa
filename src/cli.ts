@@ -202,8 +202,8 @@ async function runConfigWizard(): Promise<void> {
 
 	let providerName: ProviderName;
 
-	if (available.length === 1) {
-		providerName = available[0]!.name;
+	if (available.length === 1 && available[0]) {
+		providerName = available[0].name;
 		clack.log.info(`Found provider: ${pc.bold(providerLabels[providerName])}`);
 	} else {
 		const selected = await clack.select({

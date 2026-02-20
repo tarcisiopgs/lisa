@@ -1,7 +1,7 @@
-import { spawn, execSync } from "node:child_process";
-import { appendFileSync, writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
-import { join } from "node:path";
+import { execSync, spawn } from "node:child_process";
+import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class OpenCodeProvider implements Provider {
@@ -24,14 +24,10 @@ export class OpenCodeProvider implements Provider {
 		writeFileSync(promptFile, prompt, "utf-8");
 
 		try {
-			const proc = spawn(
-				"sh",
-				["-c", `opencode run "$(cat '${promptFile}')"`],
-				{
-					cwd: opts.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				},
-			);
+			const proc = spawn("sh", ["-c", `opencode run "$(cat '${promptFile}')"`], {
+				cwd: opts.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
 
 			const chunks: string[] = [];
 
@@ -39,13 +35,17 @@ export class OpenCodeProvider implements Provider {
 				const text = chunk.toString();
 				process.stdout.write(text);
 				chunks.push(text);
-				try { appendFileSync(opts.logFile, text); } catch {}
+				try {
+					appendFileSync(opts.logFile, text);
+				} catch {}
 			});
 
 			proc.stderr.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				process.stderr.write(text);
-				try { appendFileSync(opts.logFile, text); } catch {}
+				try {
+					appendFileSync(opts.logFile, text);
+				} catch {}
 			});
 
 			const exitCode = await new Promise<number>((resolve) => {
@@ -64,7 +64,9 @@ export class OpenCodeProvider implements Provider {
 				duration: Date.now() - start,
 			};
 		} finally {
-			try { unlinkSync(promptFile); } catch {}
+			try {
+				unlinkSync(promptFile);
+			} catch {}
 		}
 	}
 }

@@ -43,7 +43,10 @@ function emitJson(level: string, message: string): void {
 }
 
 export function log(message: string): void {
-	if (outputMode === "json") return emitJson("info", message);
+	if (outputMode === "json") {
+		emitJson("info", message);
+		return;
+	}
 	if (outputMode !== "quiet") {
 		console.log(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
@@ -51,7 +54,10 @@ export function log(message: string): void {
 }
 
 export function warn(message: string): void {
-	if (outputMode === "json") return emitJson("warn", message);
+	if (outputMode === "json") {
+		emitJson("warn", message);
+		return;
+	}
 	if (outputMode !== "quiet") {
 		console.error(`${pc.yellow("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
@@ -59,13 +65,19 @@ export function warn(message: string): void {
 }
 
 export function error(message: string): void {
-	if (outputMode === "json") return emitJson("error", message);
+	if (outputMode === "json") {
+		emitJson("error", message);
+		return;
+	}
 	console.error(`${pc.red("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	writeToFile("error", message);
 }
 
 export function ok(message: string): void {
-	if (outputMode === "json") return emitJson("ok", message);
+	if (outputMode === "json") {
+		emitJson("ok", message);
+		return;
+	}
 	if (outputMode !== "quiet") {
 		console.log(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
