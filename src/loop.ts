@@ -493,6 +493,17 @@ async function runWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
+	// Ensure branch is pushed to remote before creating PR
+	try {
+		await execa("git", ["push", "-u", "origin", branchName], { cwd: worktreePath });
+	} catch (err) {
+		logger.error(
+			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
+		);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
 	// Create PR from worktree
 	const prTitle = readPrTitle(worktreePath) ?? issue.title;
 	cleanupPrTitle(worktreePath);
