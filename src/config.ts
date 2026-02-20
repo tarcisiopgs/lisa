@@ -80,6 +80,11 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		if (!repo.base_branch) repo.base_branch = config.base_branch;
 	}
 
+	// Backward compat: if models is not set, derive from provider
+	if (!config.models && config.provider) {
+		config.models = [config.provider];
+	}
+
 	return config;
 }
 
