@@ -12,7 +12,13 @@
 		"dev": "npx tsx src/index.ts",
 		"check": "biome check src/",
 		"format": "biome format --write src/",
-		"lint": "biome lint src/"
+		"lint": "biome lint src/",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"ci": "concurrently -n lint,typecheck,test \"npm run lint\" \"npm run typecheck\" \"npm run test\"",
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
@@ -22,10 +28,16 @@
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "^2.4.3",
 		"@types/node": "^22.13.4",
+		"@vitest/coverage-v8": "^4.0.18",
+		"concurrently": "^9.2.1",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.2.7",
 		"tsup": "^8.4.0",
 		"tsx": "^4.19.3",
-		"typescript": "^5.9.3"
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
 	},
 	"publishConfig": {
 		"access": "public"
@@ -36,5 +48,10 @@
 	},
 	"files": [
 		"dist"
-	]
+	],
+	"lint-staged": {
+		"*.ts": [
+			"biome check --write"
+		]
+	}
 }

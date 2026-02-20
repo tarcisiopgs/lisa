@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import type { LisaConfig, SourceConfig } from "./types.js";
+import type { LisaConfig, LogFormat, ProviderName, SourceConfig, SourceName } from "./types.js";
 
 const CONFIG_DIR = ".lisa";
 const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {
-	provider: "",
-	source: "",
+	provider: "" as ProviderName,
+	source: "" as SourceName,
 	source_config: {
 		team: "",
 		project: "",
@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 	},
 	logs: {
 		dir: "",
-		format: "",
+		format: "" as LogFormat,
 	},
 };
 
@@ -80,6 +80,11 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		if (!repo.base_branch) repo.base_branch = config.base_branch;
 	}
 
+	// Backward compat: if models is not set, derive from provider
+	if (!config.models && config.provider) {
+		config.models = [config.provider];
+	}
+
 	return config;
 }
 
@@ -95,8 +100,21 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 	const sc = config.source_config;
 	const sourceYaml =
 		config.source === "trello"
-			? { board: sc.team, pick_from: sc.pick_from || sc.project, label: sc.label, in_progress: sc.in_progress, done: sc.done }
-			: { team: sc.team, project: sc.project, label: sc.label, pick_from: sc.pick_from, in_progress: sc.in_progress, done: sc.done };
+			? {
+					board: sc.team,
+					pick_from: sc.pick_from || sc.project,
+					label: sc.label,
+					in_progress: sc.in_progress,
+					done: sc.done,
+				}
+			: {
+					team: sc.team,
+					project: sc.project,
+					label: sc.label,
+					pick_from: sc.pick_from,
+					in_progress: sc.in_progress,
+					done: sc.done,
+				};
 
 	const output = { ...config, source_config: sourceYaml };
 	writeFileSync(configPath, stringify(output), "utf-8");

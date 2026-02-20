@@ -32,6 +32,7 @@ export interface LogsConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
+	models?: ProviderName[];
 	source: SourceName;
 	source_config: SourceConfig;
 	github: GitHubMethod;
@@ -66,6 +67,21 @@ export interface Provider {
 	name: ProviderName;
 	isAvailable(): Promise<boolean>;
 	run(prompt: string, opts: RunOptions): Promise<RunResult>;
+}
+
+export interface ModelAttempt {
+	provider: ProviderName;
+	success: boolean;
+	error?: string;
+	duration: number;
+}
+
+export interface FallbackResult {
+	success: boolean;
+	output: string;
+	duration: number;
+	providerUsed: ProviderName;
+	attempts: ModelAttempt[];
 }
 
 export interface Source {
