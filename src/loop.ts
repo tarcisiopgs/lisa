@@ -1,5 +1,5 @@
-import { appendFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { appendFileSync, readFileSync, unlinkSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
@@ -33,6 +33,25 @@ function resolveModels(config: LisaConfig): ProviderName[] {
 
 function buildPrBody(issue: { url: string }, providerUsed: ProviderName): string {
 	return `Closes ${issue.url}\n\nImplemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`;
+}
+
+const PR_TITLE_FILE = ".pr-title";
+
+function readPrTitle(cwd: string): string | null {
+	try {
+		const title = readFileSync(join(cwd, PR_TITLE_FILE), "utf-8").trim().split("\n")[0]?.trim();
+		return title || null;
+	} catch {
+		return null;
+	}
+}
+
+function cleanupPrTitle(cwd: string): void {
+	try {
+		unlinkSync(join(cwd, PR_TITLE_FILE));
+	} catch {
+		// File may not exist — ignore
+	}
 }
 
 function installSignalHandlers(): void {
@@ -430,6 +449,9 @@ async function runWorktreeSession(
 	}
 
 	// Create PR from worktree
+	const prTitle = readPrTitle(worktreePath) ?? issue.title;
+	cleanupPrTitle(worktreePath);
+
 	const prUrls: string[] = [];
 	try {
 		const repoInfo = await getRepoInfo(worktreePath);
@@ -439,7 +461,7 @@ async function runWorktreeSession(
 				repo: repoInfo.repo,
 				head: branchName,
 				base: defaultBranch,
-				title: issue.title,
+				title: prTitle,
 				body: buildPrBody(issue, result.providerUsed),
 			},
 			config.github,
@@ -526,6 +548,9 @@ async function runBranchSession(
 		return { success: true, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
+	const prTitle = readPrTitle(workspace) ?? issue.title;
+	cleanupPrTitle(workspace);
+
 	const prUrls: string[] = [];
 	for (const { repoPath, branch } of detected) {
 		const baseBranch = resolveBaseBranch(config, repoPath);
@@ -539,7 +564,7 @@ async function runBranchSession(
 					repo: repoInfo.repo,
 					head: branch,
 					base: baseBranch,
-					title: issue.title,
+					title: prTitle,
 					body: buildPrBody(issue, result.providerUsed),
 				},
 				config.github,

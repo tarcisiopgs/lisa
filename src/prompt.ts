@@ -45,9 +45,14 @@ ${issue.description}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
+4. **PR Metadata**: Before finishing, create a file named \`.pr-title\` at the repository root
+   containing a single line with the PR title in **English** using conventional commit format
+   (e.g., \`feat: add user authentication\`, \`fix: resolve null pointer in login flow\`).
+   This file is used by the caller to create the pull request. Do NOT commit this file.
+
 ## Rules
 
-- **ALL git commits MUST be in English.**
+- **ALL git commits, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
@@ -106,9 +111,14 @@ ${repoEntries}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
+6. **PR Metadata**: Before finishing, create a file named \`.pr-title\` at the repository root
+   containing a single line with the PR title in **English** using conventional commit format
+   (e.g., \`feat: add user authentication\`, \`fix: resolve null pointer in login flow\`).
+   This file is used by the caller to create the pull request. Do NOT commit this file.
+
 ## Rules
 
-- **ALL git commits, branch names MUST be in English.**
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
 - Do NOT modify files outside the target repo.
 - Do NOT install new dependencies unless the issue explicitly requires it.
