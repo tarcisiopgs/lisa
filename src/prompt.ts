@@ -47,8 +47,33 @@ This project uses **${testRunner}** as its test runner.
 `;
 }
 
+function buildReadmeInstructions(): string {
+	return `
+**README.md Evaluation:**
+After implementing, review the diff of all changed files and check if README.md needs updating.
+
+Update README.md if the changes include:
+- New or removed CLI commands or flags
+- New or removed providers or sources
+- Configuration schema changes (new fields, renamed fields, removed fields)
+- Pipeline or workflow stage changes
+- New or removed environment variables
+- Architectural changes
+
+Do NOT update README.md for:
+- Internal refactors that don't change documented behavior
+- Bug fixes that don't change documented behavior
+- Test-only changes
+- Logging or formatting changes
+- Dependency updates
+
+If an update is needed, keep the existing README style and structure. Include the README change in the same commit as the implementation.
+`;
+}
+
 function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
 	const testBlock = buildTestInstructions(testRunner ?? null);
+	const readmeBlock = buildReadmeInstructions();
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, commit, and push the branch.
@@ -73,7 +98,7 @@ ${issue.description}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}
+${testBlock}${readmeBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -117,6 +142,7 @@ function buildBranchPrompt(issue: Issue, config: LisaConfig, testRunner?: TestRu
 			: `From \`${config.base_branch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null);
+	const readmeBlock = buildReadmeInstructions();
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, commit, and push the branch.
@@ -145,7 +171,7 @@ ${repoEntries}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}
+${testBlock}${readmeBlock}
 4. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).

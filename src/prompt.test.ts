@@ -149,6 +149,17 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("MANDATORY — Unit Tests");
 			expect(prompt).toContain("jest");
 		});
+
+		it("includes README evaluation instructions", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+
+			expect(prompt).toContain("README.md Evaluation");
+			expect(prompt).toContain("New or removed CLI commands or flags");
+			expect(prompt).toContain("New or removed providers or sources");
+			expect(prompt).toContain("Configuration schema changes");
+			expect(prompt).toContain("Do NOT update README.md for");
+			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+		});
 	});
 
 	describe("branch mode", () => {
@@ -188,6 +199,17 @@ describe("buildImplementPrompt", () => {
 
 			expect(prompt).toContain("MANDATORY — Unit Tests");
 			expect(prompt).toContain("vitest");
+		});
+
+		it("includes README evaluation instructions", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+
+			expect(prompt).toContain("README.md Evaluation");
+			expect(prompt).toContain("New or removed CLI commands or flags");
+			expect(prompt).toContain("New or removed providers or sources");
+			expect(prompt).toContain("Configuration schema changes");
+			expect(prompt).toContain("Do NOT update README.md for");
+			expect(prompt).toContain("Internal refactors that don't change documented behavior");
 		});
 	});
 });
