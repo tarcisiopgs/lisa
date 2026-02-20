@@ -460,6 +460,7 @@ async function runWorktreeSession(
 		cwd: worktreePath,
 		guardrailsDir: repoPath,
 		issueId: issue.id,
+		overseer: config.overseer,
 	});
 
 	try {
@@ -567,6 +568,7 @@ async function runBranchSession(
 		cwd: workspace,
 		guardrailsDir: workspace,
 		issueId: issue.id,
+		overseer: config.overseer,
 	});
 
 	try {

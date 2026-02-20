@@ -52,6 +52,7 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/not installed/i,
 	/not in PATH/i,
 	/command not found/i,
+	/lisa-overseer/i,
 ];
 
 export function isEligibleForFallback(output: string): boolean {
