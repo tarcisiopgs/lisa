@@ -7,3 +7,6 @@ package-lock.json
 pnpm-lock.yaml
 .pr-title
 .worktrees
+.env
+.env.*
+.lisa/config.yaml
