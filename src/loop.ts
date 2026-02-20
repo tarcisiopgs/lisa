@@ -18,6 +18,7 @@ export interface LoopOptions {
 	once: boolean;
 	limit: number;
 	dryRun: boolean;
+	issueId?: string;
 }
 
 export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<void> {
@@ -49,11 +50,19 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		logger.divider(session);
 
-		// 1. Fetch next issue via API
-		logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+		// 1. Fetch issue — either by ID or from queue
+		if (opts.issueId) {
+			logger.log(`Fetching issue '${opts.issueId}' from ${config.source}...`);
+		} else {
+			logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+		}
 
 		if (opts.dryRun) {
-			logger.log(`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			if (opts.issueId) {
+				logger.log(`[dry-run] Would fetch issue '${opts.issueId}' from ${config.source}`);
+			} else {
+				logger.log(`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`);
+			}
 			logger.log(`[dry-run] Workflow mode: ${config.workflow}`);
 			logger.log("[dry-run] Then implement, push, create PR, and update issue status");
 			break;
@@ -61,7 +70,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 		let issue: Awaited<ReturnType<typeof source.fetchNextIssue>>;
 		try {
-			issue = await source.fetchNextIssue(config.source_config);
+			issue = opts.issueId
+				? await source.fetchIssueById(opts.issueId)
+				: await source.fetchNextIssue(config.source_config);
 		} catch (err) {
 			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
 			if (opts.once) break;
@@ -70,7 +81,11 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		if (!issue) {
-			logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+			if (opts.issueId) {
+				logger.error(`Issue '${opts.issueId}' not found.`);
+			} else {
+				logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+			}
 			break;
 		}
 
@@ -108,11 +123,13 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.error(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		try {
-			await source.removeLabel(issue.id, config.source_config.label);
-			logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
-		} catch (err) {
-			logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+		if (!opts.issueId) {
+			try {
+				await source.removeLabel(issue.id, config.source_config.label);
+				logger.ok(`Removed label "${config.source_config.label}" from ${issue.id}`);
+			} catch (err) {
+				logger.error(`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`);
+			}
 		}
 
 		if (opts.once) {
