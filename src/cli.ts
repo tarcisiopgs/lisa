@@ -23,6 +23,7 @@ const run = defineCommand({
 		once: { type: "boolean", description: "Run a single iteration", default: false },
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
 		"dry-run": { type: "boolean", description: "Preview without executing", default: false },
+		issue: { type: "string", description: "Run a specific issue by identifier or URL" },
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
@@ -58,9 +59,10 @@ const run = defineCommand({
 		}
 
 		await runLoop(merged, {
-			once: args.once,
+			once: args.once || !!args.issue,
 			limit: Number.parseInt(args.limit, 10),
 			dryRun: args["dry-run"],
+			issueId: args.issue,
 		});
 	},
 });
