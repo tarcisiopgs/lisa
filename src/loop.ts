@@ -1,11 +1,12 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createPullRequest, getRepoInfo } from "./github.js";
+import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
 import { buildImplementPrompt } from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import type { FallbackResult, LisaConfig, ProviderName } from "./types.js";
+import type { FallbackResult, LisaConfig, ProviderName, RepoConfig } from "./types.js";
 import {
 	createWorktree,
 	detectFeatureBranches,
@@ -198,6 +199,24 @@ function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
 	return repo?.base_branch ?? config.base_branch;
 }
 
+function findRepoConfig(
+	config: LisaConfig,
+	issue: { repo?: string; title: string },
+): RepoConfig | undefined {
+	if (config.repos.length === 0) return undefined;
+
+	if (issue.repo) {
+		const match = config.repos.find((r) => r.name === issue.repo);
+		if (match) return match;
+	}
+
+	for (const r of config.repos) {
+		if (r.match && issue.title.startsWith(r.match)) return r;
+	}
+
+	return config.repos[0];
+}
+
 async function runWorktreeSession(
 	config: LisaConfig,
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
@@ -230,6 +249,28 @@ async function runWorktreeSession(
 
 	logger.ok(`Worktree created at ${worktreePath}`);
 
+	// Start lifecycle resources before implementation
+	const repo = findRepoConfig(config, issue);
+	if (repo?.lifecycle) {
+		const started = await startResources(repo, worktreePath);
+		if (!started) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return {
+				success: false,
+				providerUsed: models[0]!,
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]!,
+					attempts: [],
+				},
+			};
+		}
+	}
+
 	const prompt = buildImplementPrompt(issue, config);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -243,6 +284,11 @@ async function runWorktreeSession(
 		);
 	} catch {
 		// Ignore log write errors
+	}
+
+	// Stop lifecycle resources after implementation
+	if (repo?.lifecycle) {
+		await stopResources();
 	}
 
 	if (!result.success) {
@@ -288,6 +334,28 @@ async function runBranchSession(
 	const prompt = buildImplementPrompt(issue, config);
 	const workspace = resolve(config.workspace);
 
+	// Start lifecycle resources before implementation
+	const repo = findRepoConfig(config, issue);
+	if (repo?.lifecycle) {
+		const cwd = resolve(workspace, repo.path);
+		const started = await startResources(repo, cwd);
+		if (!started) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return {
+				success: false,
+				providerUsed: models[0]!,
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]!,
+					attempts: [],
+				},
+			};
+		}
+	}
+
 	logger.log(`Implementing... (log: ${logFile})`);
 	logger.initLogFile(logFile);
 
@@ -300,6 +368,11 @@ async function runBranchSession(
 		);
 	} catch {
 		// Ignore log write errors
+	}
+
+	// Stop lifecycle resources after implementation
+	if (repo?.lifecycle) {
+		await stopResources();
 	}
 
 	if (!result.success) {

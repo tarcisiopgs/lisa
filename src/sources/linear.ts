@@ -192,9 +192,7 @@ export class LinearSource implements Source {
 		);
 
 		const currentLabels = issueData.issue.labels.nodes;
-		const filtered = currentLabels.filter(
-			(l) => l.name.toLowerCase() !== labelName.toLowerCase(),
-		);
+		const filtered = currentLabels.filter((l) => l.name.toLowerCase() !== labelName.toLowerCase());
 
 		// If nothing changed, skip
 		if (filtered.length === currentLabels.length) return;

@@ -1,21 +1,23 @@
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
-import { defineCommand, runMain } from "citty";
 import * as clack from "@clack/prompts";
+import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
-import {
-	configExists,
-	loadConfig,
-	mergeWithFlags,
-	saveConfig,
-} from "./config.js";
+import { configExists, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
+import { isGhCliAvailable } from "./github.js";
 import { banner, log, setOutputMode } from "./logger.js";
 import { runLoop } from "./loop.js";
-import { isGhCliAvailable } from "./github.js";
 import { getAvailableProviders } from "./providers/index.js";
+import type {
+	GitHubMethod,
+	LisaConfig,
+	ProviderName,
+	RepoConfig,
+	SourceName,
+	WorkflowMode,
+} from "./types.js";
 import { ensureWorktreeGitignore } from "./worktree.js";
-import type { GitHubMethod, LisaConfig, ProviderName, RepoConfig, SourceName, WorkflowMode } from "./types.js";
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -53,7 +55,11 @@ const run = defineCommand({
 		const missingVars = await getMissingEnvVars(merged.source);
 		if (missingVars.length > 0) {
 			const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
-			console.error(pc.red(`Missing required environment variables:\n${missingVars.map((v) => `  ${v}`).join("\n")}`));
+			console.error(
+				pc.red(
+					`Missing required environment variables:\n${missingVars.map((v) => `  ${v}`).join("\n")}`,
+				),
+			);
 			console.error(pc.dim(`\nAdd them to your ${shell} and run: source ${shell}`));
 			process.exit(1);
 		}
@@ -103,7 +109,9 @@ const init = defineCommand({
 	meta: { name: "init", description: "Initialize lisa configuration" },
 	async run() {
 		if (!process.stdin.isTTY) {
-			console.error(pc.red("Interactive mode requires a TTY. Cannot run init in non-interactive environments."));
+			console.error(
+				pc.red("Interactive mode requires a TTY. Cannot run init in non-interactive environments."),
+			);
 			process.exit(1);
 		}
 		if (configExists()) {
@@ -184,10 +192,10 @@ async function runConfigWizard(): Promise<void> {
 		clack.log.error("No compatible AI providers found.");
 		clack.log.info(
 			`Install at least one of the following providers to continue:\n\n` +
-			`  ${pc.bold("Claude Code")}   ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
-			`  ${pc.bold("Gemini CLI")}    ${pc.dim("npm i -g @anthropic-ai/gemini-cli")}\n` +
-			`  ${pc.bold("OpenCode")}      ${pc.dim("npm i -g opencode")}\n\n` +
-			`After installing, run ${pc.cyan("lisa init")} again.`,
+				`  ${pc.bold("Claude Code")}   ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
+				`  ${pc.bold("Gemini CLI")}    ${pc.dim("npm i -g @anthropic-ai/gemini-cli")}\n` +
+				`  ${pc.bold("OpenCode")}      ${pc.dim("npm i -g opencode")}\n\n` +
+				`After installing, run ${pc.cyan("lisa init")} again.`,
 		);
 		return process.exit(1);
 	}
