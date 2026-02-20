@@ -47,6 +47,17 @@ This project uses **${testRunner}** as its test runner.
 `;
 }
 
+function buildPreCommitHookInstructions(): string {
+	return `
+**Pre-commit hooks:**
+If \`git commit\` fails due to a pre-commit hook (e.g. husky), read the error output carefully and fix the underlying issue:
+- Linter/formatter failures → run the project's lint/format commands, then re-stage and retry the commit.
+- Code generation errors (e.g. stale Prisma client) → run the required generation command (e.g. \`npx prisma generate\`), then re-stage and retry.
+- Type errors → fix the type issues in the source files, then re-stage and retry.
+Do NOT skip or bypass hooks (no \`--no-verify\`). Fix the root cause and retry.
+`;
+}
+
 function buildReadmeInstructions(): string {
 	return `
 **README.md Evaluation:**
@@ -86,6 +97,7 @@ export function buildWorktreeMultiRepoPrompt(issue: Issue, config: LisaConfig): 
 		.join("\n\n");
 
 	const readmeBlock = buildReadmeInstructions();
+	const hookBlock = buildPreCommitHookInstructions();
 	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	return `You are an autonomous implementation agent working in a multi-repository workspace.
@@ -132,7 +144,7 @@ ${repoBlock}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${readmeBlock}
+${readmeBlock}${hookBlock}
 5. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`, \`npm run test\`).
@@ -170,6 +182,7 @@ ${readmeBlock}
 function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
 	const testBlock = buildTestInstructions(testRunner ?? null);
 	const readmeBlock = buildReadmeInstructions();
+	const hookBlock = buildPreCommitHookInstructions();
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, commit, and push the branch.
@@ -194,7 +207,7 @@ ${issue.description}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}
+${testBlock}${readmeBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -244,6 +257,7 @@ function buildBranchPrompt(issue: Issue, config: LisaConfig, testRunner?: TestRu
 
 	const testBlock = buildTestInstructions(testRunner ?? null);
 	const readmeBlock = buildReadmeInstructions();
+	const hookBlock = buildPreCommitHookInstructions();
 	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
@@ -275,7 +289,7 @@ ${repoEntries}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}
+${testBlock}${readmeBlock}${hookBlock}
 4. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -304,4 +318,31 @@ ${testBlock}${readmeBlock}
 - If the repo has a CLAUDE.md, read it first and follow its conventions.
 - Do NOT create pull requests — the caller handles that.
 - Do NOT update the issue tracker — the caller handles that.`;
+}
+
+export function buildPushRecoveryPrompt(hookErrors: string): string {
+	return `The previous \`git push\` failed because a pre-push hook rejected the push.
+Here is the full error output:
+
+\`\`\`
+${hookErrors}
+\`\`\`
+
+## Instructions
+
+1. **Read the errors** above carefully and identify the root cause.
+2. **Fix the issue** — common fixes include:
+   - Run linters/formatters (e.g. \`npm run lint -- --fix\`, \`npm run format\`)
+   - Run code generation (e.g. \`npx prisma generate\`, \`npm run codegen\`)
+   - Fix type errors in the source files
+   - Fix failing tests
+3. **Amend the commit** so the fix is included:
+   \`\`\`
+   git add -A && git commit --amend --no-edit
+   \`\`\`
+4. **Do NOT push** — the caller handles pushing after you finish.
+5. **Do NOT create pull requests** — the caller handles that.
+6. **Do NOT update the issue tracker** — the caller handles that.
+
+Focus only on fixing the hook errors. Do not make unrelated changes.`;
 }

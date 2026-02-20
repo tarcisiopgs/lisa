@@ -4,7 +4,12 @@ import { execa } from "execa";
 import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
-import { buildImplementPrompt, buildWorktreeMultiRepoPrompt, detectTestRunner } from "./prompt.js";
+import {
+	buildImplementPrompt,
+	buildPushRecoveryPrompt,
+	buildWorktreeMultiRepoPrompt,
+	detectTestRunner,
+} from "./prompt.js";
 import { runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
@@ -79,6 +84,81 @@ function cleanupManifest(dir: string): void {
 	} catch {
 		// File may not exist — ignore
 	}
+}
+
+const MAX_PUSH_RETRIES = 2;
+
+const HOOK_ERROR_PATTERNS = [
+	/husky - pre-push/i,
+	/husky - pre-commit/i,
+	/pre-push hook/i,
+	/pre-commit hook/i,
+	/hook declined/i,
+	/hook.*failed/i,
+	/hook.*exited with/i,
+	/hook.*returned.*exit code/i,
+];
+
+function isHookError(errorMessage: string): boolean {
+	return HOOK_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
+}
+
+interface PushRecoveryOptions {
+	branch: string;
+	cwd: string;
+	models: ProviderName[];
+	logFile: string;
+	guardrailsDir: string;
+	issueId: string;
+	overseer?: import("./types.js").OverseerConfig;
+}
+
+async function pushWithRecovery(
+	opts: PushRecoveryOptions,
+): Promise<{ success: boolean; error?: string }> {
+	for (let attempt = 0; attempt <= MAX_PUSH_RETRIES; attempt++) {
+		try {
+			await execa("git", ["push", "-u", "origin", opts.branch], { cwd: opts.cwd });
+			return { success: true };
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+
+			if (!isHookError(errorMessage)) {
+				return { success: false, error: errorMessage };
+			}
+
+			if (attempt >= MAX_PUSH_RETRIES) {
+				return {
+					success: false,
+					error: `Push hook failed after ${MAX_PUSH_RETRIES} recovery attempts: ${errorMessage}`,
+				};
+			}
+
+			logger.warn(
+				`Push hook failed (attempt ${attempt + 1}/${MAX_PUSH_RETRIES}). Re-invoking provider to fix...`,
+			);
+
+			const recoveryPrompt = buildPushRecoveryPrompt(errorMessage);
+			const result = await runWithFallback(opts.models, recoveryPrompt, {
+				logFile: opts.logFile,
+				cwd: opts.cwd,
+				guardrailsDir: opts.guardrailsDir,
+				issueId: opts.issueId,
+				overseer: opts.overseer,
+			});
+
+			if (!result.success) {
+				return {
+					success: false,
+					error: `Provider failed to fix push hook errors: ${result.output}`,
+				};
+			}
+
+			logger.ok("Provider finished recovery. Retrying push...");
+		}
+	}
+
+	return { success: false, error: "Push recovery exhausted retries" };
 }
 
 function installSignalHandlers(): void {
@@ -542,13 +622,18 @@ async function runWorktreeSession(
 		}
 	}
 
-	// Ensure branch is pushed to remote before creating PR
-	try {
-		await execa("git", ["push", "-u", "origin", effectiveBranch], { cwd: worktreePath });
-	} catch (err) {
-		logger.error(
-			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
-		);
+	// Ensure branch is pushed to remote before creating PR (with hook recovery)
+	const pushResult = await pushWithRecovery({
+		branch: effectiveBranch,
+		cwd: worktreePath,
+		models,
+		logFile,
+		guardrailsDir: repoPath,
+		issueId: issue.id,
+		overseer: config.overseer,
+	});
+	if (!pushResult.success) {
+		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
 		cleanupManifest(worktreePath);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
@@ -657,13 +742,18 @@ async function runWorktreeMultiRepoSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Push branch to remote (Lisa always pushes — never the agent)
-	try {
-		await execa("git", ["push", "-u", "origin", manifest.branch], { cwd: effectiveCwd });
-	} catch (err) {
-		logger.error(
-			`Failed to push branch to remote: ${err instanceof Error ? err.message : String(err)}`,
-		);
+	// Push branch to remote with hook recovery (Lisa always pushes — never the agent)
+	const pushResult = await pushWithRecovery({
+		branch: manifest.branch,
+		cwd: effectiveCwd,
+		models,
+		logFile,
+		guardrailsDir: manifest.repoPath,
+		issueId: issue.id,
+		overseer: config.overseer,
+	});
+	if (!pushResult.success) {
+		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
 		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
 		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
