@@ -8,14 +8,24 @@ import { sanitizePrBody } from "./pr-body.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
+	buildPlanningPrompt,
 	buildPushRecoveryPrompt,
-	buildWorktreeMultiRepoPrompt,
+	buildScopedImplementPrompt,
 	detectTestRunner,
+	type PreviousStepResult,
 } from "./prompt.js";
 import { createProvider, runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./terminal.js";
-import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
+import type {
+	ExecutionPlan,
+	FallbackResult,
+	LisaConfig,
+	PlanStep,
+	ProviderName,
+	RepoConfig,
+	Source,
+} from "./types.js";
 import {
 	createWorktree,
 	detectFeatureBranches,
@@ -76,6 +86,24 @@ function cleanupPrTitle(cwd: string): void {
 	} catch {
 		// File may not exist — ignore
 	}
+}
+
+const PLAN_FILE = ".lisa-plan.json";
+
+function readLisaPlan(dir: string): ExecutionPlan | null {
+	const planPath = join(dir, PLAN_FILE);
+	if (!existsSync(planPath)) return null;
+	try {
+		return JSON.parse(readFileSync(planPath, "utf-8").trim()) as ExecutionPlan;
+	} catch {
+		return null;
+	}
+}
+
+function cleanupPlan(dir: string): void {
+	try {
+		unlinkSync(join(dir, PLAN_FILE));
+	} catch {}
 }
 
 const MANIFEST_FILE = ".lisa-manifest.json";
@@ -915,16 +943,17 @@ async function runWorktreeMultiRepoSession(
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
-	// Clean stale manifest from a previous interrupted run
+	// Clean stale artifacts from previous interrupted runs
 	cleanupManifest(workspace);
+	cleanupPlan(workspace);
 
-	const prompt = buildWorktreeMultiRepoPrompt(issue, config);
-	startSpinner(`${issue.id} \u2014 implementing...`);
-	logger.log(`Multi-repo worktree session for ${issue.id} (agent selects repo and branch name)`);
-	logger.log(`Implementing (agent selects repo)... (log: ${logFile})`);
+	// Phase 1: Planning — agent analyzes issue and produces execution plan
+	startSpinner(`${issue.id} \u2014 analyzing issue...`);
+	logger.log(`Multi-repo planning phase for ${issue.id}`);
 	logger.initLogFile(logFile);
 
-	const result = await runWithFallback(models, prompt, {
+	const planPrompt = buildPlanningPrompt(issue, config);
+	const planResult = await runWithFallback(models, planPrompt, {
 		logFile,
 		cwd: workspace,
 		guardrailsDir: workspace,
@@ -936,101 +965,246 @@ async function runWorktreeMultiRepoSession(
 	try {
 		appendFileSync(
 			logFile,
-			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+			`\n${"=".repeat(80)}\nPlanning phase — provider: ${planResult.providerUsed}\n${planResult.output}\n`,
 		);
-	} catch {
-		// Ignore log write errors
+	} catch {}
+
+	if (!planResult.success) {
+		logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
+		cleanupPlan(workspace);
+		return {
+			success: false,
+			providerUsed: planResult.providerUsed,
+			prUrls: [],
+			fallback: planResult,
+		};
 	}
+
+	// Read execution plan
+	const plan = readLisaPlan(workspace);
+	if (!plan?.steps || plan.steps.length === 0) {
+		logger.error(`Agent did not produce a valid .lisa-plan.json for ${issue.id}. Aborting.`);
+		cleanupPlan(workspace);
+		return {
+			success: false,
+			providerUsed: planResult.providerUsed,
+			prUrls: [],
+			fallback: planResult,
+		};
+	}
+
+	// Sort steps by order
+	const sortedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
+	logger.ok(
+		`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
+	);
+	cleanupPlan(workspace);
+
+	// Phase 2: Sequential implementation — one session per repo step
+	const prUrls: string[] = [];
+	const previousResults: PreviousStepResult[] = [];
+	let lastFallback: FallbackResult = planResult;
+	let lastProvider: ProviderName = planResult.providerUsed;
+
+	for (const [i, step] of sortedSteps.entries()) {
+		const stepNum = i + 1;
+		logger.divider(stepNum);
+		logger.log(`Step ${stepNum}/${sortedSteps.length}: ${step.repoPath} — ${step.scope}`);
+
+		const stepResult = await runMultiRepoStep(
+			config,
+			issue,
+			step,
+			previousResults,
+			logFile,
+			models,
+			stepNum,
+		);
+
+		lastFallback = stepResult.fallback;
+		lastProvider = stepResult.providerUsed;
+
+		if (!stepResult.success) {
+			logger.error(`Step ${stepNum} failed for ${step.repoPath}. Aborting remaining steps.`);
+			return {
+				success: false,
+				providerUsed: lastProvider,
+				prUrls,
+				fallback: lastFallback,
+			};
+		}
+
+		if (stepResult.prUrl) {
+			prUrls.push(stepResult.prUrl);
+		}
+
+		previousResults.push({
+			repoPath: step.repoPath,
+			branch: stepResult.branch,
+			prUrl: stepResult.prUrl,
+		});
+	}
+
+	logger.ok(`Session ${session} complete for ${issue.id} — ${prUrls.length} PR(s) created`);
+	return { success: true, providerUsed: lastProvider, prUrls, fallback: lastFallback };
+}
+
+interface MultiRepoStepResult {
+	success: boolean;
+	providerUsed: ProviderName;
+	branch: string;
+	prUrl?: string;
+	fallback: FallbackResult;
+}
+
+async function runMultiRepoStep(
+	config: LisaConfig,
+	issue: { id: string; title: string; url: string; description: string },
+	step: PlanStep,
+	previousResults: PreviousStepResult[],
+	logFile: string,
+	models: ProviderName[],
+	stepNum: number,
+): Promise<MultiRepoStepResult> {
+	const repoPath = step.repoPath;
+	const defaultBranch = resolveBaseBranch(config, repoPath);
+	const branchName = generateBranchName(issue.id, issue.title);
+
+	const failResult = (
+		providerUsed: ProviderName,
+		fallback?: FallbackResult,
+	): MultiRepoStepResult => ({
+		success: false,
+		providerUsed,
+		branch: branchName,
+		fallback: fallback ?? { success: false, output: "", duration: 0, providerUsed, attempts: [] },
+	});
+
+	// Create worktree for this step
+	startSpinner(`${issue.id} step ${stepNum} \u2014 creating worktree...`);
+	let worktreePath: string;
+	try {
+		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
+	} catch (err) {
+		stopSpinner();
+		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
+		return failResult(models[0] ?? "claude");
+	}
+	stopSpinner();
+	logger.ok(`Worktree created at ${worktreePath}`);
+
+	// Detect test runner
+	const testRunner = detectTestRunner(worktreePath);
+	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
+
+	// Run scoped implementation
+	const prompt = buildScopedImplementPrompt(issue, step, previousResults, testRunner);
+	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
+
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: worktreePath,
+		guardrailsDir: repoPath,
+		issueId: issue.id,
+		overseer: config.overseer,
+	});
+	stopSpinner();
+
+	try {
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nStep ${stepNum} — provider: ${result.providerUsed}\n${result.output}\n`,
+		);
+	} catch {}
 
 	if (!result.success) {
-		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		cleanupManifest(workspace);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		logger.error(`Step ${stepNum} implementation failed. Check ${logFile}`);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
 
-	// Read manifest written by the provider
-	const manifest = readLisaManifest(workspace);
-	if (!manifest?.repoPath || !manifest.branch) {
-		logger.error(
-			`Agent did not produce a valid .lisa-manifest.json (requires repoPath + branch) for ${issue.id}. Aborting.`,
-		);
-		cleanupManifest(workspace);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	// Read manifest
+	const manifest = readLisaManifest(worktreePath);
+
+	// Use agent's branch name if provided
+	let effectiveBranch = branchName;
+	if (manifest?.branch && manifest.branch !== branchName) {
+		logger.log(`Renaming branch to: ${manifest.branch}`);
+		try {
+			await execa("git", ["branch", "-m", branchName, manifest.branch], { cwd: worktreePath });
+			effectiveBranch = manifest.branch;
+		} catch (err) {
+			logger.warn(`Branch rename failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
-	logger.ok(`Provider chose repo: ${manifest.repoPath}, branch: ${manifest.branch}`);
-
-	const worktreePath = join(manifest.repoPath, ".worktrees", manifest.branch);
-	const baseBranch = resolveBaseBranch(config, manifest.repoPath);
-
-	// Use the worktree if the agent created it; fall back to repo root otherwise
-	// (agent may skip worktree creation if the branch already exists with the implementation)
-	const hasWorktree = existsSync(worktreePath);
-	const effectiveCwd = hasWorktree ? worktreePath : manifest.repoPath;
-	if (!hasWorktree) {
-		logger.warn(`Worktree not found at ${worktreePath} — using repo root for git operations`);
-	}
-
-	// Validate tests from within the worktree (or repo root if no worktree)
-	startSpinner(`${issue.id} \u2014 validating tests...`);
-	const testsPassed = await runTestValidation(effectiveCwd);
+	// Validate tests
+	startSpinner(`${issue.id} step ${stepNum} \u2014 validating tests...`);
+	const testsPassed = await runTestValidation(worktreePath);
 	stopSpinner();
 	if (!testsPassed) {
-		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
-		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
-		cleanupManifest(workspace);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		logger.error(`Tests failed for step ${stepNum}. Blocking PR creation.`);
+		cleanupManifest(worktreePath);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { ...failResult(result.providerUsed, result), branch: effectiveBranch };
 	}
 
-	// Push branch to remote with hook recovery (Lisa always pushes — never the agent)
-	startSpinner(`${issue.id} \u2014 pushing...`);
+	// Push branch
+	startSpinner(`${issue.id} step ${stepNum} \u2014 pushing...`);
 	const pushResult = await pushWithRecovery({
-		branch: manifest.branch,
-		cwd: effectiveCwd,
+		branch: effectiveBranch,
+		cwd: worktreePath,
 		models,
 		logFile,
-		guardrailsDir: manifest.repoPath,
+		guardrailsDir: repoPath,
 		issueId: issue.id,
 		overseer: config.overseer,
 	});
 	stopSpinner();
 	if (!pushResult.success) {
-		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
-		if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
-		cleanupManifest(workspace);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		logger.error(`Failed to push step ${stepNum}: ${pushResult.error}`);
+		cleanupManifest(worktreePath);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { ...failResult(result.providerUsed, result), branch: effectiveBranch };
 	}
 
 	// Create PR
-	startSpinner(`${issue.id} \u2014 creating PR...`);
-	const prTitle = manifest.prTitle ?? issue.title;
-	const prBody = manifest.prBody;
-	const prUrls: string[] = [];
+	startSpinner(`${issue.id} step ${stepNum} \u2014 creating PR...`);
+	const prTitle = manifest?.prTitle ?? issue.title;
+	const prBody = manifest?.prBody;
+	cleanupManifest(worktreePath);
+
+	let prUrl: string | undefined;
 	try {
-		const repoInfo = await getRepoInfo(effectiveCwd);
+		const repoInfo = await getRepoInfo(worktreePath);
 		const pr = await createPullRequest(
 			{
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
-				head: manifest.branch,
-				base: baseBranch,
+				head: effectiveBranch,
+				base: defaultBranch,
 				title: prTitle,
 				body: buildPrBody(result.providerUsed, prBody),
 			},
 			config.github,
 		);
 		logger.ok(`PR created: ${pr.html_url}`);
-		prUrls.push(pr.html_url);
+		prUrl = pr.html_url;
 	} catch (err) {
 		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
 	}
 	stopSpinner();
 
-	cleanupManifest(workspace);
-	if (hasWorktree) await cleanupWorktree(manifest.repoPath, worktreePath);
+	await cleanupWorktree(repoPath, worktreePath);
 
-	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+	logger.ok(`Step ${stepNum} complete: ${repoPath}`);
+	return {
+		success: true,
+		providerUsed: result.providerUsed,
+		branch: effectiveBranch,
+		prUrl,
+		fallback: result,
+	};
 }
 
 async function runBranchSession(
