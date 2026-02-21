@@ -4,6 +4,7 @@ import { execa } from "execa";
 import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
+import { sanitizePrBody } from "./pr-body.js";
 import {
 	buildImplementPrompt,
 	buildPushRecoveryPrompt,
@@ -42,7 +43,10 @@ function buildPrBody(providerUsed: ProviderName, description?: string): string {
 	const lines: string[] = [];
 
 	if (description) {
-		lines.push("## Summary", "", description, "");
+		const sanitized = sanitizePrBody(description);
+		if (sanitized) {
+			lines.push("## Summary", "", sanitized, "");
+		}
 	}
 
 	lines.push(
