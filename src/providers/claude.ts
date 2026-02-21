@@ -7,6 +7,7 @@ import type { Provider, RunOptions, RunResult } from "../types.js";
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;
+	supportsNativeWorktree = true;
 
 	async isAvailable(): Promise<boolean> {
 		try {
@@ -26,15 +27,16 @@ export class ClaudeProvider implements Provider {
 		writeFileSync(promptFile, prompt, "utf-8");
 
 		try {
-			const proc = spawn(
-				"sh",
-				["-c", `claude -p --dangerously-skip-permissions "$(cat '${promptFile}')"`],
-				{
-					cwd: opts.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-					env: { ...process.env, CLAUDECODE: undefined },
-				},
-			);
+			const flags = ["-p", "--dangerously-skip-permissions"];
+			if (opts.useNativeWorktree) {
+				flags.push("--worktree");
+			}
+
+			const proc = spawn("sh", ["-c", `claude ${flags.join(" ")} "$(cat '${promptFile}')"`], {
+				cwd: opts.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+				env: { ...process.env, CLAUDECODE: undefined },
+			});
 
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 

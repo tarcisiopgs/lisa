@@ -108,6 +108,7 @@ export interface FallbackResult {
 	output: string;
 	duration: number;
 	providerUsed: ProviderName;
+	provider?: Provider;
 	attempts: ModelAttempt[];
 }
 

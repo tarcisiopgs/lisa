@@ -22,6 +22,23 @@ describe("createProvider", () => {
 	});
 });
 
+describe("supportsNativeWorktree", () => {
+	it("claude provider supports native worktree", () => {
+		const provider = createProvider("claude");
+		expect(provider.supportsNativeWorktree).toBe(true);
+	});
+
+	it("gemini provider does not support native worktree", () => {
+		const provider = createProvider("gemini");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+
+	it("opencode provider does not support native worktree", () => {
+		const provider = createProvider("opencode");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+});
+
 describe("isEligibleForFallback", () => {
 	it("returns true for rate limit errors", () => {
 		expect(isEligibleForFallback("Error 429: Too Many Requests")).toBe(true);
