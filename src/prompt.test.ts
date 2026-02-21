@@ -160,6 +160,14 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("Do NOT update README.md for");
 			expect(prompt).toContain("Internal refactors that don't change documented behavior");
 		});
+
+		it("includes concrete prBody markdown template with example structure", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+			expect(prompt).toContain("**What**:");
+			expect(prompt).toContain("**Why**:");
+			expect(prompt).toContain("**Key changes**:");
+			expect(prompt).toContain("**Testing**:");
+		});
 	});
 
 	describe("worktree mode — multi-repo", () => {
@@ -218,6 +226,14 @@ describe("buildImplementPrompt", () => {
 			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("/tmp/workspace");
 		});
+
+		it("includes concrete prBody markdown template with example structure", () => {
+			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
+			expect(prompt).toContain("**What**:");
+			expect(prompt).toContain("**Why**:");
+			expect(prompt).toContain("**Key changes**:");
+			expect(prompt).toContain("**Testing**:");
+		});
 	});
 
 	describe("branch mode", () => {
@@ -269,6 +285,14 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("Configuration schema changes");
 			expect(prompt).toContain("Do NOT update README.md for");
 			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+		});
+
+		it("includes concrete prBody markdown template with example structure", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+			expect(prompt).toContain("**What**:");
+			expect(prompt).toContain("**Why**:");
+			expect(prompt).toContain("**Key changes**:");
+			expect(prompt).toContain("**Testing**:");
 		});
 	});
 });

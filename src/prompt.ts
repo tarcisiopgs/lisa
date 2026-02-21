@@ -82,6 +82,19 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
+function buildPrBodyInstructions(): string {
+	return `The \`prBody\` MUST follow this exact markdown structure:
+   \`\`\`
+   - **What**: one-line summary of the change
+   - **Why**: motivation or issue context
+   - **Key changes**:
+     - \`src/foo.ts\` — added X functionality
+     - \`src/bar.ts\` — refactored Y to support Z
+   - **Testing**: what was validated (e.g. "all unit tests pass", "manually tested endpoint")
+   \`\`\`
+   Write in English. Do NOT write a wall of text — structure the summary using the template above.`;
+}
+
 export function buildWorktreeMultiRepoPrompt(issue: Issue, config: LisaConfig): string {
 	const workspace = resolve(config.workspace);
 
@@ -165,7 +178,7 @@ ${readmeBlock}${hookBlock}
      "prBody": "<markdown-formatted English summary>"
    }
    \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
+   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
@@ -228,7 +241,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`\`\`json
    {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
+   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
@@ -308,7 +321,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`\`\`json
    {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
+   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
