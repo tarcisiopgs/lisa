@@ -80,6 +80,7 @@ export interface RunOptions {
 	guardrailsDir?: string;
 	issueId?: string;
 	overseer?: OverseerConfig;
+	useNativeWorktree?: boolean;
 }
 
 export interface RunResult {
@@ -90,6 +91,7 @@ export interface RunResult {
 
 export interface Provider {
 	name: ProviderName;
+	supportsNativeWorktree?: boolean;
 	isAvailable(): Promise<boolean>;
 	run(prompt: string, opts: RunOptions): Promise<RunResult>;
 }
@@ -107,6 +109,16 @@ export interface FallbackResult {
 	duration: number;
 	providerUsed: ProviderName;
 	attempts: ModelAttempt[];
+}
+
+export interface PlanStep {
+	repoPath: string;
+	scope: string;
+	order: number;
+}
+
+export interface ExecutionPlan {
+	steps: PlanStep[];
 }
 
 export interface Source {
