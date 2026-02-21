@@ -96,6 +96,7 @@ export async function runWithFallback(
 				output: result.output,
 				duration: result.duration,
 				providerUsed: model,
+				provider,
 				attempts,
 			};
 		}
@@ -124,6 +125,7 @@ export async function runWithFallback(
 				output: result.output,
 				duration: result.duration,
 				providerUsed: model,
+				provider,
 				attempts,
 			};
 		}

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { Issue, LisaConfig } from "./types.js";
+import type { Issue, LisaConfig, PlanStep } from "./types.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 
@@ -82,103 +82,17 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
-export function buildWorktreeMultiRepoPrompt(issue: Issue, config: LisaConfig): string {
-	const workspace = resolve(config.workspace);
-
-	const repoBlock = config.repos
-		.map((r) => {
-			const absPath = resolve(workspace, r.path);
-			return [
-				`- **${r.name}**: \`${absPath}\``,
-				`  - Base branch: \`${r.base_branch}\``,
-				`  - Worktrees dir: \`${join(absPath, ".worktrees")}\``,
-			].join("\n");
-		})
-		.join("\n\n");
-
-	const readmeBlock = buildReadmeInstructions();
-	const hookBlock = buildPreCommitHookInstructions();
-	const manifestPath = join(workspace, ".lisa-manifest.json");
-
-	return `You are an autonomous implementation agent working in a multi-repository workspace.
-Your job is to determine the correct repository, create an English-named branch, implement the issue, commit, and write a manifest file.
-
-You are in the workspace: \`${workspace}\`
-
-## Issue
-
-- **ID:** ${issue.id}
-- **Title:** ${issue.title}
-- **URL:** ${issue.url}
-
-### Description
-
-${issue.description}
-
-## Available Repositories
-
-${repoBlock}
-
-## Instructions
-
-1. **Identify the correct repository**: Read the issue title and description carefully.
-   Determine which single repository above is the right target. Consider:
-   - File paths or module names mentioned in the description
-   - Technologies and frameworks referenced
-   - The nature of the change (e.g., API endpoint → api repo, UI component → frontend repo)
-
-2. **Choose an English branch name**: Create a slug in English following:
-   \`feat/${issue.id.toLowerCase()}-short-english-description\`
-   The description part MUST be in English regardless of the issue title language.
-   Example: for "${issue.id} Implementar rate limiting na API" → \`feat/${issue.id.toLowerCase()}-add-rate-limiting-to-api\`
-
-3. **Set up the worktree**: In the chosen repo, run:
+function buildPrBodyInstructions(): string {
+	return `The \`prBody\` MUST follow this exact markdown structure:
    \`\`\`
-   git fetch origin <base_branch>
-   git worktree add -b <your-english-branch> <repoPath>/.worktrees/<your-english-branch> origin/<base_branch>
-   cd <repoPath>/.worktrees/<your-english-branch>
+   - **What**: one-line summary of the change
+   - **Why**: motivation or issue context
+   - **Key changes**:
+     - \`src/foo.ts\` — added X functionality
+     - \`src/bar.ts\` — refactored Y to support Z
+   - **Testing**: what was validated (e.g. "all unit tests pass", "manually tested endpoint")
    \`\`\`
-
-4. **Implement**: Work inside the worktree. Follow the issue description exactly:
-   - Read all relevant files listed in the description first (if present)
-   - Follow the implementation instructions exactly
-   - Verify each acceptance criteria (if present)
-   - Respect any stack or technical constraints (if present)
-${readmeBlock}${hookBlock}
-5. **Validate**: Run the project's linter/typecheck/tests if available:
-   - Check \`package.json\` for lint, typecheck, check, or test scripts.
-   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`, \`npm run test\`).
-   - Fix any errors before proceeding.
-
-6. **Commit (do NOT push)**: Make atomic commits with conventional commit messages.
-   Do NOT run \`git push\` — the caller handles pushing.
-   **IMPORTANT — Language rules:**
-   - All commit messages MUST be in English.
-   - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
-
-7. **Write the manifest**: After committing, create \`${manifestPath}\` with JSON:
-   \`\`\`json
-   {
-     "repoPath": "<absolute path to the chosen repo>",
-     "branch": "<your English branch name>",
-     "prTitle": "<PR title in English, conventional commit format>",
-     "prBody": "<markdown-formatted English summary>"
-   }
-   \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
-   Do NOT commit this file.
-
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT push — the caller handles that.
-- Do NOT create pull requests — the caller handles that.
-- Do NOT update the issue tracker — the caller handles that.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+   Write in English. Do NOT write a wall of text — structure the summary using the template above.`;
 }
 
 function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
@@ -228,7 +142,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`\`\`json
    {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
+   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
@@ -308,7 +222,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`\`\`json
    {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`
-   The \`prBody\` MUST use markdown formatting. Use bullet points (\`-\`) to list key changes, and optionally bold (\`**text**\`) for emphasis. Do NOT write a wall of text — structure the summary as a bulleted list. Describe WHAT was changed and WHY, mentioning key files modified, new behavior added, or bugs fixed. Write in English.
+   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
@@ -349,4 +263,219 @@ ${hookErrors}
 6. **Do NOT update the issue tracker** — the caller handles that.
 
 Focus only on fixing the hook errors. Do not make unrelated changes.`;
+}
+
+export function buildNativeWorktreePrompt(
+	issue: Issue,
+	repoPath?: string,
+	testRunner?: TestRunner,
+): string {
+	const testBlock = buildTestInstructions(testRunner ?? null);
+	const readmeBlock = buildReadmeInstructions();
+	const hookBlock = buildPreCommitHookInstructions();
+	const prBodyBlock = buildPrBodyInstructions();
+	const manifestLocation = repoPath
+		? `\`${join(repoPath, ".lisa-manifest.json")}\``
+		: "`.lisa-manifest.json` in the **current directory**";
+
+	return `You are an autonomous implementation agent. Your job is to implement a single
+issue, validate it, and commit.
+
+You are working inside a git worktree that was automatically created for this task.
+Work on the current branch — it was created for you.
+
+## Issue
+
+- **ID:** ${issue.id}
+- **Title:** ${issue.title}
+- **URL:** ${issue.url}
+
+### Description
+
+${issue.description}
+
+## Instructions
+
+1. **Implement**: Follow the issue description exactly:
+   - Read all relevant files listed in the description first (if present)
+   - Follow the implementation instructions exactly
+   - Verify each acceptance criteria (if present)
+   - Respect any stack or technical constraints (if present)
+${testBlock}${readmeBlock}${hookBlock}
+2. **Validate**: Run the project's linter/typecheck/tests if available:
+   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
+   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
+   - Fix any errors before proceeding.
+
+3. **Commit**: Make atomic commits with conventional commit messages.
+   **Branch name must be in English.** If the current branch name contains non-English words,
+   rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
+   Do NOT push — the caller handles pushing.
+   **IMPORTANT — Language rules:**
+   - All commit messages MUST be in English.
+   - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
+
+4. **Write manifest**: Create ${manifestLocation} with JSON:
+   \`\`\`json
+   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   \`\`\`
+   ${prBodyBlock}
+   Do NOT commit this file.
+
+## Rules
+
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
+- The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT push — the caller handles that.
+- Do NOT install new dependencies unless the issue explicitly requires it.
+- If you get stuck or the issue is unclear, STOP and explain why.
+- One issue only. Do not pick up additional issues.
+- If the repo has a CLAUDE.md, read it first and follow its conventions.
+- Do NOT create pull requests — the caller handles that.
+- Do NOT update the issue tracker — the caller handles that.`;
+}
+
+export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
+	const workspace = resolve(config.workspace);
+
+	const repoBlock = config.repos
+		.map((r) => {
+			const absPath = resolve(workspace, r.path);
+			return `- **${r.name}**: \`${absPath}\` (base branch: \`${r.base_branch}\`)`;
+		})
+		.join("\n");
+
+	const planPath = join(workspace, ".lisa-plan.json");
+
+	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
+
+**Do NOT implement anything.** Only analyze the issue and produce the plan file.
+
+## Issue
+
+- **ID:** ${issue.id}
+- **Title:** ${issue.title}
+- **URL:** ${issue.url}
+
+### Description
+
+${issue.description}
+
+## Available Repositories
+
+${repoBlock}
+
+## Instructions
+
+1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
+   Consider:
+   - File paths or module names mentioned in the description
+   - Technologies and frameworks referenced
+   - Dependencies between repos (e.g., backend API changes needed before frontend can consume them)
+
+2. **Determine execution order**: If multiple repos are affected, decide the order. Repos that produce APIs, schemas, or shared libraries should come first. Repos that consume them should come later.
+
+3. **Write the plan**: Create \`${planPath}\` with JSON:
+   \`\`\`json
+   {
+     "steps": [
+       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 1 },
+       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 2 }
+     ]
+   }
+   \`\`\`
+
+## Rules
+
+- Only include repos that are actually affected by the issue. Do NOT include repos that don't need changes.
+- The \`scope\` field should be a concise English description of what needs to be done in that specific repo.
+- Order matters: lower order numbers execute first.
+- Do NOT implement anything. Do NOT create branches, write code, or commit.
+- Do NOT push, create pull requests, or update the issue tracker.
+- If only one repo is affected, the plan should have a single step.`;
+}
+
+export interface PreviousStepResult {
+	repoPath: string;
+	branch: string;
+	prUrl?: string;
+}
+
+export function buildScopedImplementPrompt(
+	issue: Issue,
+	step: PlanStep,
+	previousResults: PreviousStepResult[],
+	testRunner?: TestRunner,
+): string {
+	const testBlock = buildTestInstructions(testRunner ?? null);
+	const readmeBlock = buildReadmeInstructions();
+	const hookBlock = buildPreCommitHookInstructions();
+	const prBodyBlock = buildPrBodyInstructions();
+
+	const previousBlock =
+		previousResults.length > 0
+			? `\n## Previous Steps\n\nThe following repos have already been implemented as part of this issue:\n\n${previousResults.map((r) => `- **${r.repoPath}**: branch \`${r.branch}\`${r.prUrl ? ` — PR: ${r.prUrl}` : ""}`).join("\n")}\n\nUse this context if the current step depends on changes from previous steps.\n`
+			: "";
+
+	return `You are an autonomous implementation agent. Your job is to implement a specific part of an issue in a single repository.
+
+You are working inside a git worktree that was automatically created for this task.
+Work on the current branch — it was created for you.
+
+## Issue
+
+- **ID:** ${issue.id}
+- **Title:** ${issue.title}
+- **URL:** ${issue.url}
+
+### Description
+
+${issue.description}
+
+## Your Scope
+
+You are responsible for **this specific part** of the issue:
+
+> ${step.scope}
+
+Focus only on this scope. Do NOT implement changes outside this scope.
+${previousBlock}
+## Instructions
+
+1. **Implement**: Follow the scope above. Read the full issue description for context, but only implement what is described in "Your Scope":
+   - Read all relevant files first
+   - Follow the implementation instructions exactly
+   - Verify each acceptance criteria relevant to your scope
+${testBlock}${readmeBlock}${hookBlock}
+2. **Validate**: Run the project's linter/typecheck/tests if available:
+   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
+   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
+   - Fix any errors before proceeding.
+
+3. **Commit**: Make atomic commits with conventional commit messages.
+   **Branch name must be in English.** If the current branch name contains non-English words,
+   rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
+   Do NOT push — the caller handles pushing.
+   **IMPORTANT — Language rules:**
+   - All commit messages MUST be in English.
+   - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
+
+4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+   \`\`\`json
+   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   \`\`\`
+   ${prBodyBlock}
+   Do NOT commit this file.
+
+## Rules
+
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
+- The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT push — the caller handles that.
+- Do NOT install new dependencies unless the issue explicitly requires it.
+- If you get stuck or the issue is unclear, STOP and explain why.
+- One scope only. Do not pick up additional work outside your scope.
+- If the repo has a CLAUDE.md, read it first and follow its conventions.
+- Do NOT create pull requests — the caller handles that.
+- Do NOT update the issue tracker — the caller handles that.`;
 }
