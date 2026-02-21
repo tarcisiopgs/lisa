@@ -7,7 +7,6 @@ import {
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
-	buildWorktreeMultiRepoPrompt,
 	detectTestRunner,
 } from "./prompt.js";
 import type { Issue, LisaConfig, PlanStep } from "./types.js";
@@ -170,72 +169,6 @@ describe("buildImplementPrompt", () => {
 
 		it("includes concrete prBody markdown template with example structure", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
-			expect(prompt).toContain("**What**:");
-			expect(prompt).toContain("**Why**:");
-			expect(prompt).toContain("**Key changes**:");
-			expect(prompt).toContain("**Testing**:");
-		});
-	});
-
-	describe("worktree mode — multi-repo", () => {
-		const multiRepoConfig = makeConfig({
-			workflow: "worktree",
-			workspace: "/tmp/workspace",
-			repos: [
-				{ name: "api", path: "./api", match: "API:", base_branch: "main" },
-				{ name: "admin", path: "./admin", match: "Admin:", base_branch: "main" },
-			],
-		});
-
-		it("instructs agent to generate an English branch name", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("English branch name");
-			expect(prompt).toContain("feat/int-100");
-		});
-
-		it("lists all repo absolute paths", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("/tmp/workspace/api");
-			expect(prompt).toContain("/tmp/workspace/admin");
-		});
-
-		it("lists the worktrees directory for each repo", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("/tmp/workspace/api/.worktrees");
-			expect(prompt).toContain("/tmp/workspace/admin/.worktrees");
-		});
-
-		it("includes the manifest file path", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain(".lisa-manifest.json");
-			expect(prompt).toContain("/tmp/workspace/.lisa-manifest.json");
-		});
-
-		it("instructs agent NOT to push", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("do NOT push");
-			expect(prompt).toContain("Do NOT push");
-		});
-
-		it("includes issue details", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("INT-100");
-			expect(prompt).toContain("Add feature X");
-			expect(prompt).toContain("Implement the feature X as described.");
-		});
-
-		it("includes README evaluation instructions", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("README.md Evaluation");
-		});
-
-		it("includes the workspace root path", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
-			expect(prompt).toContain("/tmp/workspace");
-		});
-
-		it("includes concrete prBody markdown template with example structure", () => {
-			const prompt = buildWorktreeMultiRepoPrompt(makeIssue(), multiRepoConfig);
 			expect(prompt).toContain("**What**:");
 			expect(prompt).toContain("**Why**:");
 			expect(prompt).toContain("**Key changes**:");
