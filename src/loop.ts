@@ -7,11 +7,12 @@ import * as logger from "./logger.js";
 import { sanitizePrBody } from "./pr-body.js";
 import {
 	buildImplementPrompt,
+	buildNativeWorktreePrompt,
 	buildPushRecoveryPrompt,
 	buildWorktreeMultiRepoPrompt,
 	detectTestRunner,
 } from "./prompt.js";
-import { runWithFallback } from "./providers/index.js";
+import { createProvider, runWithFallback } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./terminal.js";
 import type { FallbackResult, LisaConfig, ProviderName, RepoConfig, Source } from "./types.js";
@@ -524,6 +525,25 @@ async function runTestValidation(cwd: string): Promise<boolean> {
 	}
 }
 
+async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<string | null> {
+	try {
+		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
+		const lines = stdout.split("\n");
+		let currentPath: string | null = null;
+		for (const line of lines) {
+			if (line.startsWith("worktree ")) {
+				currentPath = line.slice("worktree ".length);
+			}
+			if (line.startsWith("branch ") && line.endsWith(`/${branch}`)) {
+				return currentPath;
+			}
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 async function runWorktreeSession(
 	config: LisaConfig,
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
@@ -531,17 +551,188 @@ async function runWorktreeSession(
 	session: number,
 	models: ProviderName[],
 ): Promise<SessionResult> {
-	// Multi-repo: delegate repo selection and worktree creation to the provider
+	// Multi-repo: delegate to planning + sequential sessions
 	if (config.repos.length > 1) {
 		return runWorktreeMultiRepoSession(config, issue, logFile, session, models);
 	}
 
 	const workspace = resolve(config.workspace);
-
-	// Determine target repo root
 	const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
-
 	const defaultBranch = resolveBaseBranch(config, repoPath);
+
+	// Check if primary provider supports native worktree (e.g., Claude Code --worktree)
+	const primaryProvider = createProvider(models[0] ?? "claude");
+	const useNativeWorktree = primaryProvider.supportsNativeWorktree === true;
+
+	if (useNativeWorktree) {
+		return runNativeWorktreeSession(
+			config,
+			issue,
+			logFile,
+			session,
+			models,
+			repoPath,
+			defaultBranch,
+		);
+	}
+
+	return runManualWorktreeSession(config, issue, logFile, session, models, repoPath, defaultBranch);
+}
+
+async function runNativeWorktreeSession(
+	config: LisaConfig,
+	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	logFile: string,
+	session: number,
+	models: ProviderName[],
+	repoPath: string,
+	defaultBranch: string,
+): Promise<SessionResult> {
+	const failResult = (providerUsed: ProviderName, fallback?: FallbackResult): SessionResult => ({
+		success: false,
+		providerUsed,
+		prUrls: [],
+		fallback: fallback ?? { success: false, output: "", duration: 0, providerUsed, attempts: [] },
+	});
+
+	// Start lifecycle resources before implementation
+	const repo = findRepoConfig(config, issue);
+	if (repo?.lifecycle) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
+		const started = await startResources(repo, repoPath);
+		stopSpinner();
+		if (!started) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return failResult(models[0] ?? "claude");
+		}
+	}
+
+	const testRunner = detectTestRunner(repoPath);
+	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
+
+	// Clean stale manifest from previous run
+	cleanupManifest(repoPath);
+
+	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner);
+	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
+	logger.log(`Implementing with native worktree... (log: ${logFile})`);
+	logger.initLogFile(logFile);
+
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: repoPath,
+		guardrailsDir: repoPath,
+		issueId: issue.id,
+		overseer: config.overseer,
+		useNativeWorktree: true,
+	});
+	stopSpinner();
+
+	try {
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+		);
+	} catch {}
+
+	if (repo?.lifecycle) await stopResources();
+
+	if (!result.success) {
+		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		cleanupManifest(repoPath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Read manifest from repoPath (prompt instructs agent to write it there)
+	const manifest = readLisaManifest(repoPath);
+	if (!manifest?.branch) {
+		logger.error(`Agent did not produce a valid .lisa-manifest.json for ${issue.id}. Aborting.`);
+		cleanupManifest(repoPath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	const effectiveBranch = manifest.branch;
+	logger.ok(`Agent created branch: ${effectiveBranch}`);
+
+	// Find the worktree created by the provider (for validation, push, and cleanup)
+	const worktreePath = await findWorktreeForBranch(repoPath, effectiveBranch);
+	const effectiveCwd = worktreePath ?? repoPath;
+	if (!worktreePath) {
+		logger.warn(`No worktree found for branch ${effectiveBranch} — using repo root`);
+	}
+
+	// Validate tests
+	startSpinner(`${issue.id} \u2014 validating tests...`);
+	const testsPassed = await runTestValidation(effectiveCwd);
+	stopSpinner();
+	if (!testsPassed) {
+		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
+		cleanupManifest(repoPath);
+		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Push branch to remote
+	startSpinner(`${issue.id} \u2014 pushing...`);
+	const pushResult = await pushWithRecovery({
+		branch: effectiveBranch,
+		cwd: effectiveCwd,
+		models,
+		logFile,
+		guardrailsDir: repoPath,
+		issueId: issue.id,
+		overseer: config.overseer,
+	});
+	stopSpinner();
+	if (!pushResult.success) {
+		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
+		cleanupManifest(repoPath);
+		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	// Create PR
+	startSpinner(`${issue.id} \u2014 creating PR...`);
+	const prTitle = manifest.prTitle ?? issue.title;
+	const prBody = manifest.prBody;
+	cleanupManifest(repoPath);
+
+	const prUrls: string[] = [];
+	try {
+		const repoInfo = await getRepoInfo(effectiveCwd);
+		const pr = await createPullRequest(
+			{
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+				head: effectiveBranch,
+				base: defaultBranch,
+				title: prTitle,
+				body: buildPrBody(result.providerUsed, prBody),
+			},
+			config.github,
+		);
+		logger.ok(`PR created: ${pr.html_url}`);
+		prUrls.push(pr.html_url);
+	} catch (err) {
+		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+	}
+	stopSpinner();
+
+	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+
+	logger.ok(`Session ${session} complete for ${issue.id}`);
+	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+}
+
+async function runManualWorktreeSession(
+	config: LisaConfig,
+	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	logFile: string,
+	session: number,
+	models: ProviderName[],
+	repoPath: string,
+	defaultBranch: string,
+): Promise<SessionResult> {
 	const branchName = generateBranchName(issue.id, issue.title);
 
 	startSpinner(`${issue.id} \u2014 creating worktree...`);

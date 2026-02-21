@@ -364,11 +364,18 @@ ${hookErrors}
 Focus only on fixing the hook errors. Do not make unrelated changes.`;
 }
 
-export function buildNativeWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
+export function buildNativeWorktreePrompt(
+	issue: Issue,
+	repoPath?: string,
+	testRunner?: TestRunner,
+): string {
 	const testBlock = buildTestInstructions(testRunner ?? null);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const prBodyBlock = buildPrBodyInstructions();
+	const manifestLocation = repoPath
+		? `\`${join(repoPath, ".lisa-manifest.json")}\``
+		: "`.lisa-manifest.json` in the **current directory**";
 
 	return `You are an autonomous implementation agent. Your job is to implement a single
 issue, validate it, and commit.
@@ -407,7 +414,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+4. **Write manifest**: Create ${manifestLocation} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
    \`\`\`

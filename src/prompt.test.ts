@@ -328,6 +328,16 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).toContain(".lisa-manifest.json");
 	});
 
+	it("writes manifest to repoPath when provided", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue(), "/tmp/my-repo");
+		expect(prompt).toContain("/tmp/my-repo/.lisa-manifest.json");
+	});
+
+	it("writes manifest to current directory when repoPath not provided", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue());
+		expect(prompt).toContain("in the **current directory**");
+	});
+
 	it("includes prBody template", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
 		expect(prompt).toContain("**What**:");
@@ -337,7 +347,7 @@ describe("buildNativeWorktreePrompt", () => {
 	});
 
 	it("includes test instructions when provided", () => {
-		const prompt = buildNativeWorktreePrompt(makeIssue(), "vitest");
+		const prompt = buildNativeWorktreePrompt(makeIssue(), undefined, "vitest");
 		expect(prompt).toContain("MANDATORY — Unit Tests");
 		expect(prompt).toContain("vitest");
 	});
