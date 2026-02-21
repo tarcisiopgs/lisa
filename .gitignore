@@ -10,3 +10,6 @@ pnpm-lock.yaml
 .env
 .env.*
 .lisa/config.yaml
+
+# Docs
+docs/
