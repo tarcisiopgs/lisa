@@ -1,0 +1,135 @@
+name: Auto Merge
+
+on:
+  workflow_run:
+    workflows: ["CI", "Claude Code Review"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Estagisaura token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ESTAGISAURA_APP_ID }}
+          private-key: ${{ secrets.ESTAGISAURA_PRIVATE_KEY }}
+
+      - name: Merge or notify
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { head_branch, head_sha } = context.payload.workflow_run;
+
+            if (head_branch === 'main') {
+              console.log('Push direto na main, ignorando.');
+              return;
+            }
+
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${head_branch}`
+            });
+
+            if (prs.data.length === 0) {
+              console.log('Nenhum PR aberto para a branch:', head_branch);
+              return;
+            }
+
+            const pr = prs.data[0];
+
+            // Verifica todos os checks necessários
+            const requiredChecks = ['Lint', 'Typecheck', 'Test', 'Build', 'claude-review'];
+
+            const { data: checkRuns } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: head_sha,
+              per_page: 100
+            });
+
+            console.log('Checks encontrados:', checkRuns.check_runs.map(c => `${c.name}: ${c.status}/${c.conclusion}`).join(', '));
+
+            const pending = requiredChecks.filter(name => {
+              const run = checkRuns.check_runs.find(c => c.name === name);
+              return !run || run.status !== 'completed';
+            });
+
+            const failed = requiredChecks.filter(name => {
+              const run = checkRuns.check_runs.find(c => c.name === name);
+              return run && run.status === 'completed' && run.conclusion !== 'success';
+            });
+
+            if (pending.length > 0) {
+              console.log('Aguardando checks:', pending.join(', '));
+              return;
+            }
+
+            if (failed.length > 0) {
+              console.log(`❌ Checks falharam: ${failed.join(', ')}`);
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `❌ **Merge bloqueado** — checks falharam: ${failed.map(f => `\`${f}\``).join(', ')}\n\nVerifique os logs antes de tentar novamente.`
+              });
+
+              if (process.env.NOTIFY_WEBHOOK_URL) {
+                try {
+                  await fetch(process.env.NOTIFY_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Webhook-Secret': process.env.NOTIFY_WEBHOOK_SECRET
+                    },
+                    body: JSON.stringify({
+                      repo: context.repo.repo,
+                      pr_number: pr.number,
+                      pr_title: pr.title,
+                      pr_url: pr.html_url,
+                      branch: head_branch,
+                      failed_checks: failed,
+                      conclusion: 'failure'
+                    })
+                  });
+                  console.log('Webhook enviado.');
+                } catch (e) {
+                  console.log('Erro ao chamar webhook:', e.message);
+                }
+              }
+
+              return;
+            }
+
+            console.log(`✅ Todos os checks passaram. Mergeando PR #${pr.number}...`);
+
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              merge_method: 'squash'
+            });
+
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${head_branch}`
+              });
+              console.log(`🗑️ Branch ${head_branch} deletada.`);
+            } catch (e) {
+              console.log('Não foi possível deletar a branch:', e.message);
+            }
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          NOTIFY_WEBHOOK_SECRET: ${{ secrets.NOTIFY_WEBHOOK_SECRET }}
