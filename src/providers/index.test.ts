@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createProvider, isEligibleForFallback } from "./index.js";
+import { createProvider, isCompleteProviderExhaustion, isEligibleForFallback } from "./index.js";
 
 describe("createProvider", () => {
 	it("creates a claude provider", () => {
@@ -94,10 +94,87 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("command not found")).toBe(true);
 	});
 
+	it("returns true for cursor free-plan errors", () => {
+		expect(isEligibleForFallback("Named models unavailable Free plans can only use Auto")).toBe(
+			true,
+		);
+		expect(
+			isEligibleForFallback(
+				"Free plans can only use Auto. Switch to Auto or upgrade plans to continue.",
+			),
+		).toBe(true);
+	});
+
 	it("returns false for non-eligible errors", () => {
 		expect(isEligibleForFallback("SyntaxError: Unexpected token")).toBe(false);
 		expect(isEligibleForFallback("TypeError: Cannot read properties")).toBe(false);
 		expect(isEligibleForFallback("Implementation complete")).toBe(false);
 		expect(isEligibleForFallback("Build failed with errors")).toBe(false);
+	});
+});
+
+describe("isCompleteProviderExhaustion", () => {
+	it("returns false for empty attempts", () => {
+		expect(isCompleteProviderExhaustion([])).toBe(false);
+	});
+
+	it("returns true when all attempts are eligible errors", () => {
+		expect(
+			isCompleteProviderExhaustion([
+				{
+					provider: "cursor",
+					success: false,
+					error: "Eligible error (quota/unavailable/timeout)",
+					duration: 1,
+				},
+				{
+					provider: "gemini",
+					success: false,
+					error: "Eligible error (quota/unavailable/timeout)",
+					duration: 1,
+				},
+			]),
+		).toBe(true);
+	});
+
+	it("returns true when all attempts are not-installed errors", () => {
+		expect(
+			isCompleteProviderExhaustion([
+				{
+					provider: "copilot",
+					success: false,
+					error: 'Provider "copilot" is not installed or not in PATH',
+					duration: 0,
+				},
+			]),
+		).toBe(true);
+	});
+
+	it("returns false when any attempt is a non-eligible (task) error", () => {
+		expect(
+			isCompleteProviderExhaustion([
+				{ provider: "claude", success: false, error: "Non-eligible error", duration: 5 },
+			]),
+		).toBe(false);
+	});
+
+	it("returns false when any attempt succeeded", () => {
+		expect(
+			isCompleteProviderExhaustion([{ provider: "claude", success: true, duration: 10 }]),
+		).toBe(false);
+	});
+
+	it("returns false for mixed eligible and non-eligible attempts", () => {
+		expect(
+			isCompleteProviderExhaustion([
+				{
+					provider: "cursor",
+					success: false,
+					error: "Eligible error (quota/unavailable/timeout)",
+					duration: 1,
+				},
+				{ provider: "claude", success: false, error: "Non-eligible error", duration: 5 },
+			]),
+		).toBe(false);
 	});
 });

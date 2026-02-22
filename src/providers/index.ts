@@ -57,10 +57,23 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/not in PATH/i,
 	/command not found/i,
 	/lisa-overseer/i,
+	/named models unavailable/i,
+	/free plans can only use/i,
 ];
 
 export function isEligibleForFallback(output: string): boolean {
 	return ELIGIBLE_ERROR_PATTERNS.some((pattern) => pattern.test(output));
+}
+
+/**
+ * Returns true when every attempt in a fallback chain failed due to provider
+ * infrastructure issues (eligible errors or binary not found), meaning no
+ * provider was able to attempt the task itself. In this case the loop should
+ * stop rather than reverting the issue and retrying indefinitely.
+ */
+export function isCompleteProviderExhaustion(attempts: ModelAttempt[]): boolean {
+	if (attempts.length === 0) return false;
+	return attempts.every((a) => !a.success && a.error !== "Non-eligible error");
 }
 
 export async function runWithFallback(

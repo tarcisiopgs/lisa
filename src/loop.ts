@@ -14,7 +14,11 @@ import {
 	detectTestRunner,
 	type PreviousStepResult,
 } from "./prompt.js";
-import { createProvider, runWithFallback } from "./providers/index.js";
+import {
+	createProvider,
+	isCompleteProviderExhaustion,
+	runWithFallback,
+} from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./terminal.js";
 import type {
@@ -422,6 +426,18 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				logger.log("Single iteration mode. Exiting.");
 				break;
 			}
+
+			// If every provider failed due to infrastructure issues (quota, plan limits,
+			// binary not found) rather than task content, retrying won't help — stop the
+			// loop so the user can fix their provider configuration.
+			if (isCompleteProviderExhaustion(sessionResult.fallback.attempts)) {
+				logger.error(
+					"All providers exhausted due to infrastructure issues (quota, plan limits, or not installed). " +
+						"Fix your provider configuration and restart lisa.",
+				);
+				break;
+			}
+
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
 			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
