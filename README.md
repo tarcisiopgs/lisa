@@ -15,7 +15,7 @@ Most AI agent loops work like Ralph — they grab an issue, throw it at a model,
 Lisa is deterministic. She follows a structured pipeline with clear stages (fetch, activate, implement, validate, PR, update) and stops when the work is done. This means:
 
 - **Token efficiency** — Each issue gets one focused prompt with full context. No wasted retries, no speculative exploration, no idle polling.
-- **Multi-repo awareness** — Lisa detects which repos the agent touched and creates one PR per repo. Monorepos with multiple packages just work.
+- **Multi-repo awareness** — Lisa plans across multiple repos, executes in the correct order (e.g., backend before frontend), and creates one PR per repo.
 - **Model fallback** — Configure a chain of models (`claude → gemini → opencode`). Transient errors (429, quota, timeout) trigger the next model; non-transient errors stop the chain.
 - **Workflow integration** — Issues move through your board in real time (Backlog → In Progress → In Review). Your team always knows what's being worked on.
 - **Self-healing** — Orphan issues (stuck in "In Progress" from interrupted runs) are automatically recovered on startup. Pre-push hook failures trigger the agent to fix and retry.
@@ -76,7 +76,9 @@ lisa run --provider gemini --once
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
+| `lisa run --source NAME` | Override issue source (linear, trello) |
 | `lisa run --label NAME` | Override label filter |
+| `lisa run --github METHOD` | Override GitHub method (cli, token) |
 | `lisa run --json` | Output as JSON lines |
 | `lisa run --quiet` | Suppress non-essential output |
 | `lisa config` | Interactive config wizard |
@@ -99,12 +101,13 @@ All providers use `child_process.spawn` with `sh -c`. Prompts are written to a t
 
 ### Fallback Chain
 
-Configure multiple models in the `models` array. Lisa tries them in order — transient errors (429, quota, timeout, network) trigger the next model. Non-transient errors stop the chain immediately.
+Configure a fallback chain in the `models` array. Lisa tries each provider in order — transient errors (429, quota, timeout, network) trigger the next provider. Non-transient errors stop the chain immediately.
 
 ```yaml
 models:
   - claude
   - gemini
+  - opencode
 ```
 
 If `models` is not set, Lisa uses the single `provider` field.
@@ -119,7 +122,12 @@ The AI agent creates a branch directly in your current checkout, implements the 
 
 Lisa creates an isolated [git worktree](https://git-scm.com/docs/git-worktree) for each issue under `.worktrees/`. The agent works inside the worktree without touching your main checkout. After the PR is created, the worktree is cleaned up automatically.
 
-In multi-repo workspaces, the agent selects the correct repository, creates the worktree, implements, and writes a `.lisa-manifest.json` with the repo path, branch name, and PR title. Lisa reads the manifest to push and create the PR.
+**Native worktree support** — When using Claude Code, Lisa delegates worktree lifecycle directly to the provider via the `--worktree` flag. Lisa auto-detects whether the primary provider supports native worktrees and uses the appropriate mode. Other providers use Lisa-managed worktrees.
+
+**Multi-repo workspaces** — When multiple repos are configured, Lisa uses a two-phase flow:
+
+1. **Planning phase** — A planning agent analyzes the issue and produces a `.lisa-plan.json` with ordered steps (one per affected repo), determining which repos need changes and in what order (e.g., backend API before frontend consumer).
+2. **Execution phase** — Lisa executes each step sequentially, creating one worktree and one PR per repo. Cross-repo context (branch names, PR URLs from previous steps) is passed to each subsequent step so the agent can reference them.
 
 Worktree mode is ideal when you want to keep working in the repo while Lisa resolves issues in the background.
 
@@ -129,9 +137,6 @@ Config lives in `.lisa/config.yaml`. Run `lisa init` to create it interactively.
 
 ```yaml
 provider: claude
-models:
-  - claude
-  - gemini
 source: linear
 workflow: worktree
 
@@ -151,6 +156,7 @@ repos:
   - name: my-api
     path: ./api
     base_branch: main
+    match: "[API]"        # route issues whose title starts with "[API]" to this repo
   - name: my-app
     path: ./app
     base_branch: main
@@ -226,6 +232,22 @@ Lisa starts resources before the agent runs, waits for the port to be ready, run
 - **Push recovery** — If `git push` fails due to pre-push hooks (linter, typecheck, tests), Lisa re-invokes the agent with the error output and retries the push.
 - **Signal handling** — SIGINT/SIGTERM gracefully revert the active issue to its previous status before exiting.
 - **Guardrails** — Failed sessions are logged to `.lisa/guardrails.md` and injected into future prompts so the agent avoids repeating the same mistakes.
+
+### Overseer
+
+Lisa can detect stuck providers — agents that appear to be running but are making no progress. When enabled, the overseer periodically checks `git status` in the working directory. If no changes are detected within the `stuck_threshold`, the provider process is killed and the error is eligible for fallback to the next model in the chain.
+
+### Test Runner Auto-Detection
+
+Lisa auto-detects `vitest` or `jest` in the project's `package.json` dependencies. When a test runner is found, mandatory test instructions are injected into the agent prompt, requiring the agent to write unit tests for new code and run `npm run test` before committing.
+
+### PR Body Formatting
+
+Agent-produced PR descriptions are automatically sanitized before creating the pull request: HTML tags are stripped, `*` bullets are normalized to `-`, and wall-of-text (single-line) descriptions are split into bullet points at sentence boundaries. Agents are also instructed to follow a structured markdown template (What / Why / Key changes / Testing).
+
+### Terminal Integration
+
+Lisa updates the terminal title to reflect the current activity (fetching, implementing, pushing, cooling down) and plays a bell notification when a session completes. This works in any terminal that supports OSC title sequences.
 
 ## License
 
