@@ -6,6 +6,8 @@ import {
 } from "../guardrails.js";
 import type { FallbackResult, ModelAttempt, Provider, ProviderName, RunOptions } from "../types.js";
 import { ClaudeProvider } from "./claude.js";
+import { CopilotProvider } from "./copilot.js";
+import { CursorProvider } from "./cursor.js";
 import { GeminiProvider } from "./gemini.js";
 import { OpenCodeProvider } from "./opencode.js";
 
@@ -13,6 +15,8 @@ const providers: Record<ProviderName, () => Provider> = {
 	claude: () => new ClaudeProvider(),
 	gemini: () => new GeminiProvider(),
 	opencode: () => new OpenCodeProvider(),
+	copilot: () => new CopilotProvider(),
+	cursor: () => new CursorProvider(),
 };
 
 export async function getAvailableProviders(): Promise<Provider[]> {

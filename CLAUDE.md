@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Lisa?
 
-A deterministic autonomous issue resolver that connects project trackers (Linear/Trello) to AI coding agents (Claude Code, Gemini CLI, OpenCode) and delivers pull requests via GitHub. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
+A deterministic autonomous issue resolver that connects project trackers (Linear/Trello) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent) and delivers pull requests via GitHub. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
 
 ## Language
 
@@ -49,7 +49,9 @@ src/
 │   ├── index.ts      # Provider factory, runWithFallback(), fallback eligibility
 │   ├── claude.ts     # Claude Code: claude -p --dangerously-skip-permissions
 │   ├── gemini.ts     # Gemini CLI: gemini --yolo -p
-│   └── opencode.ts   # OpenCode: opencode run
+│   ├── opencode.ts   # OpenCode: opencode run
+│   ├── copilot.ts    # GitHub Copilot CLI: copilot --allow-all -p
+│   └── cursor.ts     # Cursor Agent: agent -p --output-format text --force (also tries cursor-agent)
 ├── sources/          # Issue tracker integrations
 │   ├── index.ts      # Source factory
 │   ├── linear.ts     # Linear GraphQL API

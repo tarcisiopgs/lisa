@@ -17,6 +17,15 @@ describe("createProvider", () => {
 		expect(provider.name).toBe("opencode");
 	});
 
+	it("creates a copilot provider", () => {
+		const provider = createProvider("copilot");
+		expect(provider.name).toBe("copilot");
+	});
+	it("creates a cursor provider", () => {
+		const provider = createProvider("cursor");
+		expect(provider.name).toBe("cursor");
+	});
+
 	it("throws for unknown provider", () => {
 		expect(() => createProvider("unknown" as never)).toThrow("Unknown provider: unknown");
 	});
@@ -35,6 +44,15 @@ describe("supportsNativeWorktree", () => {
 
 	it("opencode provider does not support native worktree", () => {
 		const provider = createProvider("opencode");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+
+	it("copilot provider does not support native worktree", () => {
+		const provider = createProvider("copilot");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+	it("cursor provider does not support native worktree", () => {
+		const provider = createProvider("cursor");
 		expect(provider.supportsNativeWorktree).toBeFalsy();
 	});
 });

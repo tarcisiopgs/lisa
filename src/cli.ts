@@ -185,6 +185,8 @@ async function runConfigWizard(): Promise<void> {
 		claude: "Claude Code",
 		gemini: "Gemini CLI",
 		opencode: "OpenCode",
+		copilot: "GitHub Copilot CLI",
+		cursor: "Cursor Agent",
 	};
 
 	const available = await getAvailableProviders();
