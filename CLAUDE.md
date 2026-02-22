@@ -89,3 +89,13 @@ The two core abstractions are `Provider` and `Source` (both in `types.ts`). Prov
 ### Configuration
 
 YAML config at `.lisa/config.yaml`. `config.ts` handles backward compatibility (old field names `board`→`team`, `list`→`project`), derives `models[]` from `provider` if not set, and merges CLI flag overrides.
+
+## Versioning
+
+Follow [Semantic Versioning](https://semver.org/):
+
+- **Major** (`X.0.0`): Breaking changes to CLI flags, config schema, or provider/source interfaces.
+- **Minor** (`0.X.0`): New features, new providers/sources, new CLI flags — backward-compatible.
+- **Patch** (`0.0.X`): Bug fixes, documentation updates, internal refactors — no behavior change.
+
+Release process: bump `version` in `package.json`, commit as `chore: bump version to X.Y.Z`, tag `vX.Y.Z`, build, publish to npm, create GitHub release.
