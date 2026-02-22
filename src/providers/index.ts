@@ -121,7 +121,7 @@ export async function runWithFallback(
 				success: true,
 				output: result.output,
 				duration: result.duration,
-				providerUsed: spec.provider,
+				providerUsed: spec.model ? `${spec.provider}/${spec.model}` : spec.provider,
 				provider,
 				attempts,
 			};
@@ -151,7 +151,7 @@ export async function runWithFallback(
 				success: false,
 				output: result.output,
 				duration: result.duration,
-				providerUsed: spec.provider,
+				providerUsed: spec.model ? `${spec.provider}/${spec.model}` : spec.provider,
 				provider,
 				attempts,
 			};

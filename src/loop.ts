@@ -52,10 +52,20 @@ export interface LoopOptions {
 
 function resolveModels(config: LisaConfig): ModelSpec[] {
 	if (!config.models || config.models.length === 0) {
-		return [{ provider: config.provider as ProviderName }];
+		return [{ provider: config.provider }];
+	}
+	const knownProviders = new Set<string>(["claude", "gemini", "opencode", "copilot", "cursor"]);
+	for (const m of config.models) {
+		if (knownProviders.has(m) && m !== config.provider) {
+			logger.warn(
+				`Model "${m}" looks like a provider name but provider is "${config.provider}". ` +
+					`Since v1.4.0, "models" lists model names within the configured provider, not provider names. ` +
+					`Update your .lisa/config.yaml.`,
+			);
+		}
 	}
 	return config.models.map((m) => ({
-		provider: config.provider as ProviderName,
+		provider: config.provider,
 		model: m === config.provider ? undefined : m,
 	}));
 }
