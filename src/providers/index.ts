@@ -174,7 +174,8 @@ function formatAttemptsReport(attempts: ModelAttempt[]): string {
 		const status = a.success ? "OK" : "FAILED";
 		const error = a.error ? ` — ${a.error}` : "";
 		const duration = a.duration > 0 ? ` (${Math.round(a.duration / 1000)}s)` : "";
-		lines.push(`  ${i + 1}. ${a.provider}: ${status}${error}${duration}`);
+		const label = a.model ? `${a.provider}/${a.model}` : a.provider;
+		lines.push(`  ${i + 1}. ${label}: ${status}${error}${duration}`);
 	}
 	return lines.join("\n");
 }
