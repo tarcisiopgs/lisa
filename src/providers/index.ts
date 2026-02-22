@@ -4,7 +4,14 @@ import {
 	extractContext,
 	extractErrorType,
 } from "../guardrails.js";
-import type { FallbackResult, ModelAttempt, Provider, ProviderName, RunOptions } from "../types.js";
+import type {
+	FallbackResult,
+	ModelAttempt,
+	ModelSpec,
+	Provider,
+	ProviderName,
+	RunOptions,
+} from "../types.js";
 import { ClaudeProvider } from "./claude.js";
 import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
@@ -77,21 +84,22 @@ export function isCompleteProviderExhaustion(attempts: ModelAttempt[]): boolean 
 }
 
 export async function runWithFallback(
-	models: string[],
+	models: ModelSpec[],
 	prompt: string,
 	opts: RunOptions,
 ): Promise<FallbackResult> {
 	const attempts: ModelAttempt[] = [];
 
-	for (const model of models) {
-		const provider = createProvider(model);
+	for (const spec of models) {
+		const provider = createProvider(spec.provider);
 		const available = await provider.isAvailable();
 
 		if (!available) {
 			attempts.push({
-				provider: model,
+				provider: spec.provider,
+				model: spec.model,
 				success: false,
-				error: `Provider "${model}" is not installed or not in PATH`,
+				error: `Provider "${spec.provider}" is not installed or not in PATH`,
 				duration: 0,
 			});
 			continue;
@@ -100,11 +108,12 @@ export async function runWithFallback(
 		const guardrailsSection = opts.guardrailsDir ? buildGuardrailsSection(opts.guardrailsDir) : "";
 		const fullPrompt = guardrailsSection ? `${prompt}${guardrailsSection}` : prompt;
 
-		const result = await provider.run(fullPrompt, opts);
+		const result = await provider.run(fullPrompt, { ...opts, model: spec.model });
 
 		if (result.success) {
 			attempts.push({
-				provider: model,
+				provider: spec.provider,
+				model: spec.model,
 				success: true,
 				duration: result.duration,
 			});
@@ -112,7 +121,7 @@ export async function runWithFallback(
 				success: true,
 				output: result.output,
 				duration: result.duration,
-				providerUsed: model,
+				providerUsed: spec.provider,
 				provider,
 				attempts,
 			};
@@ -122,7 +131,7 @@ export async function runWithFallback(
 			appendEntry(opts.guardrailsDir, {
 				issueId: opts.issueId,
 				date: new Date().toISOString().slice(0, 10),
-				provider: model,
+				provider: spec.provider,
 				errorType: extractErrorType(result.output),
 				context: extractContext(result.output),
 			});
@@ -130,7 +139,8 @@ export async function runWithFallback(
 
 		const eligible = isEligibleForFallback(result.output);
 		attempts.push({
-			provider: model,
+			provider: spec.provider,
+			model: spec.model,
 			success: false,
 			error: eligible ? "Eligible error (quota/unavailable/timeout)" : "Non-eligible error",
 			duration: result.duration,
@@ -141,7 +151,7 @@ export async function runWithFallback(
 				success: false,
 				output: result.output,
 				duration: result.duration,
-				providerUsed: model,
+				providerUsed: spec.provider,
 				provider,
 				attempts,
 			};
@@ -153,7 +163,7 @@ export async function runWithFallback(
 		success: false,
 		output: formatAttemptsReport(attempts),
 		duration: totalDuration,
-		providerUsed: attempts[attempts.length - 1]?.provider ?? models[0] ?? "claude",
+		providerUsed: attempts[attempts.length - 1]?.provider ?? models[0]?.provider ?? "claude",
 		attempts,
 	};
 }

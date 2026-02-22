@@ -25,7 +25,9 @@ import type {
 	ExecutionPlan,
 	FallbackResult,
 	LisaConfig,
+	ModelSpec,
 	PlanStep,
+	ProviderName,
 	RepoConfig,
 	Source,
 } from "./types.js";
@@ -48,9 +50,14 @@ export interface LoopOptions {
 	issueId?: string;
 }
 
-function resolveModels(config: LisaConfig): string[] {
-	if (config.models && config.models.length > 0) return config.models;
-	return [config.provider];
+function resolveModels(config: LisaConfig): ModelSpec[] {
+	if (!config.models || config.models.length === 0) {
+		return [{ provider: config.provider as ProviderName }];
+	}
+	return config.models.map((m) => ({
+		provider: config.provider as ProviderName,
+		model: m === config.provider ? undefined : m,
+	}));
 }
 
 function buildPrBody(providerUsed: string, description?: string): string {
@@ -156,7 +163,7 @@ function isHookError(errorMessage: string): boolean {
 interface PushRecoveryOptions {
 	branch: string;
 	cwd: string;
-	models: string[];
+	models: ModelSpec[];
 	logFile: string;
 	guardrailsDir: string;
 	issueId: string;
@@ -291,7 +298,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	installSignalHandlers();
 
 	logger.log(
-		`Starting loop (models: ${models.join(" → ")}, source: ${config.source}, label: ${config.source_config.label}, workflow: ${config.workflow})`,
+		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${config.source_config.label}, workflow: ${config.workflow})`,
 	);
 
 	// Recover orphan issues stuck in in_progress from previous interrupted runs
@@ -332,7 +339,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				);
 			}
 			logger.log(`[dry-run] Workflow mode: ${config.workflow}`);
-			logger.log(`[dry-run] Models priority: ${models.join(" → ")}`);
+			logger.log(
+				`[dry-run] Models priority: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}`,
+			);
 			logger.log("[dry-run] Then implement, push, create PR, and update issue status");
 			break;
 		}
@@ -592,7 +601,7 @@ async function runWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: string[],
+	models: ModelSpec[],
 ): Promise<SessionResult> {
 	// Multi-repo: delegate to planning + sequential sessions
 	if (config.repos.length > 1) {
@@ -604,7 +613,7 @@ async function runWorktreeSession(
 	const defaultBranch = resolveBaseBranch(config, repoPath);
 
 	// Check if primary provider supports native worktree (e.g., Claude Code --worktree)
-	const primaryProvider = createProvider(models[0] ?? "claude");
+	const primaryProvider = createProvider(models[0]?.provider ?? "claude");
 	const useNativeWorktree = primaryProvider.supportsNativeWorktree === true;
 
 	if (useNativeWorktree) {
@@ -627,7 +636,7 @@ async function runNativeWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: string[],
+	models: ModelSpec[],
 	repoPath: string,
 	defaultBranch: string,
 ): Promise<SessionResult> {
@@ -646,7 +655,7 @@ async function runNativeWorktreeSession(
 		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
-			return failResult(models[0] ?? "claude");
+			return failResult(models[0]?.provider ?? "claude");
 		}
 	}
 
@@ -772,7 +781,7 @@ async function runManualWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: string[],
+	models: ModelSpec[],
 	repoPath: string,
 	defaultBranch: string,
 ): Promise<SessionResult> {
@@ -789,13 +798,13 @@ async function runManualWorktreeSession(
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
 		return {
 			success: false,
-			providerUsed: models[0] ?? "claude",
+			providerUsed: models[0]?.provider ?? "claude",
 			prUrls: [],
 			fallback: {
 				success: false,
 				output: "",
 				duration: 0,
-				providerUsed: models[0] ?? "claude",
+				providerUsed: models[0]?.provider ?? "claude",
 				attempts: [],
 			},
 		};
@@ -815,13 +824,13 @@ async function runManualWorktreeSession(
 			await cleanupWorktree(repoPath, worktreePath);
 			return {
 				success: false,
-				providerUsed: models[0] ?? "claude",
+				providerUsed: models[0]?.provider ?? "claude",
 				prUrls: [],
 				fallback: {
 					success: false,
 					output: "",
 					duration: 0,
-					providerUsed: models[0] ?? "claude",
+					providerUsed: models[0]?.provider ?? "claude",
 					attempts: [],
 				},
 			};
@@ -954,7 +963,7 @@ async function runWorktreeMultiRepoSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: string[],
+	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
@@ -1078,7 +1087,7 @@ async function runMultiRepoStep(
 	step: PlanStep,
 	previousResults: PreviousStepResult[],
 	logFile: string,
-	models: string[],
+	models: ModelSpec[],
 	stepNum: number,
 ): Promise<MultiRepoStepResult> {
 	const repoPath = step.repoPath;
@@ -1100,7 +1109,7 @@ async function runMultiRepoStep(
 	} catch (err) {
 		stopSpinner();
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
-		return failResult(models[0] ?? "claude");
+		return failResult(models[0]?.provider ?? "claude");
 	}
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
@@ -1224,7 +1233,7 @@ async function runBranchSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: string[],
+	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
@@ -1250,13 +1259,13 @@ async function runBranchSession(
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
 			return {
 				success: false,
-				providerUsed: models[0] ?? "claude",
+				providerUsed: models[0]?.provider ?? "claude",
 				prUrls: [],
 				fallback: {
 					success: false,
 					output: "",
 					duration: 0,
-					providerUsed: models[0] ?? "claude",
+					providerUsed: models[0]?.provider ?? "claude",
 					attempts: [],
 				},
 			};
