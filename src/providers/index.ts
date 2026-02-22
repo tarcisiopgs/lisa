@@ -27,8 +27,8 @@ export async function getAvailableProviders(): Promise<Provider[]> {
 	return results.filter((r) => r.available).map((r) => r.provider);
 }
 
-export function createProvider(name: ProviderName): Provider {
-	const factory = providers[name];
+export function createProvider(name: string): Provider {
+	const factory = providers[name as ProviderName];
 	if (!factory) {
 		throw new Error(`Unknown provider: ${name}. Available: ${Object.keys(providers).join(", ")}`);
 	}
@@ -77,7 +77,7 @@ export function isCompleteProviderExhaustion(attempts: ModelAttempt[]): boolean 
 }
 
 export async function runWithFallback(
-	models: ProviderName[],
+	models: string[],
 	prompt: string,
 	opts: RunOptions,
 ): Promise<FallbackResult> {

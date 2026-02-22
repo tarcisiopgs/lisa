@@ -53,7 +53,7 @@ export interface LogsConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
-	models?: ProviderName[];
+	models?: string[];
 	source: SourceName;
 	source_config: SourceConfig;
 	github: GitHubMethod;
@@ -74,6 +74,11 @@ export interface Issue {
 	repo?: string;
 }
 
+export interface ModelSpec {
+	provider: ProviderName;
+	model?: string; // undefined = use provider's default model
+}
+
 export interface RunOptions {
 	logFile: string;
 	cwd: string;
@@ -81,6 +86,7 @@ export interface RunOptions {
 	issueId?: string;
 	overseer?: OverseerConfig;
 	useNativeWorktree?: boolean;
+	model?: string; // model name to pass to the provider CLI
 }
 
 export interface RunResult {
@@ -97,7 +103,8 @@ export interface Provider {
 }
 
 export interface ModelAttempt {
-	provider: ProviderName;
+	provider: string;
+	model?: string;
 	success: boolean;
 	error?: string;
 	duration: number;
@@ -107,7 +114,7 @@ export interface FallbackResult {
 	success: boolean;
 	output: string;
 	duration: number;
-	providerUsed: ProviderName;
+	providerUsed: string;
 	provider?: Provider;
 	attempts: ModelAttempt[];
 }

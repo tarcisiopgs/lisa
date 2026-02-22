@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProviderName } from "./types.js";
 
 const GUARDRAILS_FILE = ".lisa/guardrails.md";
 const MAX_ENTRIES = 20;
@@ -9,7 +8,7 @@ const CONTEXT_LINES = 20;
 export interface GuardrailEntry {
 	issueId: string;
 	date: string;
-	provider: ProviderName;
+	provider: string;
 	errorType: string;
 	context: string;
 }

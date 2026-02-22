@@ -26,7 +26,6 @@ import type {
 	FallbackResult,
 	LisaConfig,
 	PlanStep,
-	ProviderName,
 	RepoConfig,
 	Source,
 } from "./types.js";
@@ -49,12 +48,12 @@ export interface LoopOptions {
 	issueId?: string;
 }
 
-function resolveModels(config: LisaConfig): ProviderName[] {
+function resolveModels(config: LisaConfig): string[] {
 	if (config.models && config.models.length > 0) return config.models;
 	return [config.provider];
 }
 
-function buildPrBody(providerUsed: ProviderName, description?: string): string {
+function buildPrBody(providerUsed: string, description?: string): string {
 	const lines: string[] = [];
 
 	if (description) {
@@ -157,7 +156,7 @@ function isHookError(errorMessage: string): boolean {
 interface PushRecoveryOptions {
 	branch: string;
 	cwd: string;
-	models: ProviderName[];
+	models: string[];
 	logFile: string;
 	guardrailsDir: string;
 	issueId: string;
@@ -515,7 +514,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 interface SessionResult {
 	success: boolean;
-	providerUsed: ProviderName;
+	providerUsed: string;
 	prUrls: string[];
 	fallback: FallbackResult;
 }
@@ -593,7 +592,7 @@ async function runWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: ProviderName[],
+	models: string[],
 ): Promise<SessionResult> {
 	// Multi-repo: delegate to planning + sequential sessions
 	if (config.repos.length > 1) {
@@ -628,11 +627,11 @@ async function runNativeWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: ProviderName[],
+	models: string[],
 	repoPath: string,
 	defaultBranch: string,
 ): Promise<SessionResult> {
-	const failResult = (providerUsed: ProviderName, fallback?: FallbackResult): SessionResult => ({
+	const failResult = (providerUsed: string, fallback?: FallbackResult): SessionResult => ({
 		success: false,
 		providerUsed,
 		prUrls: [],
@@ -773,7 +772,7 @@ async function runManualWorktreeSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: ProviderName[],
+	models: string[],
 	repoPath: string,
 	defaultBranch: string,
 ): Promise<SessionResult> {
@@ -955,7 +954,7 @@ async function runWorktreeMultiRepoSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: ProviderName[],
+	models: string[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
@@ -1020,7 +1019,7 @@ async function runWorktreeMultiRepoSession(
 	const prUrls: string[] = [];
 	const previousResults: PreviousStepResult[] = [];
 	let lastFallback: FallbackResult = planResult;
-	let lastProvider: ProviderName = planResult.providerUsed;
+	let lastProvider: string = planResult.providerUsed;
 
 	for (const [i, step] of sortedSteps.entries()) {
 		const stepNum = i + 1;
@@ -1067,7 +1066,7 @@ async function runWorktreeMultiRepoSession(
 
 interface MultiRepoStepResult {
 	success: boolean;
-	providerUsed: ProviderName;
+	providerUsed: string;
 	branch: string;
 	prUrl?: string;
 	fallback: FallbackResult;
@@ -1079,17 +1078,14 @@ async function runMultiRepoStep(
 	step: PlanStep,
 	previousResults: PreviousStepResult[],
 	logFile: string,
-	models: ProviderName[],
+	models: string[],
 	stepNum: number,
 ): Promise<MultiRepoStepResult> {
 	const repoPath = step.repoPath;
 	const defaultBranch = resolveBaseBranch(config, repoPath);
 	const branchName = generateBranchName(issue.id, issue.title);
 
-	const failResult = (
-		providerUsed: ProviderName,
-		fallback?: FallbackResult,
-	): MultiRepoStepResult => ({
+	const failResult = (providerUsed: string, fallback?: FallbackResult): MultiRepoStepResult => ({
 		success: false,
 		providerUsed,
 		branch: branchName,
@@ -1228,7 +1224,7 @@ async function runBranchSession(
 	issue: { id: string; title: string; url: string; description: string; repo?: string },
 	logFile: string,
 	session: number,
-	models: ProviderName[],
+	models: string[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
