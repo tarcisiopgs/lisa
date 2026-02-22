@@ -189,6 +189,11 @@ async function runConfigWizard(): Promise<void> {
 		cursor: "Cursor Agent",
 	};
 
+	const providerModels: Partial<Record<ProviderName, string[]>> = {
+		claude: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
+		gemini: ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"],
+	};
+
 	const available = await getAvailableProviders();
 
 	if (available.length === 0) {
@@ -218,6 +223,23 @@ async function runConfigWizard(): Promise<void> {
 		});
 		if (clack.isCancel(selected)) return process.exit(0);
 		providerName = selected as ProviderName;
+	}
+
+	let selectedModels: string[] = [];
+
+	const availableModels = providerModels[providerName];
+	if (availableModels && availableModels.length > 0) {
+		const modelSelection = await clack.multiselect({
+			message: "Which models to use? (first = primary, rest = fallbacks in order)",
+			options: availableModels.map((m, i) => ({
+				value: m,
+				label: m,
+				hint: i === 0 ? "primary" : `fallback ${i}`,
+			})),
+			required: false,
+		});
+		if (clack.isCancel(modelSelection)) return process.exit(0);
+		selectedModels = (modelSelection as string[]) ?? [];
 	}
 
 	const source = await clack.select({
@@ -366,6 +388,7 @@ async function runConfigWizard(): Promise<void> {
 
 	const cfg: LisaConfig = {
 		provider: providerName,
+		...(selectedModels.length > 0 ? { models: selectedModels } : {}),
 		source: source as SourceName,
 		source_config: {
 			team,

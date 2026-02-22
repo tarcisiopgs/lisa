@@ -27,7 +27,6 @@ import type {
 	LisaConfig,
 	ModelSpec,
 	PlanStep,
-	ProviderName,
 	RepoConfig,
 	Source,
 } from "./types.js";

@@ -28,6 +28,9 @@ export class ClaudeProvider implements Provider {
 
 		try {
 			const flags = ["-p", "--dangerously-skip-permissions"];
+			if (opts.model) {
+				flags.push("--model", opts.model);
+			}
 			if (opts.useNativeWorktree) {
 				flags.push("--worktree");
 			}
