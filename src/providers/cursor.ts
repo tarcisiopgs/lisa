@@ -39,10 +39,10 @@ export class CursorProvider implements Provider {
 		writeFileSync(promptFile, prompt, "utf-8");
 
 		try {
-			// -p: run prompt and exit (print mode); --force: allow file modifications without confirmation
+			const modelFlag = opts.model ? `--model ${opts.model}` : "";
 			const proc = spawn(
 				"sh",
-				["-c", `${bin} -p "$(cat '${promptFile}')" --output-format text --force`],
+				["-c", `${bin} -p "$(cat '${promptFile}')" --output-format text --force ${modelFlag}`],
 				{
 					cwd: opts.cwd,
 					stdio: ["ignore", "pipe", "pipe"],

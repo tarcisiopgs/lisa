@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
+
 import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
@@ -168,6 +170,59 @@ function getVersion(): string {
 	}
 }
 
+const CURSOR_FREE_PLAN_ERROR = "Free plans can only use Auto";
+
+async function isCursorFreePlan(): Promise<boolean> {
+	const { mkdtempSync, unlinkSync, writeFileSync } = await import("node:fs");
+	const tmpDir = mkdtempSync(join(tmpdir(), "lisa-cursor-check-"));
+	const promptFile = join(tmpDir, "prompt.txt");
+	writeFileSync(promptFile, "test", "utf-8");
+
+	try {
+		const bin = ["agent", "cursor-agent"].find((b) => {
+			try {
+				execSync(`${b} --version`, { stdio: "ignore" });
+				return true;
+			} catch {
+				return false;
+			}
+		});
+		if (!bin) return false;
+
+		const output = execSync(`${bin} -p "$(cat '${promptFile}')" --output-format text`, {
+			cwd: process.cwd(),
+			encoding: "utf-8",
+			timeout: 30000,
+		});
+		return output.includes(CURSOR_FREE_PLAN_ERROR);
+	} catch (err) {
+		const errorOutput = err instanceof Error ? err.message : String(err);
+		return errorOutput.includes(CURSOR_FREE_PLAN_ERROR);
+	} finally {
+		try {
+			unlinkSync(promptFile);
+		} catch {}
+		try {
+			execSync(`rm -rf ${tmpDir}`, { stdio: "ignore" });
+		} catch {}
+	}
+}
+
+const CURSOR_MODELS = [
+	"auto",
+	"composer-1.5",
+	"composer-1",
+	"gpt-5.3-codex",
+	"gpt-5.3-codex-low",
+	"gpt-5.3-codex-high",
+	"gpt-5.3-codex-xhigh",
+	"gpt-5.3-codex-fast",
+	"sonnet-4.6",
+	"sonnet-4.6-thinking",
+	"sonnet-4.5",
+	"sonnet-4.5-thinking",
+];
+
 export const main = defineCommand({
 	meta: {
 		name: "lisa",
@@ -227,7 +282,18 @@ async function runConfigWizard(): Promise<void> {
 
 	let selectedModels: string[] = [];
 
-	const availableModels = providerModels[providerName];
+	let availableModels = providerModels[providerName];
+
+	if (providerName === "cursor") {
+		const isFree = await isCursorFreePlan();
+		if (isFree) {
+			availableModels = ["auto"];
+			clack.log.info("Cursor Free plan detected. Using 'auto' model only.");
+		} else {
+			availableModels = CURSOR_MODELS;
+		}
+	}
+
 	if (availableModels && availableModels.length > 0) {
 		const modelSelection = await clack.multiselect({
 			message: "Which models to use? (first = primary, rest = fallbacks in order)",

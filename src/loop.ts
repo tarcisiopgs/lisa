@@ -63,6 +63,18 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 			);
 		}
 	}
+
+	if (config.provider === "cursor") {
+		const hasAuto = config.models.some((m) => m.toLowerCase() === "auto");
+		if (!hasAuto) {
+			logger.warn(
+				"Cursor Free plan detected (or model not set to 'auto'). Forcing 'auto' model. " +
+					"Set model to 'auto' explicitly in .lisa/config.yaml to silence this warning.",
+			);
+			return [{ provider: config.provider, model: "auto" }];
+		}
+	}
+
 	return config.models.map((m) => ({
 		provider: config.provider,
 		model: m === config.provider ? undefined : m,
