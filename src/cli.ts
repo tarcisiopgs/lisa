@@ -245,7 +245,7 @@ async function runConfigWizard(): Promise<void> {
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
-		claude: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
+		claude: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"],
 		gemini: ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"],
 	};
 

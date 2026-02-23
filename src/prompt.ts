@@ -3,6 +3,14 @@ import { join, resolve } from "node:path";
 import type { Issue, LisaConfig, PlanStep } from "./types.js";
 
 export type TestRunner = "vitest" | "jest" | null;
+export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
+
+export function detectPackageManager(cwd: string): PackageManager {
+	if (existsSync(join(cwd, "bun.lockb")) || existsSync(join(cwd, "bun.lock"))) return "bun";
+	if (existsSync(join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+	if (existsSync(join(cwd, "yarn.lock"))) return "yarn";
+	return "npm";
+}
 
 export function detectTestRunner(cwd: string): TestRunner {
 	const packageJsonPath = join(cwd, "package.json");
@@ -26,23 +34,26 @@ export function buildImplementPrompt(
 	issue: Issue,
 	config: LisaConfig,
 	testRunner?: TestRunner,
+	pm?: PackageManager,
 ): string {
 	if (config.workflow === "worktree") {
-		return buildWorktreePrompt(issue, testRunner);
+		return buildWorktreePrompt(issue, testRunner, pm);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner);
+	return buildBranchPrompt(issue, config, testRunner, pm);
 }
 
-function buildTestInstructions(testRunner: TestRunner): string {
+function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
 	if (!testRunner) return "";
+
+	const testCmd = pm === "bun" ? "bun run test" : `${pm} run test`;
 
 	return `
 **MANDATORY — Unit Tests:**
 This project uses **${testRunner}** as its test runner.
 - You MUST write unit tests (\`*.test.ts\`) for every new file or module you create.
 - Tests should cover the main functionality, edge cases, and error scenarios.
-- Run \`npm run test\` and ensure ALL tests pass before committing.
+- Run \`${testCmd}\` and ensure ALL tests pass before committing.
 - Do NOT skip writing tests — the PR will be blocked if tests are missing or failing.
 `;
 }
@@ -95,8 +106,8 @@ function buildPrBodyInstructions(): string {
    Write in English. Do NOT write a wall of text — structure the summary using the template above.`;
 }
 
-function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner): string {
-	const testBlock = buildTestInstructions(testRunner ?? null);
+function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner, pm?: PackageManager): string {
+	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 
@@ -158,7 +169,12 @@ ${testBlock}${readmeBlock}${hookBlock}
 - Do NOT update the issue tracker — the caller handles that.`;
 }
 
-function buildBranchPrompt(issue: Issue, config: LisaConfig, testRunner?: TestRunner): string {
+function buildBranchPrompt(
+	issue: Issue,
+	config: LisaConfig,
+	testRunner?: TestRunner,
+	pm?: PackageManager,
+): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
 		.map(
@@ -172,7 +188,7 @@ function buildBranchPrompt(issue: Issue, config: LisaConfig, testRunner?: TestRu
 			? "From the repo's base branch (listed above)"
 			: `From \`${config.base_branch}\``;
 
-	const testBlock = buildTestInstructions(testRunner ?? null);
+	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const manifestPath = join(workspace, ".lisa-manifest.json");
@@ -269,8 +285,9 @@ export function buildNativeWorktreePrompt(
 	issue: Issue,
 	repoPath?: string,
 	testRunner?: TestRunner,
+	pm?: PackageManager,
 ): string {
-	const testBlock = buildTestInstructions(testRunner ?? null);
+	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const prBodyBlock = buildPrBodyInstructions();
@@ -406,8 +423,9 @@ export function buildScopedImplementPrompt(
 	step: PlanStep,
 	previousResults: PreviousStepResult[],
 	testRunner?: TestRunner,
+	pm?: PackageManager,
 ): string {
-	const testBlock = buildTestInstructions(testRunner ?? null);
+	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const prBodyBlock = buildPrBodyInstructions();

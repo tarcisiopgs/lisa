@@ -11,6 +11,7 @@ import {
 	buildPlanningPrompt,
 	buildPushRecoveryPrompt,
 	buildScopedImplementPrompt,
+	detectPackageManager,
 	detectTestRunner,
 	type PreviousStepResult,
 } from "./prompt.js";
@@ -586,9 +587,10 @@ async function runTestValidation(cwd: string): Promise<boolean> {
 	const testRunner = detectTestRunner(cwd);
 	if (!testRunner) return true;
 
-	logger.log(`Running test validation (${testRunner} detected)...`);
+	const pm = detectPackageManager(cwd);
+	logger.log(`Running test validation (${testRunner} via ${pm})...`);
 	try {
-		await execa("npm", ["run", "test"], { cwd, stdio: "pipe" });
+		await execa(pm, ["run", "test"], { cwd, stdio: "pipe" });
 		logger.ok("Tests passed.");
 		return true;
 	} catch (err) {
@@ -682,11 +684,12 @@ async function runNativeWorktreeSession(
 
 	const testRunner = detectTestRunner(repoPath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
+	const pm = detectPackageManager(repoPath);
 
 	// Clean stale manifest from previous run
 	cleanupManifest(repoPath);
 
-	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner);
+	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner, pm);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -863,8 +866,9 @@ async function runManualWorktreeSession(
 	if (testRunner) {
 		logger.log(`Detected test runner: ${testRunner}`);
 	}
+	const pm = detectPackageManager(worktreePath);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -1135,12 +1139,26 @@ async function runMultiRepoStep(
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
 
-	// Detect test runner
+	// Detect test runner and package manager
 	const testRunner = detectTestRunner(worktreePath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
+	const pm = detectPackageManager(worktreePath);
+
+	// Start lifecycle resources for this repo step
+	const repoConfig = config.repos.find((r) => resolve(config.workspace, r.path) === step.repoPath);
+	if (repoConfig?.lifecycle) {
+		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
+		const started = await startResources(repoConfig, worktreePath);
+		stopSpinner();
+		if (!started) {
+			logger.error(`Lifecycle startup failed for step ${stepNum}. Aborting.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return failResult(models[0]?.provider ?? "claude");
+		}
+	}
 
 	// Run scoped implementation
-	const prompt = buildScopedImplementPrompt(issue, step, previousResults, testRunner);
+	const prompt = buildScopedImplementPrompt(issue, step, previousResults, testRunner, pm);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
 	const result = await runWithFallback(models, prompt, {
@@ -1151,6 +1169,9 @@ async function runMultiRepoStep(
 		overseer: config.overseer,
 	});
 	stopSpinner();
+
+	// Stop lifecycle resources after implementation
+	if (repoConfig?.lifecycle) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1266,8 +1287,9 @@ async function runBranchSession(
 	if (testRunner) {
 		logger.log(`Detected test runner: ${testRunner}`);
 	}
+	const pm = detectPackageManager(workspace);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm);
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
