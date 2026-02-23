@@ -166,14 +166,6 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("Do NOT update README.md for");
 			expect(prompt).toContain("Internal refactors that don't change documented behavior");
 		});
-
-		it("includes concrete prBody markdown template with example structure", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
-			expect(prompt).toContain("**What**:");
-			expect(prompt).toContain("**Why**:");
-			expect(prompt).toContain("**Key changes**:");
-			expect(prompt).toContain("**Testing**:");
-		});
 	});
 
 	describe("branch mode", () => {
@@ -226,14 +218,6 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("Do NOT update README.md for");
 			expect(prompt).toContain("Internal refactors that don't change documented behavior");
 		});
-
-		it("includes concrete prBody markdown template with example structure", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
-			expect(prompt).toContain("**What**:");
-			expect(prompt).toContain("**Why**:");
-			expect(prompt).toContain("**Key changes**:");
-			expect(prompt).toContain("**Testing**:");
-		});
 	});
 });
 
@@ -251,11 +235,6 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).toContain("current branch");
 	});
 
-	it("instructs agent not to push", () => {
-		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).toContain("Do NOT push");
-	});
-
 	it("includes manifest instructions", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
 		expect(prompt).toContain(".lisa-manifest.json");
@@ -269,14 +248,6 @@ describe("buildNativeWorktreePrompt", () => {
 	it("writes manifest to current directory when repoPath not provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
 		expect(prompt).toContain("in the **current directory**");
-	});
-
-	it("includes prBody template", () => {
-		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).toContain("**What**:");
-		expect(prompt).toContain("**Why**:");
-		expect(prompt).toContain("**Key changes**:");
-		expect(prompt).toContain("**Testing**:");
 	});
 
 	it("includes test instructions when provided", () => {
@@ -393,22 +364,51 @@ describe("buildScopedImplementPrompt", () => {
 		expect(prompt).toContain(".lisa-manifest.json");
 	});
 
-	it("includes prBody template", () => {
-		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
-		expect(prompt).toContain("**What**:");
-		expect(prompt).toContain("**Why**:");
-		expect(prompt).toContain("**Key changes**:");
-		expect(prompt).toContain("**Testing**:");
-	});
-
-	it("instructs agent not to push", () => {
-		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
-		expect(prompt).toContain("Do NOT push");
-	});
-
 	it("includes test instructions when provided", () => {
 		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], "vitest");
 		expect(prompt).toContain("MANDATORY — Unit Tests");
 		expect(prompt).toContain("vitest");
+	});
+});
+
+describe("prompt delegation — provider does push/PR/tracker", () => {
+	it("worktree prompt instructs provider to push", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).toContain("git push -u origin");
+	});
+
+	it("worktree prompt instructs provider to create PR via gh", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).toContain("gh pr create");
+	});
+
+	it("worktree prompt instructs provider to call lisa issue done", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).toContain("lisa issue done");
+	});
+
+	it("worktree prompt uses prUrl in manifest (not prTitle/prBody)", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).toContain("prUrl");
+		expect(prompt).not.toContain("prTitle");
+		expect(prompt).not.toContain("prBody");
+	});
+
+	it("worktree prompt does not tell provider to skip push", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).not.toContain("Do NOT push");
+	});
+
+	it("scoped prompt with isLastStep=true includes lisa issue done", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "implement feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], undefined, undefined, true);
+		expect(prompt).toContain("lisa issue done");
+	});
+
+	it("scoped prompt with isLastStep=false skips lisa issue done", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "implement feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], undefined, undefined, false);
+		expect(prompt).toContain("Skip tracker update");
+		expect(prompt).not.toContain("lisa issue done");
 	});
 });

@@ -93,26 +93,12 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
-function buildPrBodyInstructions(): string {
-	return `The \`prBody\` MUST follow this exact markdown structure:
-   \`\`\`
-   - **What**: one-line summary of the change
-   - **Why**: motivation or issue context
-   - **Key changes**:
-     - \`src/foo.ts\` — added X functionality
-     - \`src/bar.ts\` — refactored Y to support Z
-   - **Testing**: what was validated (e.g. "all unit tests pass", "manually tested endpoint")
-   \`\`\`
-   Write in English. Do NOT write a wall of text — structure the summary using the template above.`;
-}
-
 function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner, pm?: PackageManager): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 
-	return `You are an autonomous implementation agent. Your job is to implement a single
-issue, validate it, commit, and push the branch.
+	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
 You are already inside the correct repository worktree on the correct branch.
 Do NOT create a new branch — just work on the current one.
@@ -141,32 +127,39 @@ ${testBlock}${readmeBlock}${hookBlock}
    - Fix any errors before proceeding.
 
 3. **Commit**: Make atomic commits with conventional commit messages.
-   **Branch name must be in English.** The branch was pre-created with an auto-generated name.
-   If that name contains non-English words, rename it before committing:
-   \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
-   Do NOT push — the caller handles pushing.
+   **Branch name must be in English.** If the current branch name contains non-English words,
+   rename it before committing using the single-argument form:
+   \`git branch -m feat/${issue.id.toLowerCase()}-short-english-slug\`
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+4. **Push**: Push the branch to origin:
+   \`git push -u origin <branch-name>\`
+   If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
+
+5. **Create PR**: Create a pull request using the GitHub CLI:
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   Capture the PR URL from the output.
+
+6. **Update tracker**: Call the lisa CLI to mark the issue as done:
+   \`lisa issue done ${issue.id} --pr-url <pr-url>\`
+   Wait 1 second before calling this command.
+
+7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
    \`\`\`json
-   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
-   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
 
 - **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT push — the caller handles that.
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
 - One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.
-- Do NOT create pull requests — the caller handles that.
-- Do NOT update the issue tracker — the caller handles that.`;
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
 
 function buildBranchPrompt(
@@ -193,8 +186,7 @@ function buildBranchPrompt(
 	const hookBlock = buildPreCommitHookInstructions();
 	const manifestPath = join(workspace, ".lisa-manifest.json");
 
-	return `You are an autonomous implementation agent. Your job is to implement a single
-issue, validate it, commit, and push the branch.
+	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
 ## Issue
 
@@ -229,16 +221,25 @@ ${testBlock}${readmeBlock}${hookBlock}
    - Fix any errors before proceeding.
 
 5. **Commit & Push**: Make atomic commits with conventional commit messages.
-   Push the branch to origin.
+   Push the branch to origin:
+   \`git push -u origin <branch-name>\`
+   If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
+6. **Create PR**: Create a pull request using the GitHub CLI:
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   Capture the PR URL from the output.
+
+7. **Update tracker**: Call the lisa CLI to mark the issue as done:
+   \`lisa issue done ${issue.id} --pr-url <pr-url>\`
+   Wait 1 second before calling this command.
+
+8. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
    \`\`\`json
-   {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
-   ${buildPrBodyInstructions()}
    Do NOT commit this file.
 
 ## Rules
@@ -249,9 +250,7 @@ ${testBlock}${readmeBlock}${hookBlock}
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
 - One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.
-- Do NOT create pull requests — the caller handles that.
-- Do NOT update the issue tracker — the caller handles that.`;
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
 
 export function buildPushRecoveryPrompt(hookErrors: string): string {
@@ -290,13 +289,11 @@ export function buildNativeWorktreePrompt(
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
-	const prBodyBlock = buildPrBodyInstructions();
 	const manifestLocation = repoPath
 		? `\`${join(repoPath, ".lisa-manifest.json")}\``
 		: "`.lisa-manifest.json` in the **current directory**";
 
-	return `You are an autonomous implementation agent. Your job is to implement a single
-issue, validate it, and commit.
+	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
@@ -327,29 +324,36 @@ ${testBlock}${readmeBlock}${hookBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
-   Do NOT push — the caller handles pushing.
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-4. **Write manifest**: Create ${manifestLocation} with JSON:
+4. **Push**: Push the branch to origin:
+   \`git push -u origin <branch-name>\`
+   If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
+
+5. **Create PR**: Create a pull request using the GitHub CLI:
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   Capture the PR URL from the output.
+
+6. **Update tracker**: Call the lisa CLI to mark the issue as done:
+   \`lisa issue done ${issue.id} --pr-url <pr-url>\`
+   Wait 1 second before calling this command.
+
+7. **Write manifest**: Create ${manifestLocation} with JSON:
    \`\`\`json
-   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
-   ${prBodyBlock}
    Do NOT commit this file.
 
 ## Rules
 
 - **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT push — the caller handles that.
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
 - One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.
-- Do NOT create pull requests — the caller handles that.
-- Do NOT update the issue tracker — the caller handles that.`;
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
 
 export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
@@ -424,16 +428,20 @@ export function buildScopedImplementPrompt(
 	previousResults: PreviousStepResult[],
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	isLastStep = false,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
-	const prBodyBlock = buildPrBodyInstructions();
 
 	const previousBlock =
 		previousResults.length > 0
 			? `\n## Previous Steps\n\nThe following repos have already been implemented as part of this issue:\n\n${previousResults.map((r) => `- **${r.repoPath}**: branch \`${r.branch}\`${r.prUrl ? ` — PR: ${r.prUrl}` : ""}`).join("\n")}\n\nUse this context if the current step depends on changes from previous steps.\n`
 			: "";
+
+	const trackerStep = isLastStep
+		? `\n6. **Update tracker**: Call \`lisa issue done ${issue.id} --pr-url <pr-url>\` (wait 1 second before calling).\n`
+		: `\n6. **Skip tracker update**: This is not the last step. The caller handles the tracker update after all steps complete.\n`;
 
 	return `You are an autonomous implementation agent. Your job is to implement a specific part of an issue in a single repository.
 
@@ -473,27 +481,30 @@ ${testBlock}${readmeBlock}${hookBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
-   Do NOT push — the caller handles pushing.
    **IMPORTANT — Language rules:**
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-4. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+4. **Push**: Push the branch to origin:
+   \`git push -u origin <branch-name>\`
+   If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
+
+5. **Create PR**: Create a pull request using the GitHub CLI:
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   Capture the PR URL from the output.
+${trackerStep}
+7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
    \`\`\`json
-   {"branch": "<final English branch name>", "prTitle": "<English PR title, conventional commit format>", "prBody": "<markdown-formatted English summary>"}
+   {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
-   ${prBodyBlock}
    Do NOT commit this file.
 
 ## Rules
 
 - **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT push — the caller handles that.
 - Do NOT install new dependencies unless the issue explicitly requires it.
 - If you get stuck or the issue is unclear, STOP and explain why.
 - One scope only. Do not pick up additional work outside your scope.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.
-- Do NOT create pull requests — the caller handles that.
-- Do NOT update the issue tracker — the caller handles that.`;
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
