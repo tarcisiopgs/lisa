@@ -37,7 +37,7 @@ export function buildImplementPrompt(
 	pm?: PackageManager,
 ): string {
 	if (config.workflow === "worktree") {
-		return buildWorktreePrompt(issue, testRunner, pm);
+		return buildWorktreePrompt(issue, testRunner, pm, config.base_branch);
 	}
 
 	return buildBranchPrompt(issue, config, testRunner, pm);
@@ -93,7 +93,12 @@ If an update is needed, keep the existing README style and structure. Include th
 `;
 }
 
-function buildWorktreePrompt(issue: Issue, testRunner?: TestRunner, pm?: PackageManager): string {
+function buildWorktreePrompt(
+	issue: Issue,
+	testRunner?: TestRunner,
+	pm?: PackageManager,
+	baseBranch?: string,
+): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
@@ -139,7 +144,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
    Capture the PR URL from the output.
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -176,10 +181,12 @@ function buildBranchPrompt(
 		)
 		.join("\n");
 
+	const baseBranch = config.base_branch;
+
 	const baseBranchInstruction =
 		config.repos.length > 0
 			? "From the repo's base branch (listed above)"
-			: `From \`${config.base_branch}\``;
+			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
@@ -229,7 +236,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
 6. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>" --base ${baseBranch}\`
    Capture the PR URL from the output.
 
 7. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -258,6 +265,7 @@ export function buildNativeWorktreePrompt(
 	repoPath?: string,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	baseBranch?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
@@ -306,7 +314,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
    Capture the PR URL from the output.
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -401,6 +409,7 @@ export function buildScopedImplementPrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	isLastStep = false,
+	baseBranch?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
@@ -462,7 +471,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
    Capture the PR URL from the output.
 ${trackerStep}
 7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:

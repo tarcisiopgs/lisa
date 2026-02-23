@@ -554,7 +554,7 @@ async function runNativeWorktreeSession(
 	// Clean stale manifest from previous run
 	cleanupManifest(repoPath);
 
-	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner, pm);
+	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner, pm, _defaultBranch);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
 	logger.initLogFile(logFile);
@@ -922,6 +922,7 @@ async function runMultiRepoStep(
 		testRunner,
 		pm,
 		isLastStep,
+		defaultBranch,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 

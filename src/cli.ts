@@ -14,6 +14,7 @@ import { getAvailableProviders } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type {
 	GitHubMethod,
+	Issue,
 	LisaConfig,
 	ProviderName,
 	RepoConfig,
@@ -22,6 +23,8 @@ import type {
 } from "./types.js";
 import { ensureWorktreeGitignore } from "./worktree.js";
 
+// Rate limit guard: prevents rapid-fire calls to the issue tracker API when
+// the provider invokes multiple `lisa issue` commands in quick succession.
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -227,7 +230,13 @@ const issueGet = defineCommand({
 		}
 		const config = loadConfig(configDir);
 		const source = createSource(config.source);
-		const issue = await source.fetchIssueById(args.id);
+		let issue: Issue | null;
+		try {
+			issue = await source.fetchIssueById(args.id);
+		} catch (err) {
+			console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+			process.exit(1);
+		}
 		if (!issue) {
 			console.error(JSON.stringify({ error: `Issue ${args.id} not found` }));
 			process.exit(1);
@@ -251,9 +260,19 @@ const issueDone = defineCommand({
 		}
 		const config = loadConfig(configDir);
 		const source = createSource(config.source);
-		await source.attachPullRequest(args.id, args["pr-url"]);
-		await source.completeIssue(args.id, config.source_config.done, config.source_config.label);
-		console.log(JSON.stringify({ success: true, issueId: args.id, prUrl: args["pr-url"] }));
+		try {
+			await source.attachPullRequest(args.id, args["pr-url"]);
+			await source.completeIssue(args.id, config.source_config.done, config.source_config.label);
+			console.log(JSON.stringify({ success: true, issueId: args.id, prUrl: args["pr-url"] }));
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					error: err instanceof Error ? err.message : String(err),
+					issueId: args.id,
+				}),
+			);
+			process.exit(1);
+		}
 	},
 });
 
