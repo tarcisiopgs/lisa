@@ -296,11 +296,10 @@ async function runConfigWizard(): Promise<void> {
 
 	if (availableModels && availableModels.length > 0) {
 		const modelSelection = await clack.multiselect({
-			message: "Which models to use? (first = primary, rest = fallbacks in order)",
-			options: availableModels.map((m, i) => ({
+			message: "Which models to use? Select in order: primary first, then fallbacks",
+			options: availableModels.map((m) => ({
 				value: m,
 				label: m,
-				hint: i === 0 ? "primary" : `fallback ${i}`,
 			})),
 			required: false,
 		});
