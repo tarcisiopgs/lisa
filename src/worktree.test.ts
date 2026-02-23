@@ -33,6 +33,16 @@ describe("generateBranchName", () => {
 		const branch = generateBranchName("INT-1", "---clean me---");
 		expect(branch).toBe("feat/int-1-clean-me");
 	});
+
+	it("never produces a trailing dash after truncation", () => {
+		// Title whose slug is exactly 40 chars ending with a dash before trim
+		const branch = generateBranchName(
+			"INT-193",
+			"Exibir alerta no dashboard para pedidos com status desatualizado",
+		);
+		expect(branch).not.toMatch(/-$/);
+		expect(branch).not.toMatch(/--/);
+	});
 });
 
 describe("determineRepoPath", () => {

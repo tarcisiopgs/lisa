@@ -20,8 +20,8 @@ export function generateBranchName(issueId: string, title: string): string {
 	const slug = title
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.substring(0, 40);
+		.substring(0, 40)
+		.replace(/^-|-$/g, "");
 
 	return `feat/${issueId.toLowerCase()}-${slug}`;
 }
