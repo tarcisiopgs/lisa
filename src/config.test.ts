@@ -2,7 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { configExists, getConfigPath, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
+import {
+	configExists,
+	findConfigDir,
+	getConfigPath,
+	loadConfig,
+	mergeWithFlags,
+	saveConfig,
+} from "./config.js";
 import type { LisaConfig } from "./types.js";
 
 describe("getConfigPath", () => {
@@ -258,5 +265,41 @@ describe("mergeWithFlags", () => {
 		const merged = mergeWithFlags(baseConfig, {});
 		expect(merged.provider).toBe("claude");
 		expect(merged.source).toBe("linear");
+	});
+});
+
+describe("findConfigDir", () => {
+	let tmpRoot: string;
+
+	beforeEach(() => {
+		tmpRoot = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	it("returns the directory containing .lisa/config.yaml", () => {
+		const configDir = join(tmpRoot, ".lisa");
+		mkdirSync(configDir);
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
+
+		const nested = join(tmpRoot, "repo", ".worktrees", "feat", "branch");
+		mkdirSync(nested, { recursive: true });
+
+		expect(findConfigDir(nested)).toBe(tmpRoot);
+	});
+
+	it("returns null when no config is found", () => {
+		const nested = join(tmpRoot, "deep", "nested");
+		mkdirSync(nested, { recursive: true });
+		expect(findConfigDir(nested)).toBeNull();
+	});
+
+	it("returns cwd itself when config is in cwd", () => {
+		const configDir = join(tmpRoot, ".lisa");
+		mkdirSync(configDir);
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
+		expect(findConfigDir(tmpRoot)).toBe(tmpRoot);
 	});
 });

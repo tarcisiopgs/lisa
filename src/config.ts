@@ -54,6 +54,16 @@ export function configExists(cwd: string = process.cwd()): boolean {
 	return existsSync(getConfigPath(cwd));
 }
 
+export function findConfigDir(startDir: string = process.cwd()): string | null {
+	let dir = startDir;
+	while (true) {
+		if (existsSync(getConfigPath(dir))) return dir;
+		const parent = resolve(dir, "..");
+		if (parent === dir) return null; // filesystem root
+		dir = parent;
+	}
+}
+
 export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const configPath = getConfigPath(cwd);
 
