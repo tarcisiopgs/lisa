@@ -253,33 +253,6 @@ ${testBlock}${readmeBlock}${hookBlock}
 - If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
 
-export function buildPushRecoveryPrompt(hookErrors: string): string {
-	return `The previous \`git push\` failed because a pre-push hook rejected the push.
-Here is the full error output:
-
-\`\`\`
-${hookErrors}
-\`\`\`
-
-## Instructions
-
-1. **Read the errors** above carefully and identify the root cause.
-2. **Fix the issue** — common fixes include:
-   - Run linters/formatters (e.g. \`npm run lint -- --fix\`, \`npm run format\`)
-   - Run code generation (e.g. \`npx prisma generate\`, \`npm run codegen\`)
-   - Fix type errors in the source files
-   - Fix failing tests
-3. **Amend the commit** so the fix is included:
-   \`\`\`
-   git add -A && git commit --amend --no-edit
-   \`\`\`
-4. **Do NOT push** — the caller handles pushing after you finish.
-5. **Do NOT create pull requests** — the caller handles that.
-6. **Do NOT update the issue tracker** — the caller handles that.
-
-Focus only on fixing the hook errors. Do not make unrelated changes.`;
-}
-
 export function buildNativeWorktreePrompt(
 	issue: Issue,
 	repoPath?: string,
@@ -412,7 +385,6 @@ ${repoBlock}
 - The \`scope\` field should be a concise English description of what needs to be done in that specific repo.
 - Order matters: lower order numbers execute first.
 - Do NOT implement anything. Do NOT create branches, write code, or commit.
-- Do NOT push, create pull requests, or update the issue tracker.
 - If only one repo is affected, the plan should have a single step.`;
 }
 

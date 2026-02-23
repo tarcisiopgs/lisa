@@ -526,7 +526,7 @@ async function runNativeWorktreeSession(
 	session: number,
 	models: ModelSpec[],
 	repoPath: string,
-	defaultBranch: string,
+	_defaultBranch: string,
 ): Promise<SessionResult> {
 	const failResult = (providerUsed: string, fallback?: FallbackResult): SessionResult => ({
 		success: false,
