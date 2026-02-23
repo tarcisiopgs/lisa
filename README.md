@@ -101,16 +101,17 @@ All providers use `child_process.spawn` with `sh -c`. Prompts are written to a t
 
 ### Fallback Chain
 
-Configure a fallback chain in the `models` array. Lisa tries each provider in order — transient errors (429, quota, timeout, network) trigger the next provider. Non-transient errors stop the chain immediately.
+Configure a fallback chain in the `models` array. Lisa tries each model in order — transient errors (429, quota, timeout, network) trigger the next model. Non-transient errors stop the chain immediately.
 
 ```yaml
+provider: claude
 models:
-  - claude
-  - gemini
-  - opencode
+  - claude-sonnet-4-6   # primary
+  - claude-opus-4-6     # fallback 1
+  - claude-haiku-4-5    # fallback 2
 ```
 
-If `models` is not set, Lisa uses the single `provider` field.
+If `models` is not set, Lisa uses the provider's default model.
 
 ## Workflow Modes
 
@@ -208,7 +209,7 @@ repos:
         - "npx prisma db push"
 ```
 
-Lisa starts resources before the agent runs, waits for the port to be ready, runs setup commands, then stops everything after the session.
+Lisa starts resources before the agent runs, waits for the port to be ready, runs setup commands, then stops everything after the session. In multi-repo workflows, resources are started and stopped per repo step.
 
 ## How It Works
 
@@ -237,9 +238,9 @@ Lisa starts resources before the agent runs, waits for the port to be ready, run
 
 Lisa can detect stuck providers — agents that appear to be running but are making no progress. When enabled, the overseer periodically checks `git status` in the working directory. If no changes are detected within the `stuck_threshold`, the provider process is killed and the error is eligible for fallback to the next model in the chain.
 
-### Test Runner Auto-Detection
+### Test Runner and Package Manager Auto-Detection
 
-Lisa auto-detects `vitest` or `jest` in the project's `package.json` dependencies. When a test runner is found, mandatory test instructions are injected into the agent prompt, requiring the agent to write unit tests for new code and run `npm run test` before committing.
+Lisa auto-detects `vitest` or `jest` in the project's `package.json` dependencies. It also detects the package manager from lockfiles (`bun.lockb`/`bun.lock` → `bun`, `pnpm-lock.yaml` → `pnpm`, `yarn.lock` → `yarn`, otherwise `npm`). When a test runner is found, mandatory test instructions are injected into the agent prompt with the correct test command (e.g., `bun run test`, `pnpm run test`).
 
 ### PR Body Formatting
 

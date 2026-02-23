@@ -47,7 +47,7 @@ src/
 ├── loop.ts           # Main agent loop orchestration + session management
 ├── types.ts          # All TypeScript interfaces and type aliases
 ├── config.ts         # YAML config loading/saving with backward compat
-├── prompt.ts         # Prompt templates + detectTestRunner()
+├── prompt.ts         # Prompt templates + detectTestRunner() + detectPackageManager()
 ├── pr-body.ts        # PR body sanitization (strip HTML, normalize bullets)
 ├── guardrails.ts     # Failed-session log: reads/writes .lisa/guardrails.md
 ├── overseer.ts       # Stuck-provider detection via periodic git status checks
@@ -77,12 +77,12 @@ Fetches issues from source, runs provider with fallback chain, creates PRs, upda
 
 - **Worktree** (`runWorktreeSession`): creates isolated `.worktrees/<branch>` per issue, auto-cleanup after PR.
   - Single-repo: uses native worktree (Claude Code `--worktree` flag) if the primary provider supports it (`supportsNativeWorktree = true`), otherwise manages the worktree manually.
-  - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo.
+  - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo. Lifecycle resources are started and stopped per repo step.
 - **Branch** (`runBranchSession`): agent creates a branch in the current checkout. After implementation, reads `.lisa-manifest.json` for the branch name; falls back to `detectFeatureBranches()` heuristic.
 
 ### Provider model resolution (`loop.ts` `resolveModels`)
 
-As of v1.4.0, `models[]` in config lists **model names within the configured provider** (not provider names). Examples: `["claude-opus-4-5", "claude-sonnet-4-5"]` for Claude, `["gemini-2.5-pro", "gemini-2.0-flash"]` for Gemini. Each entry becomes a `ModelSpec { provider, model }` and is tried in order. If a model fails with an eligible error (quota, rate limit, timeout, network), the next model in the list is tried.
+As of v1.4.0, `models[]` in config lists **model names within the configured provider** (not provider names). Examples: `["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"]` for Claude, `["gemini-2.5-pro", "gemini-2.0-flash"]` for Gemini. Each entry becomes a `ModelSpec { provider, model }` and is tried in order. If a model fails with an eligible error (quota, rate limit, timeout, network), the next model in the list is tried.
 
 ### Provider fallback (`providers/index.ts`)
 
