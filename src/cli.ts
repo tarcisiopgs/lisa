@@ -6,11 +6,12 @@ import { join, resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
-import { configExists, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
+import { configExists, findConfigDir, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
 import { isGhCliAvailable } from "./github.js";
 import { banner, log, setOutputMode } from "./logger.js";
 import { runLoop } from "./loop.js";
 import { getAvailableProviders } from "./providers/index.js";
+import { createSource } from "./sources/index.js";
 import type {
 	GitHubMethod,
 	LisaConfig,
@@ -20,6 +21,10 @@ import type {
 	WorkflowMode,
 } from "./types.js";
 import { ensureWorktreeGitignore } from "./worktree.js";
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
@@ -208,6 +213,55 @@ async function isCursorFreePlan(): Promise<boolean> {
 	}
 }
 
+const issueGet = defineCommand({
+	meta: { name: "get", description: "Fetch full issue details as JSON" },
+	args: {
+		id: { type: "positional", required: true, description: "Issue ID (e.g. INT-123)" },
+	},
+	async run({ args }) {
+		await sleep(1000);
+		const configDir = findConfigDir();
+		if (!configDir) {
+			console.error(JSON.stringify({ error: "No .lisa/config.yaml found in directory tree" }));
+			process.exit(1);
+		}
+		const config = loadConfig(configDir);
+		const source = createSource(config.source);
+		const issue = await source.fetchIssueById(args.id);
+		if (!issue) {
+			console.error(JSON.stringify({ error: `Issue ${args.id} not found` }));
+			process.exit(1);
+		}
+		console.log(JSON.stringify(issue));
+	},
+});
+
+const issueDone = defineCommand({
+	meta: { name: "done", description: "Complete an issue: attach PR, update status, remove label" },
+	args: {
+		id: { type: "positional", required: true, description: "Issue ID (e.g. INT-123)" },
+		"pr-url": { type: "string", required: true, description: "Pull request URL" },
+	},
+	async run({ args }) {
+		await sleep(1000);
+		const configDir = findConfigDir();
+		if (!configDir) {
+			console.error(JSON.stringify({ error: "No .lisa/config.yaml found in directory tree" }));
+			process.exit(1);
+		}
+		const config = loadConfig(configDir);
+		const source = createSource(config.source);
+		await source.attachPullRequest(args.id, args["pr-url"]);
+		await source.completeIssue(args.id, config.source_config.done, config.source_config.label);
+		console.log(JSON.stringify({ success: true, issueId: args.id, prUrl: args["pr-url"] }));
+	},
+});
+
+const issue = defineCommand({
+	meta: { name: "issue", description: "Issue tracker operations for use inside worktrees" },
+	subCommands: { get: issueGet, done: issueDone },
+});
+
 const CURSOR_MODELS = [
 	"auto",
 	"composer-1.5",
@@ -230,7 +284,7 @@ export const main = defineCommand({
 		description:
 			"Deterministic autonomous issue resolver — structured AI agent loop for Linear/Trello",
 	},
-	subCommands: { run, config, init, status },
+	subCommands: { run, config, init, status, issue },
 });
 
 async function runConfigWizard(): Promise<void> {
