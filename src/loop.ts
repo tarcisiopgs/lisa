@@ -1,15 +1,12 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
-import { createPullRequest, getRepoInfo } from "./github.js";
 import { startResources, stopResources } from "./lifecycle.js";
 import * as logger from "./logger.js";
-import { sanitizePrBody } from "./pr-body.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
-	buildPushRecoveryPrompt,
 	buildScopedImplementPrompt,
 	detectPackageManager,
 	detectTestRunner,
@@ -33,7 +30,6 @@ import type {
 } from "./types.js";
 import {
 	createWorktree,
-	detectFeatureBranches,
 	determineRepoPath,
 	generateBranchName,
 	removeWorktree,
@@ -82,44 +78,6 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	}));
 }
 
-function buildPrBody(providerUsed: string, description?: string): string {
-	const lines: string[] = [];
-
-	if (description) {
-		const sanitized = sanitizePrBody(description);
-		if (sanitized) {
-			lines.push("## Summary", "", sanitized, "");
-		}
-	}
-
-	lines.push(
-		"---",
-		"",
-		`Implemented by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerUsed}**.`,
-	);
-
-	return lines.join("\n");
-}
-
-const PR_TITLE_FILE = ".pr-title";
-
-function readPrTitle(cwd: string): string | null {
-	try {
-		const title = readFileSync(join(cwd, PR_TITLE_FILE), "utf-8").trim().split("\n")[0]?.trim();
-		return title || null;
-	} catch {
-		return null;
-	}
-}
-
-function cleanupPrTitle(cwd: string): void {
-	try {
-		unlinkSync(join(cwd, PR_TITLE_FILE));
-	} catch {
-		// File may not exist — ignore
-	}
-}
-
 const PLAN_FILE = ".lisa-plan.json";
 
 function readLisaPlan(dir: string): ExecutionPlan | null {
@@ -143,8 +101,7 @@ const MANIFEST_FILE = ".lisa-manifest.json";
 interface LisaManifest {
 	repoPath?: string;
 	branch?: string;
-	prTitle?: string;
-	prBody?: string;
+	prUrl?: string;
 }
 
 function readLisaManifest(dir: string): LisaManifest | null {
@@ -163,81 +120,6 @@ function cleanupManifest(dir: string): void {
 	} catch {
 		// File may not exist — ignore
 	}
-}
-
-const MAX_PUSH_RETRIES = 2;
-
-const HOOK_ERROR_PATTERNS = [
-	/husky - pre-push/i,
-	/husky - pre-commit/i,
-	/pre-push hook/i,
-	/pre-commit hook/i,
-	/hook declined/i,
-	/hook.*failed/i,
-	/hook.*exited with/i,
-	/hook.*returned.*exit code/i,
-];
-
-function isHookError(errorMessage: string): boolean {
-	return HOOK_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
-}
-
-interface PushRecoveryOptions {
-	branch: string;
-	cwd: string;
-	models: ModelSpec[];
-	logFile: string;
-	guardrailsDir: string;
-	issueId: string;
-	overseer?: import("./types.js").OverseerConfig;
-}
-
-async function pushWithRecovery(
-	opts: PushRecoveryOptions,
-): Promise<{ success: boolean; error?: string }> {
-	for (let attempt = 0; attempt <= MAX_PUSH_RETRIES; attempt++) {
-		try {
-			await execa("git", ["push", "-u", "origin", opts.branch], { cwd: opts.cwd });
-			return { success: true };
-		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : String(err);
-
-			if (!isHookError(errorMessage)) {
-				return { success: false, error: errorMessage };
-			}
-
-			if (attempt >= MAX_PUSH_RETRIES) {
-				return {
-					success: false,
-					error: `Push hook failed after ${MAX_PUSH_RETRIES} recovery attempts: ${errorMessage}`,
-				};
-			}
-
-			logger.warn(
-				`Push hook failed (attempt ${attempt + 1}/${MAX_PUSH_RETRIES}). Re-invoking provider to fix...`,
-			);
-
-			const recoveryPrompt = buildPushRecoveryPrompt(errorMessage);
-			const result = await runWithFallback(opts.models, recoveryPrompt, {
-				logFile: opts.logFile,
-				cwd: opts.cwd,
-				guardrailsDir: opts.guardrailsDir,
-				issueId: opts.issueId,
-				overseer: opts.overseer,
-			});
-
-			if (!result.success) {
-				return {
-					success: false,
-					error: `Provider failed to fix push hook errors: ${result.output}`,
-				};
-			}
-
-			logger.ok("Provider finished recovery. Retrying push...");
-		}
-	}
-
-	return { success: false, error: "Push recovery exhausted retries" };
 }
 
 function installSignalHandlers(): void {
@@ -583,23 +465,6 @@ function findRepoConfig(
 	return config.repos[0];
 }
 
-async function runTestValidation(cwd: string): Promise<boolean> {
-	const testRunner = detectTestRunner(cwd);
-	if (!testRunner) return true;
-
-	const pm = detectPackageManager(cwd);
-	logger.log(`Running test validation (${testRunner} via ${pm})...`);
-	try {
-		await execa(pm, ["run", "test"], { cwd, stdio: "pipe" });
-		logger.ok("Tests passed.");
-		return true;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		logger.error(`Tests failed: ${message}`);
-		return false;
-	}
-}
-
 async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<string | null> {
 	try {
 		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
@@ -719,85 +584,31 @@ async function runNativeWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Read manifest from repoPath (prompt instructs agent to write it there)
 	const manifest = readLisaManifest(repoPath);
-	if (!manifest?.branch) {
-		logger.error(`Agent did not produce a valid .lisa-manifest.json for ${issue.id}. Aborting.`);
-		cleanupManifest(repoPath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	const effectiveBranch = manifest.branch;
-	logger.ok(`Agent created branch: ${effectiveBranch}`);
-
-	// Find the worktree created by the provider (for validation, push, and cleanup)
-	const worktreePath = await findWorktreeForBranch(repoPath, effectiveBranch);
-	const effectiveCwd = worktreePath ?? repoPath;
-	if (!worktreePath) {
-		logger.warn(`No worktree found for branch ${effectiveBranch} — using repo root`);
-	}
-
-	// Validate tests
-	startSpinner(`${issue.id} \u2014 validating tests...`);
-	const testsPassed = await runTestValidation(effectiveCwd);
-	stopSpinner();
-	if (!testsPassed) {
-		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
-		cleanupManifest(repoPath);
-		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	// Push branch to remote
-	startSpinner(`${issue.id} \u2014 pushing...`);
-	const pushResult = await pushWithRecovery({
-		branch: effectiveBranch,
-		cwd: effectiveCwd,
-		models,
-		logFile,
-		guardrailsDir: repoPath,
-		issueId: issue.id,
-		overseer: config.overseer,
-	});
-	stopSpinner();
-	if (!pushResult.success) {
-		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
-		cleanupManifest(repoPath);
-		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	// Create PR
-	startSpinner(`${issue.id} \u2014 creating PR...`);
-	const prTitle = manifest.prTitle ?? issue.title;
-	const prBody = manifest.prBody;
 	cleanupManifest(repoPath);
 
-	const prUrls: string[] = [];
-	try {
-		const repoInfo = await getRepoInfo(effectiveCwd);
-		const pr = await createPullRequest(
-			{
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-				head: effectiveBranch,
-				base: defaultBranch,
-				title: prTitle,
-				body: buildPrBody(result.providerUsed, prBody),
-			},
-			config.github,
+	if (!manifest?.prUrl) {
+		logger.error(
+			`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}. Aborting.`,
 		);
-		logger.ok(`PR created: ${pr.html_url}`);
-		prUrls.push(pr.html_url);
-	} catch (err) {
-		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+		const worktreePath = manifest?.branch
+			? await findWorktreeForBranch(repoPath, manifest.branch)
+			: null;
+		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
-	stopSpinner();
 
+	const worktreePath = await findWorktreeForBranch(repoPath, manifest.branch ?? "");
+	logger.ok(`PR created by provider: ${manifest.prUrl}`);
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+	return {
+		success: true,
+		providerUsed: result.providerUsed,
+		prUrls: [manifest.prUrl],
+		fallback: result,
+	};
 }
 
 async function runManualWorktreeSession(
@@ -902,85 +713,28 @@ async function runManualWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Validate tests before creating PR
-	startSpinner(`${issue.id} \u2014 validating tests...`);
-	const testsPassed = await runTestValidation(worktreePath);
-	stopSpinner();
-	if (!testsPassed) {
-		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	// Read manifest written by agent — used for English branch name and PR title
+	// Read manifest written by agent
 	const manifest = readLisaManifest(worktreePath);
-
-	// Use agent's English branch name if provided and differs from the pre-generated name
-	let effectiveBranch = branchName;
-	if (manifest?.branch && manifest.branch !== branchName) {
-		logger.log(`Renaming branch to English name: ${manifest.branch}`);
-		try {
-			await execa("git", ["branch", "-m", branchName, manifest.branch], { cwd: worktreePath });
-			effectiveBranch = manifest.branch;
-			logger.ok(`Branch renamed to ${effectiveBranch}`);
-		} catch (err) {
-			logger.warn(
-				`Branch rename failed, using original: ${err instanceof Error ? err.message : String(err)}`,
-			);
-		}
-	}
-
-	// Ensure branch is pushed to remote before creating PR (with hook recovery)
-	startSpinner(`${issue.id} \u2014 pushing...`);
-	const pushResult = await pushWithRecovery({
-		branch: effectiveBranch,
-		cwd: worktreePath,
-		models,
-		logFile,
-		guardrailsDir: repoPath,
-		issueId: issue.id,
-		overseer: config.overseer,
-	});
-	stopSpinner();
-	if (!pushResult.success) {
-		logger.error(`Failed to push branch to remote: ${pushResult.error}`);
-		cleanupManifest(worktreePath);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	// Create PR from worktree
-	startSpinner(`${issue.id} \u2014 creating PR...`);
-	const prTitle = manifest?.prTitle ?? readPrTitle(worktreePath) ?? issue.title;
-	const prBody = manifest?.prBody;
-	cleanupPrTitle(worktreePath);
 	cleanupManifest(worktreePath);
 
-	const prUrls: string[] = [];
-	try {
-		const repoInfo = await getRepoInfo(worktreePath);
-		const pr = await createPullRequest(
-			{
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-				head: effectiveBranch,
-				base: defaultBranch,
-				title: prTitle,
-				body: buildPrBody(result.providerUsed, prBody),
-			},
-			config.github,
+	if (!manifest?.prUrl) {
+		logger.error(
+			`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}. Aborting.`,
 		);
-		logger.ok(`PR created: ${pr.html_url}`);
-		prUrls.push(pr.html_url);
-	} catch (err) {
-		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
-	stopSpinner();
 
+	logger.ok(`PR created by provider: ${manifest.prUrl}`);
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+	return {
+		success: true,
+		providerUsed: result.providerUsed,
+		prUrls: [manifest.prUrl],
+		fallback: result,
+	};
 }
 
 async function runWorktreeMultiRepoSession(
@@ -1057,6 +811,7 @@ async function runWorktreeMultiRepoSession(
 
 	for (const [i, step] of sortedSteps.entries()) {
 		const stepNum = i + 1;
+		const isLastStep = i === sortedSteps.length - 1;
 		logger.divider(stepNum);
 		logger.log(`Step ${stepNum}/${sortedSteps.length}: ${step.repoPath} — ${step.scope}`);
 
@@ -1068,6 +823,7 @@ async function runWorktreeMultiRepoSession(
 			logFile,
 			models,
 			stepNum,
+			isLastStep,
 		);
 
 		lastFallback = stepResult.fallback;
@@ -1114,6 +870,7 @@ async function runMultiRepoStep(
 	logFile: string,
 	models: ModelSpec[],
 	stepNum: number,
+	isLastStep: boolean,
 ): Promise<MultiRepoStepResult> {
 	const repoPath = step.repoPath;
 	const defaultBranch = resolveBaseBranch(config, repoPath);
@@ -1158,7 +915,14 @@ async function runMultiRepoStep(
 	}
 
 	// Run scoped implementation
-	const prompt = buildScopedImplementPrompt(issue, step, previousResults, testRunner, pm);
+	const prompt = buildScopedImplementPrompt(
+		issue,
+		step,
+		previousResults,
+		testRunner,
+		pm,
+		isLastStep,
+	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
 	const result = await runWithFallback(models, prompt, {
@@ -1186,86 +950,23 @@ async function runMultiRepoStep(
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
 
-	// Read manifest
 	const manifest = readLisaManifest(worktreePath);
-
-	// Use agent's branch name if provided
-	let effectiveBranch = branchName;
-	if (manifest?.branch && manifest.branch !== branchName) {
-		logger.log(`Renaming branch to: ${manifest.branch}`);
-		try {
-			await execa("git", ["branch", "-m", branchName, manifest.branch], { cwd: worktreePath });
-			effectiveBranch = manifest.branch;
-		} catch (err) {
-			logger.warn(`Branch rename failed: ${err instanceof Error ? err.message : String(err)}`);
-		}
-	}
-
-	// Validate tests
-	startSpinner(`${issue.id} step ${stepNum} \u2014 validating tests...`);
-	const testsPassed = await runTestValidation(worktreePath);
-	stopSpinner();
-	if (!testsPassed) {
-		logger.error(`Tests failed for step ${stepNum}. Blocking PR creation.`);
-		cleanupManifest(worktreePath);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { ...failResult(result.providerUsed, result), branch: effectiveBranch };
-	}
-
-	// Push branch
-	startSpinner(`${issue.id} step ${stepNum} \u2014 pushing...`);
-	const pushResult = await pushWithRecovery({
-		branch: effectiveBranch,
-		cwd: worktreePath,
-		models,
-		logFile,
-		guardrailsDir: repoPath,
-		issueId: issue.id,
-		overseer: config.overseer,
-	});
-	stopSpinner();
-	if (!pushResult.success) {
-		logger.error(`Failed to push step ${stepNum}: ${pushResult.error}`);
-		cleanupManifest(worktreePath);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { ...failResult(result.providerUsed, result), branch: effectiveBranch };
-	}
-
-	// Create PR
-	startSpinner(`${issue.id} step ${stepNum} \u2014 creating PR...`);
-	const prTitle = manifest?.prTitle ?? issue.title;
-	const prBody = manifest?.prBody;
 	cleanupManifest(worktreePath);
 
-	let prUrl: string | undefined;
-	try {
-		const repoInfo = await getRepoInfo(worktreePath);
-		const pr = await createPullRequest(
-			{
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-				head: effectiveBranch,
-				base: defaultBranch,
-				title: prTitle,
-				body: buildPrBody(result.providerUsed, prBody),
-			},
-			config.github,
-		);
-		logger.ok(`PR created: ${pr.html_url}`);
-		prUrl = pr.html_url;
-	} catch (err) {
-		logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
+	if (!manifest?.prUrl) {
+		logger.error(`Agent did not produce a .lisa-manifest.json with prUrl for step ${stepNum}.`);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
-	stopSpinner();
 
 	await cleanupWorktree(repoPath, worktreePath);
 
-	logger.ok(`Step ${stepNum} complete: ${repoPath}`);
+	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${manifest.prUrl}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		branch: effectiveBranch,
-		prUrl,
+		branch: manifest.branch ?? branchName,
+		prUrl: manifest.prUrl,
 		fallback: result,
 	};
 }
@@ -1347,71 +1048,22 @@ async function runBranchSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Validate tests before creating PR
-	startSpinner(`${issue.id} \u2014 validating tests...`);
-	const testsPassed = await runTestValidation(workspace);
-	stopSpinner();
-	if (!testsPassed) {
-		logger.error(`Tests failed for ${issue.id}. Blocking PR creation.`);
-		cleanupManifest(workspace);
+	const manifest = readLisaManifest(workspace);
+	cleanupManifest(workspace);
+
+	if (!manifest?.prUrl) {
+		logger.error(`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}.`);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Prefer manifest (agent writes repoPath + English branch name) over heuristic detection
-	const manifest = readLisaManifest(workspace);
-	let detected: { repoPath: string; branch: string }[];
-
-	if (manifest?.repoPath && manifest.branch) {
-		logger.ok(`Using manifest: repo=${manifest.repoPath}, branch=${manifest.branch}`);
-		detected = [{ repoPath: manifest.repoPath, branch: manifest.branch }];
-	} else {
-		if (manifest) {
-			logger.warn(`Manifest found but missing repoPath or branch — falling back to detection`);
-		}
-		detected = await detectFeatureBranches(config.repos, issue.id, workspace, config.base_branch);
-	}
-
-	cleanupManifest(workspace);
-
-	if (detected.length === 0) {
-		logger.error(`Could not detect feature branch for ${issue.id} — skipping PR creation`);
-		logger.ok(`Session ${session} complete for ${issue.id}`);
-		return { success: true, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-	}
-
-	startSpinner(`${issue.id} \u2014 creating PR...`);
-	const prTitle = manifest?.prTitle ?? readPrTitle(workspace) ?? issue.title;
-	const prBody = manifest?.prBody;
-	cleanupPrTitle(workspace);
-
-	const prUrls: string[] = [];
-	for (const { repoPath, branch } of detected) {
-		const baseBranch = resolveBaseBranch(config, repoPath);
-		if (branch === baseBranch) continue;
-
-		try {
-			const repoInfo = await getRepoInfo(repoPath);
-			const pr = await createPullRequest(
-				{
-					owner: repoInfo.owner,
-					repo: repoInfo.repo,
-					head: branch,
-					base: baseBranch,
-					title: prTitle,
-					body: buildPrBody(result.providerUsed, prBody),
-				},
-				config.github,
-			);
-			logger.ok(`PR created: ${pr.html_url}`);
-			prUrls.push(pr.html_url);
-		} catch (err) {
-			logger.error(`Failed to create PR: ${err instanceof Error ? err.message : String(err)}`);
-		}
-	}
-	stopSpinner();
-
+	logger.ok(`PR created by provider: ${manifest.prUrl}`);
 	logger.ok(`Session ${session} complete for ${issue.id}`);
-	return { success: true, providerUsed: result.providerUsed, prUrls, fallback: result };
+	return {
+		success: true,
+		providerUsed: result.providerUsed,
+		prUrls: [manifest.prUrl],
+		fallback: result,
+	};
 }
 
 async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<void> {
