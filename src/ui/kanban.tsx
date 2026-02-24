@@ -27,7 +27,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
-			<Sidebar provider={config.provider} source={config.source} />
+			<Sidebar provider={config.provider} source={config.source} cwd={process.cwd()} />
 			<Board cards={cards} labels={labels} />
 		</Box>
 	);
