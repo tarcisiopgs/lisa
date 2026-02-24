@@ -90,6 +90,11 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		sourceConfig.pick_from = sourceConfig.project;
 	}
 
+	// For Plane, team holds the workspace slug; fall back to PLANE_WORKSPACE env var
+	if (parsed.source === "plane" && !sourceConfig.team && process.env.PLANE_WORKSPACE) {
+		sourceConfig.team = process.env.PLANE_WORKSPACE;
+	}
+
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
 		...(parsed as Partial<LisaConfig>),
