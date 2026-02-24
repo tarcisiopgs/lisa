@@ -90,6 +90,34 @@ async function createPullRequestWithGhCli(opts: PullRequestOptions): Promise<Pul
 	return { number, html_url: url };
 }
 
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+	claude: "Claude Code",
+	gemini: "Gemini CLI",
+	opencode: "OpenCode",
+	copilot: "GitHub Copilot CLI",
+	cursor: "Cursor Agent",
+	goose: "Goose",
+	aider: "Aider",
+};
+
+function formatProviderName(providerUsed: string): string {
+	const providerKey = providerUsed.split("/")[0] ?? providerUsed;
+	return PROVIDER_DISPLAY_NAMES[providerKey] ?? providerKey;
+}
+
+export async function appendPrAttribution(prUrl: string, providerUsed: string): Promise<void> {
+	try {
+		const { stdout: bodyJson } = await execa("gh", ["pr", "view", prUrl, "--json", "body"]);
+		const { body } = JSON.parse(bodyJson) as { body: string };
+		const providerName = formatProviderName(providerUsed);
+		const attribution = `\n\n---\n🤖 Resolved by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerName}**`;
+		const newBody = (body ?? "") + attribution;
+		await execa("gh", ["pr", "edit", prUrl, "--body", newBody]);
+	} catch {
+		// Non-fatal — PR body update is best-effort
+	}
+}
+
 export interface RepoInfo {
 	owner: string;
 	repo: string;

@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
+import { appendPrAttribution } from "./git/github.js";
 import {
 	createWorktree,
 	determineRepoPath,
@@ -653,6 +654,7 @@ async function runNativeWorktreeSession(
 
 	const worktreePath = await findWorktreeForBranch(repoPath, manifest.branch ?? "");
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
+	await appendPrAttribution(manifest.prUrl, result.providerUsed);
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
@@ -782,6 +784,7 @@ async function runManualWorktreeSession(
 	}
 
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
+	await appendPrAttribution(manifest.prUrl, result.providerUsed);
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
@@ -1023,6 +1026,7 @@ async function runMultiRepoStep(
 	}
 
 	await cleanupWorktree(repoPath, worktreePath);
+	await appendPrAttribution(manifest.prUrl, result.providerUsed);
 
 	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${manifest.prUrl}`);
 	return {
@@ -1123,6 +1127,7 @@ async function runBranchSession(
 	}
 
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
+	await appendPrAttribution(manifest.prUrl, result.providerUsed);
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,
