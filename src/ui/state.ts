@@ -10,6 +10,7 @@ export interface KanbanCard {
 	finishedAt?: number;
 	prUrl?: string;
 	hasError?: boolean;
+	outputLog: string;
 }
 
 export interface KanbanStateData {
@@ -33,7 +34,7 @@ export function useKanbanState(): KanbanStateData {
 		const onQueued = (issue: Issue) => {
 			setCards((prev) => {
 				if (prev.some((c) => c.id === issue.id)) return prev;
-				return [...prev, { id: issue.id, title: issue.title, column: "backlog" }];
+				return [...prev, { id: issue.id, title: issue.title, column: "backlog", outputLog: "" }];
 			});
 		};
 
@@ -65,10 +66,17 @@ export function useKanbanState(): KanbanStateData {
 			);
 		};
 
+		const onOutput = (issueId: string, text: string) => {
+			setCards((prev) =>
+				prev.map((c) => (c.id === issueId ? { ...c, outputLog: c.outputLog + text } : c)),
+			);
+		};
+
 		kanbanEmitter.on("issue:queued", onQueued);
 		kanbanEmitter.on("issue:started", onStarted);
 		kanbanEmitter.on("issue:done", onDone);
 		kanbanEmitter.on("issue:reverted", onReverted);
+		kanbanEmitter.on("issue:output", onOutput);
 
 		const onEmpty = () => setIsEmpty(true);
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
@@ -80,6 +88,7 @@ export function useKanbanState(): KanbanStateData {
 			kanbanEmitter.off("issue:started", onStarted);
 			kanbanEmitter.off("issue:done", onDone);
 			kanbanEmitter.off("issue:reverted", onReverted);
+			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
 		};
