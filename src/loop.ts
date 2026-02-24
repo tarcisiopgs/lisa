@@ -34,6 +34,7 @@ import type {
 	RepoConfig,
 	Source,
 } from "./types/index.js";
+import { kanbanEmitter } from "./ui/state.js";
 
 // === Module-level state for signal handler cleanup ===
 let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;
@@ -210,6 +211,18 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		await recoverOrphanIssues(source, config);
 	}
 
+	// Pre-populate kanban backlog when TUI is active
+	if (kanbanEmitter.listenerCount("issue:queued") > 0) {
+		try {
+			const allIssues = await source.listIssues(config.source_config);
+			for (const issue of allIssues) {
+				kanbanEmitter.emit("issue:queued", issue);
+			}
+		} catch {
+			// Non-fatal — kanban backlog starts empty
+		}
+	}
+
 	let session = 0;
 
 	while (true) {
@@ -282,6 +295,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		const previousStatus = config.source_config.pick_from;
 		try {
 			const inProgress = config.source_config.in_progress;
+			kanbanEmitter.emit("issue:started", issue.id);
 			await source.updateStatus(issue.id, inProgress);
 			logger.ok(`Moved ${issue.id} to "${inProgress}"`);
 		} catch (err) {
@@ -326,6 +340,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			try {
 				await source.updateStatus(issue.id, previousStatus);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+				kanbanEmitter.emit("issue:reverted", issue.id);
 			} catch (err) {
 				logger.error(
 					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
@@ -366,6 +381,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			try {
 				await source.updateStatus(issue.id, previousStatus);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+				kanbanEmitter.emit("issue:reverted", issue.id);
 			} catch (err) {
 				logger.error(
 					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
@@ -400,6 +416,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			const labelToRemove = opts.issueId ? undefined : config.source_config.label;
 			await source.completeIssue(issue.id, doneStatus, labelToRemove);
 			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
+			for (const prUrl of sessionResult.prUrls) {
+				kanbanEmitter.emit("issue:done", issue.id, prUrl);
+			}
 			if (labelToRemove) {
 				logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
 			}
