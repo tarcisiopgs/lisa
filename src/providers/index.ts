@@ -38,6 +38,13 @@ export async function getAvailableProviders(): Promise<Provider[]> {
 	return results.filter((r) => r.available).map((r) => r.provider);
 }
 
+export async function getAllProvidersWithAvailability(): Promise<
+	{ provider: Provider; available: boolean }[]
+> {
+	const all = Object.values(providers).map((f) => f());
+	return Promise.all(all.map(async (p) => ({ provider: p, available: await p.isAvailable() })));
+}
+
 export function createProvider(name: string): Provider {
 	const factory = providers[name as ProviderName];
 	if (!factory) {

@@ -101,39 +101,10 @@ export function divider(session: number): void {
 export function banner(): void {
 	if (outputMode !== "default") return;
 
-	const art = `
-                     @@%#@@
-                   @@%=--=%@      @@
-          @@@@@@@@%@+------*@%%@%##*@
-          @*=======---------===-----@@
-          @=------------------------#@
-          @=------------------------+@@
-         @@=-------------------------+#%%%@@
-      @@@#=--------------------------------%@
-    @@*=------------------=---------------=@
-     @%------=%--=%=--@==+@=--------------@@
-      @@+-##+*%**#%=-+*+==+####*---------#@
-        @%*%-::::::%#::::::::+@=---------#@
-        @@@-:++::::@-::::=::::*%*=--------*@@
-          @+:==::::%=::::#-:::%==----------=@@
-          @@+:=%%%%*#+::::::+%=-----------=@@
-           @%*@=-----=*******---*+=-----=%@
-         @%=--+##**#=----------#++##----=@
-         @-----------------#=---**+%-----%@
-         @%*+=-----===++**#@#--%**#=-==++%@
-            @@@%%@#*+++=---=--=%----%%%@@@
-                 @@@----------*@#**#@
-                 @@@=---------#@@
-                @+*%*%%###%*%%=-@
-                @%@+=#@==@#:+@##@
-                   @@@@%%@##%
-`;
-
-	const title = " Lisa — deterministic autonomous issue resolver ";
+	const title = " lisa ♪  autonomous issue resolver ";
 	const border = "─".repeat(title.length);
 
-	console.log(pc.yellow(art));
-	console.log(pc.cyan(`  ┌${border}┐`));
-	console.log(pc.cyan(`  │${title}│`));
-	console.log(pc.cyan(`  └${border}┘\n`));
+	console.log(pc.yellow(`\n  ┌${border}┐`));
+	console.log(pc.yellow(`  │`) + pc.bold(pc.white(title)) + pc.yellow("│"));
+	console.log(pc.yellow(`  └${border}┘\n`));
 }
