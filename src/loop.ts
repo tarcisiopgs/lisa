@@ -574,9 +574,9 @@ async function runNativeWorktreeSession(
 	cleanupManifest(repoPath);
 
 	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner, pm, _defaultBranch);
+	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
-	logger.initLogFile(logFile);
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,
@@ -699,9 +699,9 @@ async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 
 	const prompt = buildImplementPrompt(issue, config, testRunner, pm);
+	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
-	logger.initLogFile(logFile);
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,
@@ -770,9 +770,9 @@ async function runWorktreeMultiRepoSession(
 	cleanupPlan(workspace);
 
 	// Phase 1: Planning — agent analyzes issue and produces execution plan
+	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
-	logger.initLogFile(logFile);
 
 	const planPrompt = buildPlanningPrompt(issue, config);
 	const planResult = await runWithFallback(models, planPrompt, {
@@ -1036,9 +1036,9 @@ async function runBranchSession(
 		}
 	}
 
+	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
-	logger.initLogFile(logFile);
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,

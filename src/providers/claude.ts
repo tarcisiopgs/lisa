@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getOutputMode } from "../output/logger.js";
 import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 
@@ -47,7 +48,7 @@ export class ClaudeProvider implements Provider {
 
 			proc.stdout.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
-				process.stdout.write(text);
+				if (getOutputMode() !== "tui") process.stdout.write(text);
 				chunks.push(text);
 				try {
 					appendFileSync(opts.logFile, text);
@@ -56,7 +57,7 @@ export class ClaudeProvider implements Provider {
 
 			proc.stderr.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
-				process.stderr.write(text);
+				if (getOutputMode() !== "tui") process.stderr.write(text);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}

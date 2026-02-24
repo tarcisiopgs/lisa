@@ -13,6 +13,10 @@ export function setOutputMode(mode: OutputMode): void {
 	outputMode = mode;
 }
 
+export function getOutputMode(): OutputMode {
+	return outputMode;
+}
+
 function shouldPrintToConsole(): boolean {
 	return outputMode !== "quiet" && outputMode !== "tui";
 }
