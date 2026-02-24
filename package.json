@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "1.7.5",
+	"version": "1.7.6",
 	"description": "Autonomous issue resolver",
 	"license": "MIT",
 	"type": "module",
