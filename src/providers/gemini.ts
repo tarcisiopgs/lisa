@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { getOutputMode } from "../output/logger.js";
 import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 
 export class GeminiProvider implements Provider {
 	name = "gemini" as const;
@@ -40,6 +41,9 @@ export class GeminiProvider implements Provider {
 			proc.stdout.on("data", (chunk: Buffer) => {
 				const text = chunk.toString();
 				if (getOutputMode() !== "tui") process.stdout.write(text);
+				if (opts.issueId) {
+					kanbanEmitter.emit("issue:output", opts.issueId, text);
+				}
 				chunks.push(text);
 				try {
 					appendFileSync(opts.logFile, text);

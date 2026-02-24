@@ -234,6 +234,8 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	}
 
 	let session = 0;
+	const loopStart = Date.now();
+	let completedCount = 0;
 
 	while (true) {
 		session++;
@@ -294,6 +296,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 				logger.error(`Issue '${opts.issueId}' not found.`);
 			} else {
 				logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+				if (session === 1) {
+					kanbanEmitter.emit("work:empty");
+				}
 			}
 			break;
 		}
@@ -429,6 +434,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			for (const prUrl of sessionResult.prUrls) {
 				kanbanEmitter.emit("issue:done", issue.id, prUrl);
 			}
+			completedCount++;
 			if (labelToRemove) {
 				logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
 			}
@@ -450,6 +456,12 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		await sleep(config.loop.cooldown * 1000);
 	}
 
+	if (completedCount > 0) {
+		kanbanEmitter.emit("work:complete", {
+			total: completedCount,
+			duration: Date.now() - loopStart,
+		});
+	}
 	resetTitle();
 	logger.ok(`lisa finished. ${session} session(s) run.`);
 }
