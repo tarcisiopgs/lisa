@@ -11,7 +11,7 @@ import { isGhCliAvailable } from "./git/github.js";
 import { ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
-import { getAllProvidersWithAvailability, getAvailableProviders } from "./providers/index.js";
+import { getAllProvidersWithAvailability } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type {
 	GitHubMethod,
@@ -296,20 +296,64 @@ const issue = defineCommand({
 	subCommands: { get: issueGet, done: issueDone },
 });
 
-const CURSOR_MODELS = [
+// Fallback used when `agent --list-models` is unavailable
+const CURSOR_MODELS_FALLBACK = [
 	"auto",
 	"composer-1.5",
-	"composer-1",
-	"gpt-5.3-codex",
-	"gpt-5.3-codex-low",
-	"gpt-5.3-codex-high",
-	"gpt-5.3-codex-xhigh",
-	"gpt-5.3-codex-fast",
+	"opus-4.6-thinking",
+	"opus-4.6",
 	"sonnet-4.6",
-	"sonnet-4.6-thinking",
-	"sonnet-4.5",
-	"sonnet-4.5-thinking",
+	"gpt-5.3-codex",
+	"gpt-5.2",
+	"gemini-3.1-pro",
 ];
+
+function fetchCursorModels(): string[] {
+	try {
+		const bin = ["agent", "cursor-agent"].find((b) => {
+			try {
+				execSync(`${b} --version`, { stdio: "ignore" });
+				return true;
+			} catch {
+				return false;
+			}
+		});
+		if (!bin) return CURSOR_MODELS_FALLBACK;
+		const raw = execSync(`${bin} --list-models`, { encoding: "utf-8", timeout: 10000 });
+		// Strip ANSI escape codes, parse "model-id - Display Name" lines
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
+		const clean = raw.replace(/\x1b\[[0-9;]*[mGKHFA-Z]/g, "");
+		const models = clean
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((l) => l.includes(" - "))
+			.map((l) => (l.split(" - ")[0] ?? "").trim())
+			.filter(Boolean);
+		return models.length > 0 ? models : CURSOR_MODELS_FALLBACK;
+	} catch {
+		return CURSOR_MODELS_FALLBACK;
+	}
+}
+
+function fetchOpenCodeModels(): string[] {
+	try {
+		const raw = execSync("opencode models", { encoding: "utf-8", timeout: 10000 });
+		return raw
+			.split("\n")
+			.map((l) => l.trim())
+			.filter(
+				(m) =>
+					// Latest Anthropic Claude 4.x — exclude dated snapshots (contain 8-digit date suffix)
+					/^anthropic\/claude-(opus|sonnet|haiku)-4-\d+$/.test(m) ||
+					// Google Gemini 2.5 stable (no preview/tts suffixes)
+					/^google\/gemini-2\.5-(pro|flash|flash-lite)$/.test(m) ||
+					// OpenCode proprietary models
+					/^opencode\//.test(m),
+			);
+	} catch {
+		return [];
+	}
+}
 
 export const main = defineCommand({
 	meta: {
@@ -335,8 +379,13 @@ async function runConfigWizard(): Promise<void> {
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
-		claude: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"],
-		gemini: ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"],
+		claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
+		gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+		// opencode: populated dynamically below (fetchOpenCodeModels)
+		copilot: ["claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2"],
+		goose: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
+		aider: ["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"],
+		// cursor: populated dynamically below (fetchCursorModels)
 	};
 
 	const allProviders = await getAllProvidersWithAvailability();
@@ -385,8 +434,20 @@ async function runConfigWizard(): Promise<void> {
 			availableModels = ["auto"];
 			clack.log.info("Cursor Free plan detected — only the 'auto' model is available.");
 		} else {
-			availableModels = CURSOR_MODELS;
+			availableModels = fetchCursorModels();
 		}
+	} else if (providerName === "opencode") {
+		const dynamic = fetchOpenCodeModels();
+		availableModels =
+			dynamic.length > 0
+				? dynamic
+				: [
+						"anthropic/claude-opus-4-6",
+						"anthropic/claude-sonnet-4-6",
+						"anthropic/claude-haiku-4-5",
+						"google/gemini-2.5-pro",
+						"google/gemini-2.5-flash",
+					];
 	}
 
 	if (availableModels && availableModels.length > 0) {
