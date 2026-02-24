@@ -77,7 +77,9 @@ export function error(message: string): void {
 		emitJson("error", message);
 		return;
 	}
-	console.error(`${pc.red("[lisa]")} ${pc.dim(timestamp())} ${message}`);
+	if (shouldPrintToConsole()) {
+		console.error(`${pc.red("[lisa]")} ${pc.dim(timestamp())} ${message}`);
+	}
 	writeToFile("error", message);
 }
 

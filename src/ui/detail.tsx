@@ -85,8 +85,10 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	}
 
 	// Decorative separator: ╠═══...═══╣
-	const innerWidth = Math.max(0, terminalCols - 6);
-	const separator = `╠${"═".repeat(innerWidth)}╣`;
+	// sidebar width (28) + detail border (2) + detail padding (2) = 32
+	const SIDEBAR_TOTAL_WIDTH = 28;
+	const separatorInner = Math.max(0, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
+	const separator = `╠${"═".repeat(Math.max(0, separatorInner - 2))}╣`;
 
 	// Scroll position indicator
 	const totalLines = lines.length;
