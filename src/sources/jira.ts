@@ -202,6 +202,25 @@ export class JiraSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const jql = encodeURIComponent(
+			`project = "${config.team}" AND labels = "${config.label}" AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
+		);
+		const fields = "summary,description,priority,status,labels";
+
+		const data = await jiraGet<JiraSearchResult>(
+			`/search?jql=${jql}&fields=${fields}&maxResults=100`,
+		);
+
+		const baseUrl = getBaseUrl();
+		return (data.issues ?? []).map((issue) => ({
+			id: issue.key,
+			title: issue.fields.summary,
+			description: extractDescription(issue.fields.description),
+			url: issueUrl(baseUrl, issue.key),
+		}));
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		const key = parseJiraIdentifier(issueId);
 		const issue = await jiraGet<JiraIssue>(`/issue/${key}?fields=labels`);
