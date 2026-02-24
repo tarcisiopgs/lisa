@@ -16,6 +16,7 @@ import { ClaudeProvider } from "./claude.js";
 import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
 import { GeminiProvider } from "./gemini.js";
+import { GooseProvider } from "./goose.js";
 import { OpenCodeProvider } from "./opencode.js";
 
 const providers: Record<ProviderName, () => Provider> = {
@@ -24,6 +25,7 @@ const providers: Record<ProviderName, () => Provider> = {
 	opencode: () => new OpenCodeProvider(),
 	copilot: () => new CopilotProvider(),
 	cursor: () => new CursorProvider(),
+	goose: () => new GooseProvider(),
 };
 
 export async function getAvailableProviders(): Promise<Provider[]> {

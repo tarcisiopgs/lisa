@@ -1,6 +1,6 @@
 export type GitHubMethod = "cli" | "token";
 export type SourceName = "linear" | "trello" | "gitlab-issues";
-export type ProviderName = "claude" | "gemini" | "opencode" | "copilot" | "cursor";
+export type ProviderName = "claude" | "gemini" | "opencode" | "copilot" | "cursor" | "goose";
 export type LogFormat = "text" | "json";
 export type WorkflowMode = "worktree" | "branch";
 
