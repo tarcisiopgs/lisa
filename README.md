@@ -83,6 +83,7 @@ Lisa follows a deterministic pipeline:
 | GitHub Copilot CLI | `copilot` | `--allow-all` |
 | Cursor Agent | `agent` | `--force` |
 | Goose | `goose` | implicit in `run` |
+| Aider | `aider` | `--yes-always` |
 
 At least one provider must be installed and available in your PATH.
 

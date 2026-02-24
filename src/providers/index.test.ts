@@ -31,6 +31,11 @@ describe("createProvider", () => {
 		expect(provider.name).toBe("goose");
 	});
 
+	it("creates an aider provider", () => {
+		const provider = createProvider("aider");
+		expect(provider.name).toBe("aider");
+	});
+
 	it("throws for unknown provider", () => {
 		expect(() => createProvider("unknown" as never)).toThrow("Unknown provider: unknown");
 	});
@@ -63,6 +68,11 @@ describe("supportsNativeWorktree", () => {
 
 	it("goose provider does not support native worktree", () => {
 		const provider = createProvider("goose");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+
+	it("aider provider does not support native worktree", () => {
+		const provider = createProvider("aider");
 		expect(provider.supportsNativeWorktree).toBeFalsy();
 	});
 });
