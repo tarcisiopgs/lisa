@@ -24,14 +24,14 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const columnCards = [backlog, inProgress, done];
 
 	useInput((input, key) => {
-		if (activeView === "detail") {
-			if (key.escape) setActiveView("board");
-			return;
-		}
-
 		if (input === "q") {
 			process.emit("SIGINT");
 			exit();
+			return;
+		}
+
+		if (activeView === "detail") {
+			if (key.escape) setActiveView("board");
 			return;
 		}
 
