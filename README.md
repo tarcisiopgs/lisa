@@ -55,7 +55,7 @@ Lisa follows a deterministic pipeline:
 └─────────┘    └──────────┘    └───────────┘    └──────────┘    └────┘    └────────┘
 ```
 
-1. **Fetch** — Pulls the next issue from Linear or Trello matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
+1. **Fetch** — Pulls the next issue from Linear, Trello, or Shortcut matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, and commits.
 4. **Validate** — Runs the project's test suite. If tests fail, the session is aborted and the issue reverts.
@@ -115,6 +115,9 @@ export LINEAR_API_KEY=""
 # Required when source = trello
 export TRELLO_API_KEY=""
 export TRELLO_TOKEN=""
+
+# Required when source = shortcut
+export SHORTCUT_API_TOKEN=""
 ```
 
 ## Commands
@@ -128,7 +131,7 @@ export TRELLO_TOKEN=""
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
-| `lisa run --source NAME` | Override issue source (linear, trello) |
+| `lisa run --source NAME` | Override issue source (linear, trello, shortcut) |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (cli, token) |
 | `lisa run --json` | Output as JSON lines |
@@ -186,14 +189,14 @@ overseer:
 
 ### Source-Specific Fields
 
-| Field | Linear | Trello |
-|-------|--------|--------|
-| `team` | Team name | Board name |
-| `project` | Project name | — |
-| `pick_from` | Status to pick issues from | List to pick cards from |
-| `label` | Label to filter issues | Label to filter cards |
-| `in_progress` | In-progress status | In-progress column |
-| `done` | Destination status after PR | Destination column after PR |
+| Field | Linear | Trello | Shortcut |
+|-------|--------|--------|----------|
+| `team` | Team name | Board name | Group name (optional) |
+| `project` | Project name | — | — |
+| `pick_from` | Status to pick issues from | List to pick cards from | Workflow state to pick stories from |
+| `label` | Label to filter issues | Label to filter cards | Label to filter stories |
+| `in_progress` | In-progress status | In-progress column | In-progress workflow state |
+| `done` | Destination status after PR | Destination column after PR | Done workflow state |
 
 ### Workflow Modes
 
