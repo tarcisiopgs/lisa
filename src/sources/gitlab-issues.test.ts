@@ -361,6 +361,56 @@ describe("GitLabIssuesSource", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// listIssues
+	// -------------------------------------------------------------------------
+
+	describe("listIssues", () => {
+		beforeEach(() => {
+			process.env.GITLAB_TOKEN = "test-token";
+		});
+
+		afterEach(() => {
+			vi.restoreAllMocks();
+			delete process.env.GITLAB_TOKEN;
+		});
+
+		it("returns all open issues with the configured label", async () => {
+			const issues = [
+				makeIssue({ iid: 10, title: "First" }),
+				makeIssue({ iid: 11, title: "Second" }),
+			];
+			vi.stubGlobal("fetch", mockFetch(issues));
+
+			const result = await source.listIssues({
+				team: "my-org/my-repo",
+				project: "",
+				label: "ready",
+				pick_from: "Backlog",
+				in_progress: "In Progress",
+				done: "Done",
+			});
+
+			expect(result).toHaveLength(2);
+			expect(result[0]).toMatchObject({ title: "First" });
+		});
+
+		it("returns empty array when no issues", async () => {
+			vi.stubGlobal("fetch", mockFetch([]));
+
+			const result = await source.listIssues({
+				team: "my-org/my-repo",
+				project: "",
+				label: "ready",
+				pick_from: "Backlog",
+				in_progress: "In Progress",
+				done: "Done",
+			});
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// removeLabel
 	// -------------------------------------------------------------------------
 
