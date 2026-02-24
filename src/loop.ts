@@ -159,9 +159,18 @@ function installSignalHandlers(): void {
 					`Failed to revert ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
 				);
 			}
+			// Update kanban card back to backlog state
+			kanbanEmitter.emit("issue:reverted", issueId);
 		}
 
-		process.exit(1);
+		// Signal the TUI to exit cleanly (if running)
+		const hasTUI = kanbanEmitter.listenerCount("tui:exit") > 0;
+		kanbanEmitter.emit("tui:exit");
+		if (hasTUI) {
+			// Give React time to re-render the reverted card before the process exits
+			await new Promise((resolve) => setTimeout(resolve, 250));
+		}
+		process.exit(0);
 	};
 
 	process.on("SIGINT", () => {
