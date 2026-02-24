@@ -1,4 +1,4 @@
-import type { Issue, Source, SourceConfig } from "../types.js";
+import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_URL = "https://api.trello.com/1";
 const REQUEST_TIMEOUT_MS = 30_000;

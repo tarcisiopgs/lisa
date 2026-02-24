@@ -2,8 +2,8 @@ import { execSync, spawn } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { STUCK_MESSAGE, startOverseer } from "../overseer.js";
-import type { Provider, RunOptions, RunResult } from "../types.js";
+import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
+import type { Provider, RunOptions, RunResult } from "../types/index.js";
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;

@@ -1,8 +1,14 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
-import { startResources, stopResources } from "./lifecycle.js";
-import * as logger from "./logger.js";
+import {
+	createWorktree,
+	determineRepoPath,
+	generateBranchName,
+	removeWorktree,
+} from "./git/worktree.js";
+import * as logger from "./output/logger.js";
+import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./output/terminal.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -17,8 +23,8 @@ import {
 	isCompleteProviderExhaustion,
 	runWithFallback,
 } from "./providers/index.js";
+import { startResources, stopResources } from "./session/lifecycle.js";
 import { createSource } from "./sources/index.js";
-import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./terminal.js";
 import type {
 	ExecutionPlan,
 	FallbackResult,
@@ -27,13 +33,7 @@ import type {
 	PlanStep,
 	RepoConfig,
 	Source,
-} from "./types.js";
-import {
-	createWorktree,
-	determineRepoPath,
-	generateBranchName,
-	removeWorktree,
-} from "./worktree.js";
+} from "./types/index.js";
 
 // === Module-level state for signal handler cleanup ===
 let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;

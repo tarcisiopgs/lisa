@@ -3,7 +3,7 @@ import {
 	buildGuardrailsSection,
 	extractContext,
 	extractErrorType,
-} from "../guardrails.js";
+} from "../session/guardrails.js";
 import type {
 	FallbackResult,
 	ModelAttempt,
@@ -11,7 +11,7 @@ import type {
 	Provider,
 	ProviderName,
 	RunOptions,
-} from "../types.js";
+} from "../types/index.js";
 import { AiderProvider } from "./aider.js";
 import { ClaudeProvider } from "./claude.js";
 import { CopilotProvider } from "./copilot.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Provider } from "../types.js";
+import type { Provider } from "../types/index.js";
 import { AiderProvider } from "./aider.js";
 
 describe("AiderProvider", () => {

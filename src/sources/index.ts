@@ -1,4 +1,4 @@
-import type { Source, SourceName } from "../types.js";
+import type { Source, SourceName } from "../types/index.js";
 import { GitHubIssuesSource } from "./github-issues.js";
 import { GitLabIssuesSource } from "./gitlab-issues.js";
 import { JiraSource } from "./jira.js";

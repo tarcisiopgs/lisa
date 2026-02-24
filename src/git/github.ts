@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import type { GitHubMethod } from "./types.js";
+import type { GitHubMethod } from "../types/index.js";
 
 const API_URL = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 30_000;

@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { OverseerConfig } from "./types.js";
+import type { OverseerConfig } from "../types/index.js";
 
 const execFileAsync = promisify(execFile);
 
