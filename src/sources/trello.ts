@@ -156,6 +156,26 @@ export class TrelloSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const board = await findBoardByName(config.team);
+		const list = await findListByName(board.id, config.pick_from);
+		const label = await findLabelByName(board.id, config.label);
+
+		const cards = await trelloGet<TrelloCard[]>(
+			`/lists/${list.id}/cards`,
+			"fields=name,desc,url,idLabels,idList",
+		);
+
+		return cards
+			.filter((c) => c.idLabels.includes(label.id))
+			.map((c) => ({
+				id: c.id,
+				title: c.name,
+				description: c.desc || "",
+				url: c.url,
+			}));
+	}
+
 	async removeLabel(cardId: string, labelName: string): Promise<void> {
 		const card = await trelloGet<{ idBoard: string; idLabels: string[] }>(
 			`/cards/${cardId}`,
