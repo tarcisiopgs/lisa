@@ -38,6 +38,7 @@ import { kanbanEmitter } from "./ui/state.js";
 
 // === Module-level state for signal handler cleanup ===
 let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;
+let activeProviderPid: number | null = null;
 let shuttingDown = false;
 
 export interface LoopOptions {
@@ -133,6 +134,15 @@ function installSignalHandlers(): void {
 		stopSpinner();
 		resetTitle();
 		logger.warn(`Received ${signal}. Reverting active issue...`);
+
+		// Kill the active provider process to prevent orphaned claude/gemini/etc processes
+		if (activeProviderPid) {
+			try {
+				process.kill(activeProviderPid, "SIGTERM");
+			} catch {
+				// Process may have already exited
+			}
+		}
 
 		if (activeCleanup) {
 			const { issueId, previousStatus, source } = activeCleanup;
@@ -585,6 +595,9 @@ async function runNativeWorktreeSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		useNativeWorktree: true,
+		onProcess: (pid) => {
+			activeProviderPid = pid;
+		},
 	});
 	stopSpinner();
 
@@ -709,6 +722,9 @@ async function runManualWorktreeSession(
 		guardrailsDir: repoPath,
 		issueId: issue.id,
 		overseer: config.overseer,
+		onProcess: (pid) => {
+			activeProviderPid = pid;
+		},
 	});
 	stopSpinner();
 
@@ -781,6 +797,9 @@ async function runWorktreeMultiRepoSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		onProcess: (pid) => {
+			activeProviderPid = pid;
+		},
 	});
 	stopSpinner();
 
@@ -951,6 +970,9 @@ async function runMultiRepoStep(
 		guardrailsDir: repoPath,
 		issueId: issue.id,
 		overseer: config.overseer,
+		onProcess: (pid) => {
+			activeProviderPid = pid;
+		},
 	});
 	stopSpinner();
 
@@ -1046,6 +1068,9 @@ async function runBranchSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		onProcess: (pid) => {
+			activeProviderPid = pid;
+		},
 	});
 	stopSpinner();
 

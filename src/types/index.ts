@@ -101,6 +101,7 @@ export interface RunOptions {
 	overseer?: OverseerConfig;
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
+	onProcess?: (pid: number) => void; // called when the provider spawns its child process
 }
 
 export interface RunResult {

@@ -36,6 +36,7 @@ export class AiderProvider implements Provider {
 				},
 			);
 
+			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 
 			const chunks: string[] = [];

@@ -33,6 +33,7 @@ export class CopilotProvider implements Provider {
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
+			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 
 			const chunks: string[] = [];
