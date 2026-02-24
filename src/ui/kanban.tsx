@@ -1,10 +1,10 @@
 import { Box, useApp, useInput } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LisaConfig } from "../types/index.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
 import { Sidebar } from "./sidebar.js";
-import { useKanbanState } from "./state.js";
+import { kanbanEmitter, useKanbanState } from "./state.js";
 
 interface KanbanAppProps {
 	config: LisaConfig;
@@ -18,6 +18,15 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const [activeColIndex, setActiveColIndex] = useState(0);
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 
+	// Listen for clean-exit signal from the loop's SIGINT cleanup
+	useEffect(() => {
+		const onExit = () => exit();
+		kanbanEmitter.on("tui:exit", onExit);
+		return () => {
+			kanbanEmitter.off("tui:exit", onExit);
+		};
+	}, [exit]);
+
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
 	const done = cards.filter((c) => c.column === "done");
@@ -25,8 +34,8 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	useInput((input, key) => {
 		if (input === "q") {
+			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
 			process.emit("SIGINT");
-			exit();
 			return;
 		}
 
