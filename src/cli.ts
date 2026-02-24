@@ -48,9 +48,13 @@ const run = defineCommand({
 		quiet: { type: "boolean", description: "Suppress non-essential output", default: false },
 	},
 	async run({ args }) {
+		const isTUI = process.stdout.isTTY && !args.json && !args.quiet;
+
 		if (args.json) setOutputMode("json");
 		else if (args.quiet) setOutputMode("quiet");
-		banner();
+		else if (isTUI) setOutputMode("tui");
+
+		banner(); // no-op in tui mode since outputMode !== "default"
 
 		if (!configExists()) {
 			console.error(pc.red("No configuration found. Run `lisa init` first."));
@@ -76,6 +80,13 @@ const run = defineCommand({
 			);
 			console.error(pc.dim(`\nAdd them to your ${shell} and run: source ${shell}`));
 			process.exit(1);
+		}
+
+		if (isTUI) {
+			const { render } = await import("ink");
+			const { createElement } = await import("react");
+			const { KanbanApp } = await import("./ui/kanban.js");
+			render(createElement(KanbanApp, { config: merged }), { exitOnCtrlC: false });
 		}
 
 		await runLoop(merged, {
