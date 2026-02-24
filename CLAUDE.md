@@ -62,7 +62,9 @@ src/
 │   ├── gemini.ts     # Gemini CLI: gemini --yolo -p
 │   ├── opencode.ts   # OpenCode: opencode run
 │   ├── copilot.ts    # GitHub Copilot CLI: copilot --allow-all -p
-│   └── cursor.ts     # Cursor Agent: agent -p --output-format text --force
+│   ├── cursor.ts     # Cursor Agent: agent -p --output-format text --force
+│   ├── goose.ts      # Goose (Block): goose run --text
+│   └── aider.ts      # Aider: aider --message ... --yes-always [--model MODEL]
 └── sources/          # Issue tracker integrations
     ├── index.ts      # Source factory
     ├── linear.ts     # Linear GraphQL API

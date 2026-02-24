@@ -6,7 +6,14 @@ export type SourceName =
 	| "gitlab-issues"
 	| "github-issues"
 	| "jira";
-export type ProviderName = "claude" | "gemini" | "opencode" | "copilot" | "cursor";
+export type ProviderName =
+	| "claude"
+	| "gemini"
+	| "opencode"
+	| "copilot"
+	| "cursor"
+	| "goose"
+	| "aider";
 export type LogFormat = "text" | "json";
 export type WorkflowMode = "worktree" | "branch";
 
