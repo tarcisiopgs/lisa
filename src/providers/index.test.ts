@@ -26,6 +26,11 @@ describe("createProvider", () => {
 		expect(provider.name).toBe("cursor");
 	});
 
+	it("creates a goose provider", () => {
+		const provider = createProvider("goose");
+		expect(provider.name).toBe("goose");
+	});
+
 	it("creates an aider provider", () => {
 		const provider = createProvider("aider");
 		expect(provider.name).toBe("aider");
@@ -58,6 +63,11 @@ describe("supportsNativeWorktree", () => {
 	});
 	it("cursor provider does not support native worktree", () => {
 		const provider = createProvider("cursor");
+		expect(provider.supportsNativeWorktree).toBeFalsy();
+	});
+
+	it("goose provider does not support native worktree", () => {
+		const provider = createProvider("goose");
 		expect(provider.supportsNativeWorktree).toBeFalsy();
 	});
 
