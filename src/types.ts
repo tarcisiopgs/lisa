@@ -1,5 +1,5 @@
 export type GitHubMethod = "cli" | "token";
-export type SourceName = "linear" | "trello" | "gitlab-issues" | "jira";
+export type SourceName = "linear" | "trello" | "shortcut" | "gitlab-issues" | "jira";
 export type ProviderName = "claude" | "gemini" | "opencode" | "copilot" | "cursor" | "goose";
 export type LogFormat = "text" | "json";
 export type WorkflowMode = "worktree" | "branch";
