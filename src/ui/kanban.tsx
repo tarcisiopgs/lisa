@@ -1,7 +1,8 @@
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, useApp, useInput } from "ink";
 import { useState } from "react";
 import type { LisaConfig } from "../types/index.js";
 import { Board } from "./board.js";
+import { IssueDetail } from "./detail.js";
 import { Sidebar } from "./sidebar.js";
 import { useKanbanState } from "./state.js";
 
@@ -89,9 +90,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 					activeCardIndex={activeCardIndex}
 				/>
 			) : (
-				<Box flexGrow={1} borderStyle="single" paddingX={1}>
-					<Text dimColor>Loading detail view...</Text>
-				</Box>
+				<IssueDetail card={selectedCard} onBack={() => setActiveView("board")} />
 			)}
 		</Box>
 	);
