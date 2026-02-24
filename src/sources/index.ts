@@ -3,11 +3,13 @@ import { GitHubIssuesSource } from "./github-issues.js";
 import { GitLabIssuesSource } from "./gitlab-issues.js";
 import { JiraSource } from "./jira.js";
 import { LinearSource } from "./linear.js";
+import { ShortcutSource } from "./shortcut.js";
 import { TrelloSource } from "./trello.js";
 
 const sources: Record<SourceName, () => Source> = {
 	linear: () => new LinearSource(),
 	trello: () => new TrelloSource(),
+	shortcut: () => new ShortcutSource(),
 	"gitlab-issues": () => new GitLabIssuesSource(),
 	"github-issues": () => new GitHubIssuesSource(),
 	jira: () => new JiraSource(),
