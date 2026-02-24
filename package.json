@@ -24,12 +24,16 @@
 		"@clack/prompts": "^1.0.1",
 		"citty": "^0.2.1",
 		"execa": "^9.6.1",
+		"ink": "^6.8.0",
+		"ink-spinner": "^5.0.0",
 		"picocolors": "^1.1.1",
+		"react": "^19.2.4",
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.3",
 		"@types/node": "^22.13.4",
+		"@types/react": "^19.2.14",
 		"@vitest/coverage-v8": "^4.0.18",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
