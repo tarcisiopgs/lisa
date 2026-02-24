@@ -12,6 +12,7 @@ import type {
 	ProviderName,
 	RunOptions,
 } from "../types.js";
+import { AiderProvider } from "./aider.js";
 import { ClaudeProvider } from "./claude.js";
 import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
@@ -24,6 +25,7 @@ const providers: Record<ProviderName, () => Provider> = {
 	opencode: () => new OpenCodeProvider(),
 	copilot: () => new CopilotProvider(),
 	cursor: () => new CursorProvider(),
+	aider: () => new AiderProvider(),
 };
 
 export async function getAvailableProviders(): Promise<Provider[]> {
