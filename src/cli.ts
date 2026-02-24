@@ -7,9 +7,10 @@ import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
 import { configExists, findConfigDir, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
-import { isGhCliAvailable } from "./github.js";
-import { banner, log, setOutputMode } from "./logger.js";
+import { isGhCliAvailable } from "./git/github.js";
+import { ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
+import { banner, log, setOutputMode } from "./output/logger.js";
 import { getAvailableProviders } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type {
@@ -20,8 +21,7 @@ import type {
 	RepoConfig,
 	SourceName,
 	WorkflowMode,
-} from "./types.js";
-import { ensureWorktreeGitignore } from "./worktree.js";
+} from "./types/index.js";
 
 // Rate limit guard: prevents rapid-fire calls to the issue tracker API when
 // the provider invokes multiple `lisa issue` commands in quick succession.

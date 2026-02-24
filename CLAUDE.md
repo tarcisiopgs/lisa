@@ -41,21 +41,27 @@ Biome enforces: tabs, double quotes, semicolons, 100-char line width, recommende
 ## Architecture
 
 ```
+assets/
+└── lisa.png          # Project logo
 src/
 ├── index.ts          # Entry point → delegates to cli.ts
 ├── cli.ts            # citty commands: run, init, config, status + interactive wizard
 ├── loop.ts           # Main agent loop orchestration + session management
-├── types.ts          # All TypeScript interfaces and type aliases
 ├── config.ts         # YAML config loading/saving with backward compat
 ├── prompt.ts         # Prompt templates + detectTestRunner() + detectPackageManager()
-├── pr-body.ts        # PR body sanitization (strip HTML, normalize bullets)
-├── guardrails.ts     # Failed-session log: reads/writes .lisa/guardrails.md
-├── overseer.ts       # Stuck-provider detection via periodic git status checks
-├── terminal.ts       # Terminal title (OSC), spinner, bell notification
-├── github.ts         # PR creation (gh CLI or GitHub API)
-├── worktree.ts       # Git worktree management + feature branch detection
-├── lifecycle.ts      # Resource lifecycle (port checks, startup/shutdown)
-├── logger.ts         # Logging (console + file, supports text/json/quiet)
+├── types/
+│   └── index.ts      # All TypeScript interfaces and type aliases
+├── git/              # Git and GitHub utilities
+│   ├── github.ts     # PR creation (gh CLI or GitHub API)
+│   ├── worktree.ts   # Git worktree management + feature branch detection
+│   └── pr-body.ts    # PR body sanitization (strip HTML, normalize bullets)
+├── session/          # Session lifecycle management
+│   ├── lifecycle.ts  # Resource lifecycle (port checks, startup/shutdown)
+│   ├── overseer.ts   # Stuck-provider detection via periodic git status checks
+│   └── guardrails.ts # Failed-session log: reads/writes .lisa/guardrails.md
+├── output/           # Logging and terminal output
+│   ├── logger.ts     # Logging (console + file, supports text/json/quiet)
+│   └── terminal.ts   # Terminal title (OSC), spinner, bell notification
 ├── providers/        # AI agent implementations (spawn child processes)
 │   ├── index.ts      # Provider factory, runWithFallback(), fallback eligibility
 │   ├── claude.ts     # Claude Code: claude -p --dangerously-skip-permissions [--worktree]
@@ -99,7 +105,7 @@ Agents write two files in the working directory:
 
 These files are cleaned up by Lisa after each session.
 
-### Overseer (`overseer.ts`)
+### Overseer (`session/overseer.ts`)
 
 When enabled, periodically runs `git status --porcelain` in the provider's working directory. If no changes are detected within `stuck_threshold` seconds, the provider process is killed with SIGTERM and the error is eligible for fallback.
 
@@ -107,7 +113,7 @@ When enabled, periodically runs `git status --porcelain` in the provider's worki
 
 If `git push` fails due to pre-push hooks (husky, lint, typecheck), Lisa re-invokes the provider with the error output using `buildPushRecoveryPrompt()` and retries the push. Up to `MAX_PUSH_RETRIES` (2) recovery attempts.
 
-### Multi-repo (`worktree.ts`)
+### Multi-repo (`git/worktree.ts`)
 
 `detectFeatureBranches()` uses 3-pass detection (issue ID in branch name → branch differs from base → git history search) to find all repos touched, creating one PR per repo.
 
@@ -128,7 +134,7 @@ These are NOT interchangeable — wrong types cause silent validation failures.
 
 ## Core Interfaces
 
-The two core abstractions are `Provider` and `Source` (both in `types.ts`).
+The two core abstractions are `Provider` and `Source` (both in `types/index.ts`).
 
 - `Provider`: `name`, `supportsNativeWorktree?`, `isAvailable(): Promise<boolean>`, `run(prompt, opts): Promise<RunResult>`
 - `Source`: `fetchNextIssue()`, `fetchIssueById()`, `updateStatus()`, `removeLabel()`, `attachPullRequest()`, `completeIssue()`

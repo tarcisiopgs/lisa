@@ -10,7 +10,7 @@ import {
 	mergeWithFlags,
 	saveConfig,
 } from "./config.js";
-import type { LisaConfig } from "./types.js";
+import type { LisaConfig } from "./types/index.js";
 
 describe("getConfigPath", () => {
 	it("returns .lisa/config.yaml path relative to cwd", () => {

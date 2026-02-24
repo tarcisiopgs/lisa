@@ -9,7 +9,7 @@ import {
 	buildScopedImplementPrompt,
 	detectTestRunner,
 } from "./prompt.js";
-import type { Issue, LisaConfig, PlanStep } from "./types.js";
+import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
 	return {

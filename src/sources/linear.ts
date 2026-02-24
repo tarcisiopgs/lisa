@@ -1,5 +1,5 @@
-import * as logger from "../logger.js";
-import type { Issue, Source, SourceConfig } from "../types.js";
+import * as logger from "../output/logger.js";
+import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_URL = "https://api.linear.app/graphql";
 const REQUEST_TIMEOUT_MS = 30_000;

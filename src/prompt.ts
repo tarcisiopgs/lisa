@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { Issue, LisaConfig, PlanStep } from "./types.js";
+import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";

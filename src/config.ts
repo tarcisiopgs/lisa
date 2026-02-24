@@ -8,7 +8,7 @@ import type {
 	ProviderName,
 	SourceConfig,
 	SourceName,
-} from "./types.js";
+} from "./types/index.js";
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
 	enabled: false,

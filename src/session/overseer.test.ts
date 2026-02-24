@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OverseerConfig } from "../types/index.js";
 import { getGitSnapshot, STUCK_MESSAGE, startOverseer } from "./overseer.js";
-import type { OverseerConfig } from "./types.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

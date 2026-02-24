@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { resolve } from "node:path";
-import * as logger from "./logger.js";
-import type { RepoConfig, ResourceConfig } from "./types.js";
+import * as logger from "../output/logger.js";
+import type { RepoConfig, ResourceConfig } from "../types/index.js";
 
 interface ManagedResource {
 	name: string;
