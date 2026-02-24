@@ -82,6 +82,7 @@ Lisa follows a deterministic pipeline:
 | OpenCode | `opencode` | implicit in `run` |
 | GitHub Copilot CLI | `copilot` | `--allow-all` |
 | Cursor Agent | `agent` | `--force` |
+| Aider | `aider` | `--yes-always` |
 
 At least one provider must be installed and available in your PATH.
 
