@@ -38,6 +38,7 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 		<Box
 			flexDirection="column"
 			flexGrow={1}
+			flexBasis={0}
 			borderStyle="single"
 			borderColor={borderColor}
 			paddingX={1}
