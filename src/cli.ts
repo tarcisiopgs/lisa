@@ -141,7 +141,7 @@ const init = defineCommand({
 		}
 		if (configExists()) {
 			const overwrite = await clack.confirm({
-				message: "Config already exists. Overwrite?",
+				message: "A config already exists at .lisa/config.yaml. Overwrite it?",
 			});
 			if (clack.isCancel(overwrite) || !overwrite) {
 				log("Cancelled.");
@@ -323,6 +323,7 @@ export const main = defineCommand({
 
 async function runConfigWizard(): Promise<void> {
 	banner();
+	clack.intro(pc.cyan(" lisa — autonomous issue resolver "));
 
 	const providerLabels: Record<ProviderName, string> = {
 		claude: "Claude Code",
@@ -342,13 +343,15 @@ async function runConfigWizard(): Promise<void> {
 	const available = await getAvailableProviders();
 
 	if (available.length === 0) {
-		clack.log.error("No compatible AI providers found.");
+		clack.log.error("No AI provider found on your system.");
 		clack.log.info(
-			`Install at least one of the following providers to continue:\n\n` +
-				`  ${pc.bold("Claude Code")}   ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
-				`  ${pc.bold("Gemini CLI")}    ${pc.dim("npm i -g @anthropic-ai/gemini-cli")}\n` +
-				`  ${pc.bold("OpenCode")}      ${pc.dim("npm i -g opencode")}\n\n` +
-				`After installing, run ${pc.cyan("lisa init")} again.`,
+			`Install at least one of the following and re-run ${pc.cyan("lisa init")}:\n\n` +
+				`  ${pc.bold("Claude Code")}        ${pc.dim("npm i -g @anthropic-ai/claude-code")}\n` +
+				`  ${pc.bold("Gemini CLI")}         ${pc.dim("npm i -g @google/gemini-cli")}\n` +
+				`  ${pc.bold("OpenCode")}           ${pc.dim("npm i -g opencode")}\n` +
+				`  ${pc.bold("GitHub Copilot CLI")} ${pc.dim("npm i -g @github/copilot-cli")}\n` +
+				`  ${pc.bold("Goose")}              ${pc.dim("https://block.github.io/goose")}\n` +
+				`  ${pc.bold("Aider")}              ${pc.dim("pip install aider-chat")}`,
 		);
 		return process.exit(1);
 	}
@@ -357,10 +360,10 @@ async function runConfigWizard(): Promise<void> {
 
 	if (available.length === 1 && available[0]) {
 		providerName = available[0].name;
-		clack.log.info(`Found provider: ${pc.bold(providerLabels[providerName])}`);
+		clack.log.info(`Auto-detected ${pc.bold(providerLabels[providerName])} as your AI provider.`);
 	} else {
 		const selected = await clack.select({
-			message: "Which AI provider do you want to use?",
+			message: "Which AI provider should resolve your issues?",
 			options: available.map((p) => ({
 				value: p.name,
 				label: providerLabels[p.name],
@@ -378,7 +381,7 @@ async function runConfigWizard(): Promise<void> {
 		const isFree = await isCursorFreePlan();
 		if (isFree) {
 			availableModels = ["auto"];
-			clack.log.info("Cursor Free plan detected. Using 'auto' model only.");
+			clack.log.info("Cursor Free plan detected — only the 'auto' model is available.");
 		} else {
 			availableModels = CURSOR_MODELS;
 		}
@@ -386,7 +389,7 @@ async function runConfigWizard(): Promise<void> {
 
 	if (availableModels && availableModels.length > 0) {
 		const modelSelection = await clack.multiselect({
-			message: "Which models to use? Select in order: primary first, then fallbacks",
+			message: "Which models should Lisa use? Select in order — first = primary, rest = fallbacks",
 			options: availableModels.map((m) => ({
 				value: m,
 				label: m,
@@ -398,10 +401,15 @@ async function runConfigWizard(): Promise<void> {
 	}
 
 	const source = await clack.select({
-		message: "Where do your issues live?",
+		message: "Where do your issues come from?",
 		options: [
-			{ value: "linear", label: "Linear" },
-			{ value: "trello", label: "Trello" },
+			{ value: "linear", label: "Linear", hint: "GraphQL API" },
+			{ value: "trello", label: "Trello", hint: "REST API" },
+			{ value: "github", label: "GitHub Issues", hint: "REST API" },
+			{ value: "gitlab", label: "GitLab Issues", hint: "REST API" },
+			{ value: "plane", label: "Plane", hint: "REST API" },
+			{ value: "shortcut", label: "Shortcut", hint: "REST API" },
+			{ value: "jira", label: "Jira", hint: "REST API" },
 		],
 	});
 	if (clack.isCancel(source)) return process.exit(0);
@@ -411,7 +419,11 @@ async function runConfigWizard(): Promise<void> {
 	if (missing.length > 0) {
 		const shell = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
 		clack.log.warning(
-			`Missing environment variables:\n${missing.map((v) => `  ${pc.bold(v)}`).join("\n")}\n\nAdd them to your environment variables:\n${missing.map((v) => `  export ${v}="your-key-here"`).join("\n")}\n\nThen run: ${pc.cyan(`source ${shell}`)}`,
+			`The following environment variables are missing:\n\n` +
+				`${missing.map((v) => `  ${pc.bold(v)}`).join("\n")}\n\n` +
+				`Add them to ${pc.cyan(shell)}:\n` +
+				`${missing.map((v) => `  export ${v}="your-value-here"`).join("\n")}\n\n` +
+				`Then reload: ${pc.cyan(`source ${shell}`)}`,
 		);
 	}
 
@@ -421,14 +433,23 @@ async function runConfigWizard(): Promise<void> {
 	// --- Issue source config ---
 
 	const teamAnswer = await clack.text({
-		message: source === "linear" ? "Team?" : "Board?",
+		message:
+			source === "linear"
+				? "What is your Linear team name?"
+				: source === "trello"
+					? "What is your Trello board name?"
+					: source === "jira"
+						? "What is your Jira project key?"
+						: "What is your team or project name?",
+		placeholder: source === "linear" ? "e.g. Engineering" : undefined,
 	});
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
 	const team = teamAnswer as string;
 
 	const labelAnswer = await clack.text({
-		message: "Label to pick up?",
+		message: "Which label marks issues as ready for the agent to pick up?",
 		initialValue: "ready",
+		placeholder: "e.g. ready, ai, lisa",
 	});
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
 	const label = labelAnswer as string;
@@ -448,41 +469,46 @@ async function runConfigWizard(): Promise<void> {
 		project = pickFrom;
 
 		const inProgressAnswer = await clack.text({
-			message: "Move to which column while working?",
+			message: "Move the card to which list while the agent is working?",
 			initialValue: "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
-			message: "Move to which column after PR?",
+			message: "Move the card to which list after the PR is created?",
 			initialValue: "Code Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		done = doneAnswer as string;
 	} else {
 		const projectAnswer = await clack.text({
-			message: "Project?",
+			message:
+				source === "linear"
+					? "Which Linear project should Lisa work on? (leave empty for all team issues)"
+					: "Which project should Lisa work on?",
+			placeholder: source === "linear" ? "e.g. Q1 Roadmap  (optional)" : undefined,
 		});
 		if (clack.isCancel(projectAnswer)) return process.exit(0);
 		project = projectAnswer as string;
 
 		const pickFromAnswer = await clack.text({
-			message: "Pick up issues from which status?",
+			message: "Pick up issues in which status?",
 			initialValue: "Backlog",
+			placeholder: "e.g. Backlog, Todo",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
 		pickFrom = pickFromAnswer as string;
 
 		const inProgressAnswer = await clack.text({
-			message: "Move to which status while working?",
+			message: "Move to which status while the agent is working?",
 			initialValue: "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
-			message: "Move to which status after PR?",
+			message: "Move to which status after the PR is created?",
 			initialValue: "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
@@ -492,10 +518,18 @@ async function runConfigWizard(): Promise<void> {
 	// --- Git workflow ---
 
 	const workflowAnswer = await clack.select({
-		message: "How should Lisa work on issues?",
+		message: "How should Lisa check out code for each issue?",
 		options: [
-			{ value: "branch", label: "Branch", hint: "creates branches in the current checkout" },
-			{ value: "worktree", label: "Worktree", hint: "creates isolated worktrees per issue" },
+			{
+				value: "worktree",
+				label: "Worktree",
+				hint: "isolated git worktree per issue — recommended",
+			},
+			{
+				value: "branch",
+				label: "Branch",
+				hint: "new branch in the current checkout",
+			},
 		],
 	});
 	if (clack.isCancel(workflowAnswer)) return process.exit(0);
@@ -511,7 +545,7 @@ async function runConfigWizard(): Promise<void> {
 	if (repos.length === 0) {
 		const detected = detectDefaultBranch(cwd);
 		const branchAnswer = await clack.text({
-			message: "Base branch?",
+			message: "What is the base branch to branch off from?",
 			initialValue: detected,
 		});
 		if (clack.isCancel(branchAnswer)) return process.exit(0);
@@ -521,7 +555,7 @@ async function runConfigWizard(): Promise<void> {
 			const repoPath = resolvePath(cwd, repo.path);
 			const detected = detectDefaultBranch(repoPath);
 			const branchAnswer = await clack.text({
-				message: `Base branch for ${repo.name}?`,
+				message: `Base branch for ${pc.bold(repo.name)}?`,
 				initialValue: detected,
 			});
 			if (clack.isCancel(branchAnswer)) return process.exit(0);
@@ -538,7 +572,7 @@ async function runConfigWizard(): Promise<void> {
 				ensureWorktreeGitignore(resolvePath(cwd, repo.path));
 			}
 		}
-		clack.log.info("Added .worktrees to .gitignore");
+		clack.log.info("Added .worktrees/ to .gitignore");
 	}
 
 	const cfg: LisaConfig = {
@@ -563,7 +597,10 @@ async function runConfigWizard(): Promise<void> {
 	};
 
 	saveConfig(cfg);
-	clack.outro(pc.green("Config saved to .lisa/config.yaml"));
+	clack.outro(
+		`${pc.green("All set!")} Config saved to ${pc.cyan(".lisa/config.yaml")}\n` +
+			`  Run ${pc.bold(pc.cyan("lisa run"))} to start resolving issues.`,
+	);
 }
 
 async function detectGitHubMethod(): Promise<GitHubMethod> {
@@ -572,10 +609,10 @@ async function detectGitHubMethod(): Promise<GitHubMethod> {
 
 	if (hasToken && hasCli) {
 		const selected = await clack.select({
-			message: "Both GitHub CLI and GITHUB_TOKEN detected. Which do you want to use?",
+			message: "How should Lisa create pull requests?",
 			options: [
-				{ value: "cli", label: "GitHub CLI", hint: "gh" },
-				{ value: "token", label: "GitHub API", hint: "GITHUB_TOKEN" },
+				{ value: "cli", label: "GitHub CLI", hint: "uses `gh pr create` — recommended" },
+				{ value: "token", label: "GitHub API", hint: "uses GITHUB_TOKEN directly" },
 			],
 		});
 		if (clack.isCancel(selected)) return process.exit(0);
@@ -583,12 +620,12 @@ async function detectGitHubMethod(): Promise<GitHubMethod> {
 	}
 
 	if (hasCli) {
-		clack.log.info("Using GitHub CLI for pull requests.");
+		clack.log.info("Pull requests will be created using the GitHub CLI.");
 		return "cli";
 	}
 
 	if (hasToken) {
-		clack.log.info("Using GITHUB_TOKEN for pull requests.");
+		clack.log.info("Pull requests will be created using GITHUB_TOKEN.");
 		return "token";
 	}
 
@@ -601,7 +638,7 @@ async function detectGitRepos(): Promise<RepoConfig[]> {
 
 	// If current directory is a git repo, no sub-repos needed
 	if (existsSync(join(cwd, ".git"))) {
-		clack.log.info(`Detected git repository in current directory.`);
+		clack.log.info("Found a git repository in the current directory.");
 		return [];
 	}
 
@@ -616,7 +653,7 @@ async function detectGitRepos(): Promise<RepoConfig[]> {
 	}
 
 	const selected = await clack.multiselect({
-		message: "Select the repos to include in the workspace:",
+		message: "Multiple git repositories found — which ones should Lisa work on?",
 		options: gitDirs.map((dir) => ({ value: dir, label: dir })),
 	});
 
