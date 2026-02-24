@@ -180,6 +180,20 @@ export class GitHubIssuesSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const { owner, repo } = parseOwnerRepo(config.team);
+		const label = encodeURIComponent(config.label);
+		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
+
+		const issues = await githubGet<GitHubIssue[]>(path);
+		return issues.map((issue) => ({
+			id: makeIssueId(owner, repo, issue.number),
+			title: issue.title,
+			description: issue.body ?? "",
+			url: issue.html_url,
+		}));
+	}
+
 	async removeLabel(issueId: string, labelToRemove: string): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		try {
