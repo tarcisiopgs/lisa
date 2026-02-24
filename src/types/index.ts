@@ -2,6 +2,7 @@ export type GitHubMethod = "cli" | "token";
 export type SourceName =
 	| "linear"
 	| "trello"
+	| "plane"
 	| "shortcut"
 	| "gitlab-issues"
 	| "github-issues"
