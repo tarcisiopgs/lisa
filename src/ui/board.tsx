@@ -38,10 +38,24 @@ export function Board({
 	if (isEmpty) {
 		return (
 			<Box flexGrow={1} alignItems="center" justifyContent="center">
-				<Box borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
-					<Text bold>No issues found</Text>
+				<Box
+					flexDirection="column"
+					borderStyle="single"
+					borderColor="yellow"
+					paddingX={3}
+					paddingY={1}
+				>
+					<Text color="yellow" bold>
+						{"◈  NO ISSUES FOUND"}
+					</Text>
 					<Box height={1} />
-					<Text>No issues match the current label and status filters.</Text>
+					<Text color="white" dimColor>
+						No issues match the current label and status filters.
+					</Text>
+					<Box height={1} />
+					<Text color="gray" dimColor>
+						Check your source configuration and labels.
+					</Text>
 				</Box>
 			</Box>
 		);
@@ -49,12 +63,24 @@ export function Board({
 
 	return (
 		<Box flexGrow={1} flexDirection="column">
+			{/* Completion banner */}
 			{workComplete && (
-				<Text color="green">
-					{"  ✓ All done —"} {workComplete.total} issue
-					{workComplete.total !== 1 ? "s" : ""} resolved in {formatDuration(workComplete.duration)}
-				</Text>
+				<Box borderStyle="single" borderColor="green" paddingX={2} paddingY={0} marginBottom={0}>
+					<Text color="green" bold>
+						{"✔ ALL SESSIONS COMPLETE"}
+					</Text>
+					<Text color="white">{" — "}</Text>
+					<Text color="white" bold>
+						{workComplete.total}
+					</Text>
+					<Text color="white">{` issue${workComplete.total !== 1 ? "s" : ""} resolved in `}</Text>
+					<Text color="green" bold>
+						{formatDuration(workComplete.duration)}
+					</Text>
+				</Box>
 			)}
+
+			{/* Columns */}
 			<Box flexGrow={1} flexDirection="row">
 				<Column
 					label={labels.backlog}
