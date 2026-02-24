@@ -55,7 +55,7 @@ Lisa follows a deterministic pipeline:
 └─────────┘    └──────────┘    └───────────┘    └──────────┘    └────┘    └────────┘
 ```
 
-1. **Fetch** — Pulls the next issue from Linear, Trello, Plane, GitLab Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
+1. **Fetch** — Pulls the next issue from Linear, Trello, Plane, Shortcut, GitLab Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, and commits.
 4. **Validate** — Runs the project's test suite. If tests fail, the session is aborted and the issue reverts.
@@ -121,6 +121,9 @@ export PLANE_API_TOKEN=""
 export PLANE_BASE_URL=""  # optional; defaults to https://api.plane.so
 export PLANE_WORKSPACE="" # optional; fallback when team is not set in config
 
+# Required when source = shortcut
+export SHORTCUT_API_TOKEN=""
+
 # Required when source = gitlab-issues
 export GITLAB_TOKEN=""
 export GITLAB_BASE_URL=""  # optional; defaults to https://gitlab.com
@@ -142,7 +145,7 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
-| `lisa run --source NAME` | Override issue source (linear, trello, plane, gitlab-issues, jira) |
+| `lisa run --source NAME` | Override issue source (linear, trello, plane, shortcut, gitlab-issues, jira) |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (cli, token) |
 | `lisa run --json` | Output as JSON lines |
@@ -200,14 +203,14 @@ overseer:
 
 ### Source-Specific Fields
 
-| Field | Linear | Trello | Plane | GitLab Issues | Jira |
-|-------|--------|--------|-------|---------------|------|
-| `team` | Team name | Board name | Workspace slug | Project path (`namespace/project`) or numeric ID | Project key (e.g. `ENG`) |
-| `project` | Project name | — | Project identifier or UUID | — | — |
-| `pick_from` | Status to pick issues from | List to pick cards from | State name to pick issues from | — | Status to pick issues from |
-| `label` | Label to filter issues | Label to filter cards | Label to filter issues | Label to filter issues | Label to filter issues |
-| `in_progress` | In-progress status | In-progress column | In-progress state name | Label to apply on activate | In-progress status name |
-| `done` | Destination status after PR | Destination column after PR | Done state name | Closes the issue | Destination status after PR |
+| Field | Linear | Trello | Plane | Shortcut | GitLab Issues | Jira |
+|-------|--------|--------|-------|----------|---------------|------|
+| `team` | Team name | Board name | Workspace slug | Group name (optional) | Project path (`namespace/project`) or numeric ID | Project key (e.g. `ENG`) |
+| `project` | Project name | — | Project identifier or UUID | — | — | — |
+| `pick_from` | Status to pick issues from | List to pick cards from | State name to pick issues from | Workflow state to pick stories from | — | Status to pick issues from |
+| `label` | Label to filter issues | Label to filter cards | Label to filter issues | Label to filter stories | Label to filter issues | Label to filter issues |
+| `in_progress` | In-progress status | In-progress column | In-progress state name | In-progress workflow state | Label to apply on activate | In-progress status name |
+| `done` | Destination status after PR | Destination column after PR | Done state name | Done workflow state | Closes the issue | Destination status after PR |
 
 Plane example:
 
@@ -220,6 +223,17 @@ source_config:
   pick_from: Todo          # state to fetch issues from
   in_progress: In Progress # state set when Lisa starts working
   done: Done               # state set after PR is created
+```
+
+Shortcut example:
+
+```yaml
+source: shortcut
+source_config:
+  label: ready              # stories with this label are picked up
+  pick_from: Ready for Development  # workflow state to fetch stories from
+  in_progress: In Progress  # state set when Lisa starts working
+  done: Done                # state set after PR is created
 ```
 
 GitLab Issues example:
