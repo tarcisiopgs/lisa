@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import { Box, Text } from "ink";
 
 interface SidebarProps {
@@ -9,6 +10,7 @@ interface SidebarProps {
 
 export function Sidebar({ provider, source, cwd }: SidebarProps) {
 	const dir = basename(cwd);
+	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
 
 	return (
 		<Box
@@ -77,7 +79,7 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 			{/* Directory */}
 			<Box flexDirection="column" marginTop={1}>
 				<Text color="white" dimColor>
-					WORKSPACE
+					{cwdLabel}
 				</Text>
 				<Box>
 					<Text color="yellow">{"▸ "}</Text>

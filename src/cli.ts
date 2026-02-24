@@ -140,15 +140,14 @@ const init = defineCommand({
 			process.exit(1);
 		}
 		if (configExists()) {
-			const overwrite = await clack.confirm({
-				message: "A config already exists at .lisa/config.yaml. Overwrite it?",
-			});
-			if (clack.isCancel(overwrite) || !overwrite) {
-				log("Cancelled.");
-				return;
-			}
+			const existing = loadConfig();
+			clack.log.info(
+				`Existing config found — current values will be pre-filled. Edit what you need, keep the rest.`,
+			);
+			await runConfigWizard(existing);
+		} else {
+			await runConfigWizard();
 		}
-		await runConfigWizard();
 	},
 });
 
@@ -338,18 +337,36 @@ function fetchCursorModels(): string[] {
 function fetchOpenCodeModels(): string[] {
 	try {
 		const raw = execSync("opencode models", { encoding: "utf-8", timeout: 10000 });
+
+		// Determine which providers the user has credentials for
+		const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
+		const hasGoogle = Boolean(
+			process.env.GEMINI_API_KEY ||
+				process.env.GOOGLE_API_KEY ||
+				process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+		);
+		const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+		const hasCopilot = Boolean(process.env.GITHUB_COPILOT_API_KEY || process.env.GITHUB_TOKEN);
+		const hasGroq = Boolean(process.env.GROQ_API_KEY);
+		const hasMistral = Boolean(process.env.MISTRAL_API_KEY);
+		const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
+
 		return raw
 			.split("\n")
 			.map((l) => l.trim())
-			.filter(
-				(m) =>
-					// Latest Anthropic Claude 4.x — exclude dated snapshots (contain 8-digit date suffix)
-					/^anthropic\/claude-(opus|sonnet|haiku)-4-\d+$/.test(m) ||
-					// Google Gemini 2.5 stable (no preview/tts suffixes)
-					/^google\/gemini-2\.5-(pro|flash|flash-lite)$/.test(m) ||
-					// OpenCode proprietary models
-					/^opencode\//.test(m),
-			);
+			.filter((m) => {
+				// Always include free OpenCode proprietary models
+				if (/^opencode\//.test(m)) return true;
+				// Provider-gated: only show if credentials are present
+				if (/^anthropic\/claude-(opus|sonnet|haiku)-4-\d+$/.test(m)) return hasAnthropic;
+				if (/^google\/gemini-2\.5-(pro|flash|flash-lite)$/.test(m)) return hasGoogle;
+				if (/^openai\//.test(m)) return hasOpenAI;
+				if (/^github-copilot\//.test(m)) return hasCopilot;
+				if (/^groq\//.test(m)) return hasGroq;
+				if (/^mistral\//.test(m)) return hasMistral;
+				if (/^deepseek\//.test(m)) return hasDeepSeek;
+				return false;
+			});
 	} catch {
 		return [];
 	}
@@ -365,8 +382,10 @@ export const main = defineCommand({
 	subCommands: { run, config, init, status, issue },
 });
 
-async function runConfigWizard(): Promise<void> {
-	clack.intro(pc.cyan(" lisa ♪  autonomous issue resolver "));
+async function runConfigWizard(existing?: LisaConfig): Promise<void> {
+	clack.intro(
+		pc.cyan(existing ? " lisa ♪  editing config " : " lisa ♪  autonomous issue resolver "),
+	);
 
 	const providerLabels: Record<ProviderName, string> = {
 		claude: "Claude Code",
@@ -407,12 +426,13 @@ async function runConfigWizard(): Promise<void> {
 
 	let providerName: ProviderName;
 
-	if (available.length === 1 && available[0]) {
+	if (available.length === 1 && available[0] && !existing) {
 		providerName = available[0].name;
 		clack.log.info(`Auto-detected ${pc.bold(providerLabels[providerName])} as your AI provider.`);
 	} else {
 		const selected = await clack.select({
 			message: "Which AI provider should resolve your issues?",
+			initialValue: existing?.provider,
 			options: allProviders.map(({ provider, available: isAvailable }) => ({
 				value: provider.name,
 				label: providerLabels[provider.name],
@@ -453,6 +473,7 @@ async function runConfigWizard(): Promise<void> {
 	if (availableModels && availableModels.length > 0) {
 		const modelSelection = await clack.multiselect({
 			message: "Which models should Lisa use? Select in order — first = primary, rest = fallbacks",
+			initialValues: existing?.models?.filter((m) => availableModels.includes(m)) ?? [],
 			options: availableModels.map((m) => ({
 				value: m,
 				label: m,
@@ -465,6 +486,7 @@ async function runConfigWizard(): Promise<void> {
 
 	const source = await clack.select({
 		message: "Where do your issues come from?",
+		initialValue: existing?.source,
 		options: [
 			{ value: "linear", label: "Linear", apiHint: "GraphQL API", envVars: ["LINEAR_API_KEY"] },
 			{
@@ -537,6 +559,7 @@ async function runConfigWizard(): Promise<void> {
 					: source === "jira"
 						? "What is your Jira project key?"
 						: "What is your team or project name?",
+		initialValue: existing?.source_config.team ?? "",
 		placeholder: source === "linear" ? "e.g. Engineering" : undefined,
 	});
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
@@ -544,7 +567,7 @@ async function runConfigWizard(): Promise<void> {
 
 	const labelAnswer = await clack.text({
 		message: "Which label marks issues as ready for the agent to pick up?",
-		initialValue: "ready",
+		initialValue: existing?.source_config.label ?? "ready",
 		placeholder: "e.g. ready, ai, lisa",
 	});
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
@@ -558,7 +581,7 @@ async function runConfigWizard(): Promise<void> {
 	if (source === "trello") {
 		const pickFromAnswer = await clack.text({
 			message: "Pick up cards from which list?",
-			initialValue: "Backlog",
+			initialValue: existing?.source_config.pick_from ?? "Backlog",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
 		pickFrom = pickFromAnswer as string;
@@ -566,14 +589,14 @@ async function runConfigWizard(): Promise<void> {
 
 		const inProgressAnswer = await clack.text({
 			message: "Move the card to which list while the agent is working?",
-			initialValue: "In Progress",
+			initialValue: existing?.source_config.in_progress ?? "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
 			message: "Move the card to which list after the PR is created?",
-			initialValue: "Code Review",
+			initialValue: existing?.source_config.done ?? "Code Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		done = doneAnswer as string;
@@ -583,6 +606,7 @@ async function runConfigWizard(): Promise<void> {
 				source === "linear"
 					? "Which Linear project should Lisa work on? (leave empty for all team issues)"
 					: "Which project should Lisa work on?",
+			initialValue: existing?.source_config.project ?? "",
 			placeholder: source === "linear" ? "e.g. Q1 Roadmap  (optional)" : undefined,
 		});
 		if (clack.isCancel(projectAnswer)) return process.exit(0);
@@ -590,7 +614,7 @@ async function runConfigWizard(): Promise<void> {
 
 		const pickFromAnswer = await clack.text({
 			message: "Pick up issues in which status?",
-			initialValue: "Backlog",
+			initialValue: existing?.source_config.pick_from ?? "Backlog",
 			placeholder: "e.g. Backlog, Todo",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
@@ -598,14 +622,14 @@ async function runConfigWizard(): Promise<void> {
 
 		const inProgressAnswer = await clack.text({
 			message: "Move to which status while the agent is working?",
-			initialValue: "In Progress",
+			initialValue: existing?.source_config.in_progress ?? "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
 			message: "Move to which status after the PR is created?",
-			initialValue: "In Review",
+			initialValue: existing?.source_config.done ?? "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		done = doneAnswer as string;
@@ -615,6 +639,7 @@ async function runConfigWizard(): Promise<void> {
 
 	const workflowAnswer = await clack.select({
 		message: "How should Lisa check out code for each issue?",
+		initialValue: existing?.workflow,
 		options: [
 			{
 				value: "worktree",
@@ -639,7 +664,7 @@ async function runConfigWizard(): Promise<void> {
 	const cwd = process.cwd();
 
 	if (repos.length === 0) {
-		const detected = detectDefaultBranch(cwd);
+		const detected = existing?.base_branch ?? detectDefaultBranch(cwd);
 		const branchAnswer = await clack.text({
 			message: "What is the base branch to branch off from?",
 			initialValue: detected,
