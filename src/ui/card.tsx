@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { KanbanCard } from "./state.js";
 
 function formatElapsed(ms: number): string {

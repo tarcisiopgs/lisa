@@ -1,5 +1,4 @@
 import { Box, useApp, useInput } from "ink";
-import React from "react";
 import type { LisaConfig } from "../types/index.js";
 import { Board } from "./board.js";
 import { Sidebar } from "./sidebar.js";

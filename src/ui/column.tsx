@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import React from "react";
 import { Card } from "./card.js";
 import type { KanbanCard } from "./state.js";
 

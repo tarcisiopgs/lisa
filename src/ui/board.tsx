@@ -1,5 +1,4 @@
 import { Box } from "ink";
-import React from "react";
 import { Column } from "./column.js";
 import type { KanbanCard } from "./state.js";
 
