@@ -23,11 +23,17 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 			<Box flexDirection="column" marginBottom={1}>
 				<Text color="yellow">{"╔══════════════════════╗"}</Text>
 				<Text color="yellow">
-					{"║"}
+					{"║  "}
 					<Text color="white" bold>
-						{"    L I S A  v 2      "}
+						{"L I S A  "}
 					</Text>
-					<Text color="yellow">{"║"}</Text>
+					<Text color="yellow" bold>
+						{"♪"}
+					</Text>
+					<Text color="white" bold>
+						{"          "}
+					</Text>
+					{"║"}
 				</Text>
 				<Text color="yellow">{"╚══════════════════════╝"}</Text>
 			</Box>

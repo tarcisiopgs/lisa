@@ -322,7 +322,7 @@ export const main = defineCommand({
 });
 
 async function runConfigWizard(): Promise<void> {
-	clack.intro(pc.cyan(" lisa — autonomous issue resolver "));
+	clack.intro(pc.cyan(" lisa ♪  autonomous issue resolver "));
 
 	const providerLabels: Record<ProviderName, string> = {
 		claude: "Claude Code",
