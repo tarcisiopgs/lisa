@@ -14,8 +14,6 @@
 
 ---
 
-<!-- Add a GIF or screen recording of the full pipeline here (fetch → implement → PR) -->
-
 ## Quickstart
 
 ```bash
@@ -57,9 +55,9 @@ Lisa follows a deterministic pipeline:
 
 1. **Fetch** — Pulls the next issue from Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
-3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, and commits.
-4. **Validate** — Runs the project's test suite. If tests fail, the session is aborted and the issue reverts.
-5. **PR** — Pushes the branch and creates a pull request referencing the original issue. If pre-push hooks fail, Lisa re-invokes the agent to fix the errors and retries.
+3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, runs tests, and commits.
+4. **Validate** — If the agent's tests pass and pre-push hooks succeed, the branch is pushed. If hooks fail, Lisa re-invokes the agent with the error output and retries.
+5. **PR** — Pushes the branch and creates a pull request referencing the original issue. The PR body includes a footer crediting the provider that resolved it.
 6. **Update** — Moves the issue to the `done` status and removes the pickup label.
 7. **Next** — Picks the next issue. When there are no more matching issues, Lisa stops.
 
@@ -75,15 +73,15 @@ Lisa follows a deterministic pipeline:
 
 ## Providers
 
-| Provider | CLI | Auto-approve Flag |
-|----------|-----|-------------------|
-| Claude Code | `claude` | `--dangerously-skip-permissions` |
-| Gemini CLI | `gemini` | `--yolo` |
-| OpenCode | `opencode` | implicit in `run` |
-| GitHub Copilot CLI | `copilot` | `--allow-all` |
-| Cursor Agent | `agent` | `--force` |
-| Goose | `goose` | implicit in `run` |
-| Aider | `aider` | `--yes-always` |
+| Provider | Key | Command |
+|----------|-----|---------|
+| Claude Code | `claude` | `claude` |
+| Gemini CLI | `gemini` | `gemini` |
+| OpenCode | `opencode` | `opencode` |
+| GitHub Copilot CLI | `copilot` | `copilot` |
+| Cursor Agent | `cursor` | `agent` / `cursor-agent` |
+| Goose | `goose` | `goose` |
+| Aider | `aider` | `aider` |
 
 At least one provider must be installed and available in your PATH.
 
@@ -108,7 +106,7 @@ npm install -g @tarcisiopgs/lisa
 ## Environment Variables
 
 ```bash
-# Required (at least one)
+# Required for PR creation (at least one)
 export GITHUB_TOKEN=""    # or have `gh` CLI authenticated
 
 # Required when source = linear
@@ -150,16 +148,47 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
-| `lisa run --source NAME` | Override issue source (linear, trello, plane, shortcut, gitlab-issues, github-issues, jira) |
+| `lisa run --source NAME` | Override issue source |
 | `lisa run --label NAME` | Override label filter |
-| `lisa run --github METHOD` | Override GitHub method (cli, token) |
+| `lisa run --github METHOD` | Override GitHub method (`cli` or `token`) |
 | `lisa run --json` | Output as JSON lines |
 | `lisa run --quiet` | Suppress non-essential output |
-| `lisa config` | Interactive config wizard |
-| `lisa config --show` | Show current config |
-| `lisa config --set key=value` | Set a config value |
-| `lisa init` | Create `.lisa/config.yaml` |
+| `lisa init` | Create `.lisa/config.yaml` interactively |
+| `lisa config` | Edit config interactively |
+| `lisa config --show` | Print current config as JSON |
+| `lisa config --set key=value` | Set a single config value |
 | `lisa status` | Show session stats |
+| `lisa issue get <id>` | Fetch full issue details as JSON (for use inside worktrees) |
+| `lisa issue done <id> --pr-url <url>` | Complete issue, attach PR, update status, remove label |
+
+## TUI
+
+When running in an interactive terminal, `lisa run` renders a real-time Kanban board:
+
+```
+┌──────────────────────────┐ ┌───────────────────────────┐ ┌───────────────────────────┐
+│ ▶ BACKLOG            [3] │ │ ▶ IN PROGRESS         [1] │ │ ▶ IN REVIEW           [2] │
+│                          │ │                           │ │                           │
+│ ┌────────────────────┐   │ │ ┌─────────────────────┐   │ │ ┌─────────────────────┐   │
+│ │ ENG-42             │   │ │ │ ● ENG-38             │   │ │ │ ✓ ENG-35            │   │
+│ │ Add dark mode      │   │ │ │ Fix login redirect   │   │ │ │ Update dependencies │   │
+│ │ ready              │   │ │ │ ~1 running           │   │ │ │ PR created          │   │
+│ └────────────────────┘   │ │ └─────────────────────┘   │ │ └─────────────────────┘   │
+└──────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
+```
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Move to next column |
+| `Shift+Tab` | Move to previous column |
+| `↑` / `↓` | Navigate cards within a column |
+| `Enter` | Open issue detail view (streams provider output) |
+| `Esc` | Close detail view, return to board |
+| `q` | Quit |
+
+The terminal tab title also updates in real time: it shows a spinner with the active issue ID while work is in progress, and a checkmark when done.
 
 ## Configuration
 
