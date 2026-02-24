@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "1.7.3",
+	"version": "1.7.4",
 	"description": "Deterministic autonomous issue resolver — structured AI agent loop for Linear/Trello",
 	"license": "MIT",
 	"type": "module",
