@@ -11,7 +11,7 @@ import { isGhCliAvailable } from "./git/github.js";
 import { ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
-import { getAvailableProviders } from "./providers/index.js";
+import { getAllProvidersWithAvailability, getAvailableProviders } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type {
 	GitHubMethod,
@@ -339,7 +339,8 @@ async function runConfigWizard(): Promise<void> {
 		gemini: ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"],
 	};
 
-	const available = await getAvailableProviders();
+	const allProviders = await getAllProvidersWithAvailability();
+	const available = allProviders.filter((r) => r.available).map((r) => r.provider);
 
 	if (available.length === 0) {
 		clack.log.error("No AI provider found on your system.");
@@ -363,9 +364,11 @@ async function runConfigWizard(): Promise<void> {
 	} else {
 		const selected = await clack.select({
 			message: "Which AI provider should resolve your issues?",
-			options: available.map((p) => ({
-				value: p.name,
-				label: providerLabels[p.name],
+			options: allProviders.map(({ provider, available: isAvailable }) => ({
+				value: provider.name,
+				label: providerLabels[provider.name],
+				hint: isAvailable ? undefined : "not installed",
+				disabled: !isAvailable,
 			})),
 		});
 		if (clack.isCancel(selected)) return process.exit(0);
@@ -402,14 +405,47 @@ async function runConfigWizard(): Promise<void> {
 	const source = await clack.select({
 		message: "Where do your issues come from?",
 		options: [
-			{ value: "linear", label: "Linear", hint: "GraphQL API" },
-			{ value: "trello", label: "Trello", hint: "REST API" },
-			{ value: "github", label: "GitHub Issues", hint: "REST API" },
-			{ value: "gitlab", label: "GitLab Issues", hint: "REST API" },
-			{ value: "plane", label: "Plane", hint: "REST API" },
-			{ value: "shortcut", label: "Shortcut", hint: "REST API" },
-			{ value: "jira", label: "Jira", hint: "REST API" },
-		],
+			{ value: "linear", label: "Linear", apiHint: "GraphQL API", envVars: ["LINEAR_API_KEY"] },
+			{
+				value: "trello",
+				label: "Trello",
+				apiHint: "REST API",
+				envVars: ["TRELLO_API_KEY", "TRELLO_TOKEN"],
+			},
+			{
+				value: "github-issues",
+				label: "GitHub Issues",
+				apiHint: "REST API",
+				envVars: ["GITHUB_TOKEN"],
+			},
+			{
+				value: "gitlab-issues",
+				label: "GitLab Issues",
+				apiHint: "REST API",
+				envVars: ["GITLAB_TOKEN"],
+			},
+			{ value: "plane", label: "Plane", apiHint: "REST API", envVars: ["PLANE_API_TOKEN"] },
+			{
+				value: "shortcut",
+				label: "Shortcut",
+				apiHint: "REST API",
+				envVars: ["SHORTCUT_API_TOKEN"],
+			},
+			{
+				value: "jira",
+				label: "Jira",
+				apiHint: "REST API",
+				envVars: ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"],
+			},
+		].map(({ value, label, apiHint, envVars }) => {
+			const missing = envVars.filter((v) => !process.env[v]);
+			return {
+				value,
+				label,
+				hint: missing.length > 0 ? `missing: ${missing.join(", ")}` : apiHint,
+				disabled: missing.length > 0,
+			};
+		}),
 	});
 	if (clack.isCancel(source)) return process.exit(0);
 
@@ -702,6 +738,18 @@ async function getMissingEnvVars(source: SourceName): Promise<string[]> {
 	} else if (source === "trello") {
 		if (!process.env.TRELLO_API_KEY) missing.push("TRELLO_API_KEY");
 		if (!process.env.TRELLO_TOKEN) missing.push("TRELLO_TOKEN");
+	} else if (source === "github-issues") {
+		// GITHUB_TOKEN already checked above
+	} else if (source === "gitlab-issues") {
+		if (!process.env.GITLAB_TOKEN) missing.push("GITLAB_TOKEN");
+	} else if (source === "plane") {
+		if (!process.env.PLANE_API_TOKEN) missing.push("PLANE_API_TOKEN");
+	} else if (source === "shortcut") {
+		if (!process.env.SHORTCUT_API_TOKEN) missing.push("SHORTCUT_API_TOKEN");
+	} else if (source === "jira") {
+		if (!process.env.JIRA_BASE_URL) missing.push("JIRA_BASE_URL");
+		if (!process.env.JIRA_EMAIL) missing.push("JIRA_EMAIL");
+		if (!process.env.JIRA_API_TOKEN) missing.push("JIRA_API_TOKEN");
 	}
 
 	return missing;
