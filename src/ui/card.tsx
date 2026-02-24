@@ -21,7 +21,7 @@ export function Card({ card }: { card: KanbanCard }) {
 	}, [card.column]);
 
 	const truncated = card.title.length > 22 ? `${card.title.slice(0, 19)}...` : card.title;
-	const borderColor = card.hasError ? "red" : card.column === "done" ? "green" : "white";
+	const borderColor = card.hasError ? "red" : "white";
 
 	return (
 		<Box

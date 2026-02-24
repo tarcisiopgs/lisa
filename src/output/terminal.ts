@@ -1,3 +1,5 @@
+import { getOutputMode } from "./logger.js";
+
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
 
@@ -19,6 +21,7 @@ export function setTitle(title: string): void {
 
 export function startSpinner(message: string): void {
 	if (!isTTY()) return;
+	if (getOutputMode() === "tui") return;
 	stopSpinner();
 	spinnerFrame = 0;
 	writeOSC(`${SPINNER_FRAMES[0]} Lisa \u2014 ${message}`);
@@ -34,6 +37,7 @@ export function stopSpinner(message?: string): void {
 		spinnerTimer = null;
 	}
 	if (!isTTY()) return;
+	if (getOutputMode() === "tui") return;
 	if (message) {
 		writeOSC(message);
 	}
