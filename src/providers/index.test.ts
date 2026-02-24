@@ -42,9 +42,9 @@ describe("createProvider", () => {
 });
 
 describe("supportsNativeWorktree", () => {
-	it("claude provider supports native worktree", () => {
+	it("claude provider does not support native worktree (--worktree hangs without TTY)", () => {
 		const provider = createProvider("claude");
-		expect(provider.supportsNativeWorktree).toBe(true);
+		expect(provider.supportsNativeWorktree).toBeFalsy();
 	});
 
 	it("gemini provider does not support native worktree", () => {

@@ -8,7 +8,7 @@ import type { Provider, RunOptions, RunResult } from "../types/index.js";
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;
-	supportsNativeWorktree = true;
+	supportsNativeWorktree = false; // --worktree flag requires a TTY and hangs in non-interactive mode
 
 	async isAvailable(): Promise<boolean> {
 		try {
@@ -31,9 +31,6 @@ export class ClaudeProvider implements Provider {
 			const flags = ["-p", "--dangerously-skip-permissions"];
 			if (opts.model) {
 				flags.push("--model", opts.model);
-			}
-			if (opts.useNativeWorktree) {
-				flags.push("--worktree");
 			}
 
 			const proc = spawn("sh", ["-c", `claude ${flags.join(" ")} "$(cat '${promptFile}')"`], {
