@@ -19,9 +19,18 @@ interface BoardProps {
 	};
 	isEmpty: boolean;
 	workComplete: { total: number; duration: number } | null;
+	activeColIndex?: number;
+	activeCardIndex?: number;
 }
 
-export function Board({ cards, labels, isEmpty, workComplete }: BoardProps) {
+export function Board({
+	cards,
+	labels,
+	isEmpty,
+	workComplete,
+	activeColIndex = 0,
+	activeCardIndex = 0,
+}: BoardProps) {
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
 	const done = cards.filter((c) => c.column === "done");
@@ -47,9 +56,24 @@ export function Board({ cards, labels, isEmpty, workComplete }: BoardProps) {
 				</Text>
 			)}
 			<Box flexGrow={1} flexDirection="row">
-				<Column label={labels.backlog} cards={backlog} />
-				<Column label={labels.inProgress} cards={inProgress} />
-				<Column label={labels.done} cards={done} />
+				<Column
+					label={labels.backlog}
+					cards={backlog}
+					isFocused={activeColIndex === 0}
+					activeCardIndex={activeColIndex === 0 ? activeCardIndex : 0}
+				/>
+				<Column
+					label={labels.inProgress}
+					cards={inProgress}
+					isFocused={activeColIndex === 1}
+					activeCardIndex={activeColIndex === 1 ? activeCardIndex : 0}
+				/>
+				<Column
+					label={labels.done}
+					cards={done}
+					isFocused={activeColIndex === 2}
+					activeCardIndex={activeColIndex === 2 ? activeCardIndex : 0}
+				/>
 			</Box>
 		</Box>
 	);

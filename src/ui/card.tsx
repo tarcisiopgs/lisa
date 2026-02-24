@@ -11,7 +11,7 @@ function formatElapsed(ms: number): string {
 	return `${seconds}s`;
 }
 
-export function Card({ card }: { card: KanbanCard }) {
+export function Card({ card, isSelected = false }: { card: KanbanCard; isSelected?: boolean }) {
 	const [now, setNow] = useState(Date.now());
 
 	useEffect(() => {
@@ -21,7 +21,7 @@ export function Card({ card }: { card: KanbanCard }) {
 	}, [card.column]);
 
 	const truncated = card.title.length > 22 ? `${card.title.slice(0, 19)}...` : card.title;
-	const borderColor = card.hasError ? "red" : "white";
+	const borderColor = card.hasError ? "red" : isSelected ? "yellow" : "white";
 
 	return (
 		<Box
