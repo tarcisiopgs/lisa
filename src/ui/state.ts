@@ -14,6 +14,8 @@ export interface KanbanCard {
 
 export interface KanbanStateData {
 	cards: KanbanCard[];
+	isEmpty: boolean;
+	workComplete: { total: number; duration: number } | null;
 }
 
 class KanbanEmitter extends EventEmitter {}
@@ -22,6 +24,10 @@ export const kanbanEmitter = new KanbanEmitter();
 
 export function useKanbanState(): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
+	const [isEmpty, setIsEmpty] = useState(false);
+	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
+		null,
+	);
 
 	useEffect(() => {
 		const onQueued = (issue: Issue) => {
@@ -64,13 +70,20 @@ export function useKanbanState(): KanbanStateData {
 		kanbanEmitter.on("issue:done", onDone);
 		kanbanEmitter.on("issue:reverted", onReverted);
 
+		const onEmpty = () => setIsEmpty(true);
+		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
+		kanbanEmitter.on("work:empty", onEmpty);
+		kanbanEmitter.on("work:complete", onComplete);
+
 		return () => {
 			kanbanEmitter.off("issue:queued", onQueued);
 			kanbanEmitter.off("issue:started", onStarted);
 			kanbanEmitter.off("issue:done", onDone);
 			kanbanEmitter.off("issue:reverted", onReverted);
+			kanbanEmitter.off("work:empty", onEmpty);
+			kanbanEmitter.off("work:complete", onComplete);
 		};
 	}, []);
 
-	return { cards };
+	return { cards, isEmpty, workComplete };
 }

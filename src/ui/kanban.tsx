@@ -10,7 +10,7 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards } = useKanbanState();
+	const { cards, isEmpty, workComplete } = useKanbanState();
 
 	useInput((input) => {
 		if (input === "q") {
@@ -28,7 +28,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
 			<Sidebar provider={config.provider} source={config.source} cwd={process.cwd()} />
-			<Board cards={cards} labels={labels} />
+			<Board cards={cards} labels={labels} isEmpty={isEmpty} workComplete={workComplete} />
 		</Box>
 	);
 }

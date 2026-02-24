@@ -1,6 +1,14 @@
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import { Column } from "./column.js";
 import type { KanbanCard } from "./state.js";
+
+function formatDuration(ms: number): string {
+	const totalSeconds = Math.floor(ms / 1000);
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (minutes > 0) return `${minutes}m ${seconds}s`;
+	return `${seconds}s`;
+}
 
 interface BoardProps {
 	cards: KanbanCard[];
@@ -9,18 +17,40 @@ interface BoardProps {
 		inProgress: string;
 		done: string;
 	};
+	isEmpty: boolean;
+	workComplete: { total: number; duration: number } | null;
 }
 
-export function Board({ cards, labels }: BoardProps) {
+export function Board({ cards, labels, isEmpty, workComplete }: BoardProps) {
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
 	const done = cards.filter((c) => c.column === "done");
 
+	if (isEmpty) {
+		return (
+			<Box flexGrow={1} alignItems="center" justifyContent="center">
+				<Box borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
+					<Text bold>No issues found</Text>
+					<Box height={1} />
+					<Text>No issues match the current label and status filters.</Text>
+				</Box>
+			</Box>
+		);
+	}
+
 	return (
-		<Box flexGrow={1} flexDirection="row">
-			<Column label={labels.backlog} cards={backlog} />
-			<Column label={labels.inProgress} cards={inProgress} />
-			<Column label={labels.done} cards={done} />
+		<Box flexGrow={1} flexDirection="column">
+			{workComplete && (
+				<Text color="green">
+					{"  ✓ All done —"} {workComplete.total} issue
+					{workComplete.total !== 1 ? "s" : ""} resolved in {formatDuration(workComplete.duration)}
+				</Text>
+			)}
+			<Box flexGrow={1} flexDirection="row">
+				<Column label={labels.backlog} cards={backlog} />
+				<Column label={labels.inProgress} cards={inProgress} />
+				<Column label={labels.done} cards={done} />
+			</Box>
 		</Box>
 	);
 }
