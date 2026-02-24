@@ -7,6 +7,7 @@ export interface KanbanCard {
 	title: string;
 	column: "backlog" | "in_progress" | "done";
 	startedAt?: number;
+	finishedAt?: number;
 	prUrl?: string;
 	hasError?: boolean;
 }
@@ -42,7 +43,9 @@ export function useKanbanState(): KanbanStateData {
 
 		const onDone = (issueId: string, prUrl: string) => {
 			setCards((prev) =>
-				prev.map((c) => (c.id === issueId ? { ...c, column: "done" as const, prUrl } : c)),
+				prev.map((c) =>
+					c.id === issueId ? { ...c, column: "done" as const, prUrl, finishedAt: Date.now() } : c,
+				),
 			);
 		};
 

@@ -43,6 +43,11 @@ export function Card({ card }: { card: KanbanCard }) {
 					<Text color="yellow"> {formatElapsed(now - card.startedAt)}</Text>
 				</Box>
 			)}
+			{card.column === "done" && card.startedAt !== undefined && card.finishedAt !== undefined && (
+				<Text color="green">
+					{"✓"} {formatElapsed(card.finishedAt - card.startedAt)}
+				</Text>
+			)}
 		</Box>
 	);
 }
