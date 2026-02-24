@@ -12,7 +12,8 @@
 		"resolveJsonModule": true,
 		"isolatedModules": true,
 		"noUncheckedIndexedAccess": true,
-		"types": ["node"]
+		"types": ["node"],
+		"jsx": "react-jsx"
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts", "src/**/*.tsx"]
 }

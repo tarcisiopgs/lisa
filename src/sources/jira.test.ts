@@ -485,6 +485,40 @@ describe("JiraSource", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// listIssues
+	// -------------------------------------------------------------------------
+
+	describe("listIssues", () => {
+		it("returns all issues with the configured label and status", async () => {
+			const issues = [
+				makeIssue({ key: "ENG-1", summary: "First issue" }),
+				makeIssue({ key: "ENG-2", summary: "Second issue" }),
+			];
+
+			global.fetch = mockFetchSequence([ok({ issues, total: 2 })]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toHaveLength(2);
+			expect(result[0]).toMatchObject({ id: "ENG-1", title: "First issue" });
+			expect(result[1]).toMatchObject({ id: "ENG-2", title: "Second issue" });
+		});
+
+		it("returns empty array when no issues found", async () => {
+			global.fetch = mockFetchSequence([ok({ issues: [], total: 0 })]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toEqual([]);
+		});
+
+		it("constructs correct issue URLs", async () => {
+			global.fetch = mockFetchSequence([ok({ issues: [makeIssue({ key: "ENG-42" })], total: 1 })]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result[0]?.url).toBe("https://example.atlassian.net/browse/ENG-42");
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// removeLabel
 	// -------------------------------------------------------------------------
 

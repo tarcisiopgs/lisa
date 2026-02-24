@@ -480,6 +480,41 @@ describe("ShortcutSource", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// listIssues
+	// -------------------------------------------------------------------------
+
+	describe("listIssues", () => {
+		it("returns all stories with the configured label and status", async () => {
+			const stories = [
+				makeStory({ id: 1, name: "First story" }),
+				makeStory({ id: 2, name: "Second story" }),
+			];
+
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]),
+				ok([makeLabel()]),
+				ok({ data: stories, next: null }),
+			]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toHaveLength(2);
+			expect(result[0]).toMatchObject({ id: "1", title: "First story" });
+			expect(result[1]).toMatchObject({ id: "2", title: "Second story" });
+		});
+
+		it("returns empty array when no stories found", async () => {
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]),
+				ok([makeLabel()]),
+				ok({ data: [], next: null }),
+			]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toEqual([]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// removeLabel
 	// -------------------------------------------------------------------------
 

@@ -151,4 +151,5 @@ export interface Source {
 	removeLabel(issueId: string, label: string): Promise<void>;
 	attachPullRequest(issueId: string, prUrl: string): Promise<void>;
 	completeIssue(issueId: string, status: string, labelToRemove?: string): Promise<void>;
+	listIssues(config: SourceConfig): Promise<Issue[]>;
 }

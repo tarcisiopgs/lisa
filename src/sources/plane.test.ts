@@ -645,6 +645,55 @@ describe("PlaneSource", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// listIssues
+	// -------------------------------------------------------------------------
+
+	describe("listIssues", () => {
+		it("returns all issues with the configured label and status", async () => {
+			const issues = [
+				makeIssue({ id: "issue-uuid-1", name: "First issue" }),
+				makeIssue({ id: "issue-uuid-2", name: "Second issue" }),
+			];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+			]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toHaveLength(2);
+			expect(result[0]).toMatchObject({ title: "First issue" });
+			expect(result[1]).toMatchObject({ title: "Second issue" });
+		});
+
+		it("returns empty array when no issues match the label", async () => {
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage([makeIssue({ label_ids: ["other-label-id"] })])),
+			]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toEqual([]);
+		});
+
+		it("returns empty array when no issues exist", async () => {
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage([])),
+			]);
+
+			const result = await source.listIssues(baseConfig);
+			expect(result).toEqual([]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// App URL generation
 	// -------------------------------------------------------------------------
 

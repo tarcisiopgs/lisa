@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import pc from "picocolors";
 
-export type OutputMode = "default" | "json" | "quiet";
+export type OutputMode = "default" | "json" | "quiet" | "tui";
 
 let logFilePath: string | null = null;
 let outputMode: OutputMode = "default";
@@ -11,6 +11,10 @@ const jsonEvents: Record<string, unknown>[] = [];
 
 export function setOutputMode(mode: OutputMode): void {
 	outputMode = mode;
+}
+
+function shouldPrintToConsole(): boolean {
+	return outputMode !== "quiet" && outputMode !== "tui";
 }
 
 export function getJsonEvents(): Record<string, unknown>[] {
@@ -47,7 +51,7 @@ export function log(message: string): void {
 		emitJson("info", message);
 		return;
 	}
-	if (outputMode !== "quiet") {
+	if (shouldPrintToConsole()) {
 		console.log(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
 	writeToFile("info", message);
@@ -58,7 +62,7 @@ export function warn(message: string): void {
 		emitJson("warn", message);
 		return;
 	}
-	if (outputMode !== "quiet") {
+	if (shouldPrintToConsole()) {
 		console.error(`${pc.yellow("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
 	writeToFile("warn", message);
@@ -78,7 +82,7 @@ export function ok(message: string): void {
 		emitJson("ok", message);
 		return;
 	}
-	if (outputMode !== "quiet") {
+	if (shouldPrintToConsole()) {
 		console.log(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
 	writeToFile("ok", message);

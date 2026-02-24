@@ -163,6 +163,20 @@ export class GitLabIssuesSource implements Source {
 		});
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const project = parseGitLabProject(config.team);
+		const label = encodeURIComponent(config.label);
+		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
+
+		const issues = await gitlabGet<GitLabIssue[]>(path);
+		return issues.map((issue) => ({
+			id: makeIssueId(config.team, issue.iid),
+			title: issue.title,
+			description: issue.description ?? "",
+			url: issue.web_url,
+		}));
+	}
+
 	async removeLabel(issueId: string, labelToRemove: string): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);

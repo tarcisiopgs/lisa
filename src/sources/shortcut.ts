@@ -199,6 +199,24 @@ export class ShortcutSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
+		const labelId = await resolveLabelId(config.label);
+
+		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
+			workflow_state_ids: stateIds,
+			label_ids: [labelId],
+			archived: false,
+		});
+
+		return (searchResult.data ?? []).map((story) => ({
+			id: String(story.id),
+			title: story.name,
+			description: story.description ?? "",
+			url: story.app_url,
+		}));
+	}
+
 	async removeLabel(storyId: string, labelName: string): Promise<void> {
 		const story = await shortcutGet<ShortcutStory>(`/api/v3/stories/${storyId}`);
 		const labels = await shortcutGet<ShortcutLabel[]>("/api/v3/labels");

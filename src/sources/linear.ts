@@ -302,6 +302,51 @@ export class LinearSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const data = await gql<{
+			issues: {
+				nodes: {
+					identifier: string;
+					title: string;
+					description: string;
+					url: string;
+				}[];
+			};
+		}>(
+			`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!) {
+				issues(
+					filter: {
+						team: { name: { eq: $teamName } }
+						project: { name: { eq: $projectName } }
+						labels: { name: { eq: $labelName } }
+						state: { name: { eq: $statusName } }
+					}
+					first: 100
+				) {
+					nodes {
+						identifier
+						title
+						description
+						url
+					}
+				}
+			}`,
+			{
+				teamName: config.team,
+				projectName: config.project,
+				labelName: config.label,
+				statusName: config.pick_from,
+			},
+		);
+
+		return data.issues.nodes.map((issue) => ({
+			id: issue.identifier,
+			title: issue.title,
+			description: issue.description || "",
+			url: issue.url,
+		}));
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		// Get issue with current labels
 		const issueData = await gql<{

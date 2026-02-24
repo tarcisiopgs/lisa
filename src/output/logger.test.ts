@@ -57,3 +57,30 @@ describe("setOutputMode and JSON events", () => {
 		consoleSpy.mockRestore();
 	});
 });
+
+describe("tui output mode", () => {
+	afterEach(() => {
+		setOutputMode("default");
+	});
+
+	it("suppresses console output but still writes to file in tui mode", async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-tui-test-"));
+		const logPath = join(tmpDir, "test.log");
+
+		try {
+			const logger = await import("./logger.js");
+			logger.initLogFile(logPath);
+			logger.setOutputMode("tui");
+
+			const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+			logger.log("hello from tui");
+			expect(consoleSpy).not.toHaveBeenCalled();
+			consoleSpy.mockRestore();
+
+			const content = readFileSync(logPath, "utf-8");
+			expect(content).toContain("hello from tui");
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+});
