@@ -277,6 +277,29 @@ export class PlaneSource implements Source {
 		}
 	}
 
+	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const workspaceSlug = config.team;
+		const projectId = await resolveProjectId(workspaceSlug, config.project);
+		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
+		const labelId = await resolveLabelId(workspaceSlug, projectId, config.label);
+
+		const data = await planeGet<PlanePage<PlaneIssue>>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
+		);
+
+		return data.results
+			.filter((i) => i.label_ids.includes(labelId))
+			.map((i) => {
+				const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${i.id}`;
+				return {
+					id: makeIssueId(workspaceSlug, projectId, i.id),
+					title: i.name,
+					description: i.description_stripped ?? "",
+					url: webUrl,
+				};
+			});
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 
