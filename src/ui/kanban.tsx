@@ -1,5 +1,6 @@
 import { Box, useApp, useInput } from "ink";
 import { useEffect, useState } from "react";
+import { resetTitle, startSpinner, stopSpinner } from "../output/terminal.js";
 import type { LisaConfig } from "../types/index.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
@@ -29,6 +30,19 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
+
+	// Animate the terminal tab title based on kanban state
+	useEffect(() => {
+		if (workComplete) {
+			stopSpinner("Lisa \u2014 done \u2713");
+		} else if (inProgress.length > 0) {
+			const ids = inProgress.map((c) => c.id).join(", ");
+			startSpinner(ids);
+		} else {
+			stopSpinner("Lisa \u266a");
+		}
+		return () => resetTitle();
+	}, [inProgress, workComplete]);
 	const done = cards.filter((c) => c.column === "done");
 	const columnCards = [backlog, inProgress, done];
 
