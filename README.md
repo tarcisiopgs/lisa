@@ -26,6 +26,25 @@ lisa run
 
 That's it. Lisa picks up the next labeled issue, implements it, pushes a branch, opens a pull request, and moves the ticket to "In Review" — all without you touching it.
 
+## Try it safely first
+
+Before letting Lisa touch real issues, verify your configuration with `--dry-run`. No issues will be fetched, no code will be written, no PRs will be created.
+
+```bash
+lisa run --once --dry-run
+```
+
+Example output:
+
+```
+[dry-run] Would fetch issue from linear (Engineering/Web App)
+[dry-run] Workflow mode: worktree
+[dry-run] Models priority: claude/claude-sonnet-4-6
+[dry-run] Then implement, push, create PR, and update issue status
+```
+
+If the output looks correct, you're ready to run Lisa for real.
+
 ## What Lisa Does
 
 Lisa follows a deterministic pipeline:
@@ -104,6 +123,7 @@ export TRELLO_TOKEN=""
 |---------|-------------|
 | `lisa run` | Run the agent loop |
 | `lisa run --once` | Process a single issue |
+| `lisa run --once --dry-run` | **Recommended first step** — preview config without executing |
 | `lisa run --issue ID` | Process a specific issue by identifier or URL |
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |

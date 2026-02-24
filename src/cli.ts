@@ -34,7 +34,11 @@ const run = defineCommand({
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
-		"dry-run": { type: "boolean", description: "Preview without executing", default: false },
+		"dry-run": {
+			type: "boolean",
+			description: "Preview config without executing — recommended first step to verify setup",
+			default: false,
+		},
 		issue: { type: "string", description: "Run a specific issue by identifier or URL" },
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		source: { type: "string", description: "Issue source (linear, trello)" },
