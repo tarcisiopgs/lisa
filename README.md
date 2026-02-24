@@ -55,7 +55,7 @@ Lisa follows a deterministic pipeline:
 └─────────┘    └──────────┘    └───────────┘    └──────────┘    └────┘    └────────┘
 ```
 
-1. **Fetch** — Pulls the next issue from Linear, Trello, Shortcut, GitLab Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
+1. **Fetch** — Pulls the next issue from Linear, Trello, Shortcut, GitLab Issues, GitHub Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, and commits.
 4. **Validate** — Runs the project's test suite. If tests fail, the session is aborted and the issue reverts.
@@ -125,6 +125,9 @@ export SHORTCUT_API_TOKEN=""
 export GITLAB_TOKEN=""
 export GITLAB_BASE_URL=""  # optional; defaults to https://gitlab.com
 
+# Required when source = github-issues
+export GITHUB_TOKEN=""     # same token used for PR creation
+
 # Required when source = jira
 export JIRA_BASE_URL=""        # e.g. https://yourcompany.atlassian.net
 export JIRA_EMAIL=""           # Atlassian account email
@@ -142,7 +145,7 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
-| `lisa run --source NAME` | Override issue source (linear, trello, shortcut, gitlab-issues, jira) |
+| `lisa run --source NAME` | Override issue source (linear, trello, shortcut, gitlab-issues, github-issues, jira) |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (cli, token) |
 | `lisa run --json` | Output as JSON lines |
@@ -200,14 +203,25 @@ overseer:
 
 ### Source-Specific Fields
 
-| Field | Linear | Trello | Shortcut | GitLab Issues | Jira |
-|-------|--------|--------|----------|---------------|------|
-| `team` | Team name | Board name | Group name (optional) | Project path (`namespace/project`) or numeric ID | Project key (e.g. `ENG`) |
-| `project` | Project name | — | — | — | — |
-| `pick_from` | Status to pick issues from | List to pick cards from | Workflow state to pick stories from | — | Status to pick issues from |
-| `label` | Label to filter issues | Label to filter cards | Label to filter stories | Label to filter issues | Label to filter issues |
-| `in_progress` | In-progress status | In-progress column | In-progress workflow state | Label to apply on activate | In-progress status name |
-| `done` | Destination status after PR | Destination column after PR | Done workflow state | Closes the issue | Destination status after PR |
+| Field | Linear | Trello | Shortcut | GitLab Issues | GitHub Issues | Jira |
+|-------|--------|--------|----------|---------------|---------------|------|
+| `team` | Team name | Board name | Group name (optional) | Project path (`namespace/project`) or numeric ID | `owner/repo` | Project key (e.g. `ENG`) |
+| `project` | Project name | — | — | — | — | — |
+| `pick_from` | Status to pick issues from | List to pick cards from | Workflow state to pick stories from | — | — | Status to pick issues from |
+| `label` | Label to filter issues | Label to filter cards | Label to filter stories | Label to filter issues | Label to filter issues | Label to filter issues |
+| `in_progress` | In-progress status | In-progress column | In-progress workflow state | Label to apply on activate | Label to apply on activate | In-progress status name |
+| `done` | Destination status after PR | Destination column after PR | Done workflow state | Closes the issue | Closes the issue | Destination status after PR |
+
+Shortcut example:
+
+```yaml
+source: shortcut
+source_config:
+  label: ready              # stories with this label are picked up
+  pick_from: Ready for Development  # workflow state to fetch stories from
+  in_progress: In Progress  # state set when Lisa starts working
+  done: Done                # state set after PR is created
+```
 
 GitLab Issues example:
 
@@ -215,6 +229,17 @@ GitLab Issues example:
 source: gitlab-issues
 source_config:
   team: my-org/my-repo     # namespace/project path or numeric project ID
+  label: ready              # issues with this label are picked up
+  in_progress: in-progress  # label applied when Lisa starts working
+  done: ""                  # issue is closed after PR (value unused)
+```
+
+GitHub Issues example:
+
+```yaml
+source: github-issues
+source_config:
+  team: my-org/my-repo     # owner/repo
   label: ready              # issues with this label are picked up
   in_progress: in-progress  # label applied when Lisa starts working
   done: ""                  # issue is closed after PR (value unused)
