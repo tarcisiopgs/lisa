@@ -1,6 +1,7 @@
 import type { Source, SourceName } from "../types.js";
 import { GitHubIssuesSource } from "./github-issues.js";
 import { GitLabIssuesSource } from "./gitlab-issues.js";
+import { JiraSource } from "./jira.js";
 import { LinearSource } from "./linear.js";
 import { TrelloSource } from "./trello.js";
 
@@ -9,6 +10,7 @@ const sources: Record<SourceName, () => Source> = {
 	trello: () => new TrelloSource(),
 	"gitlab-issues": () => new GitLabIssuesSource(),
 	"github-issues": () => new GitHubIssuesSource(),
+	jira: () => new JiraSource(),
 };
 
 export function createSource(name: SourceName): Source {
