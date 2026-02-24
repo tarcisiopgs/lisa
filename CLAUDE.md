@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Lisa?
 
-A deterministic autonomous issue resolver that connects project trackers (Linear/Trello) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent) and delivers pull requests via GitHub. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
+A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider) and delivers pull requests via GitHub. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
 
 ## Language
 
@@ -72,9 +72,14 @@ src/
 │   ├── goose.ts      # Goose (Block): goose run --text
 │   └── aider.ts      # Aider: aider --message ... --yes-always [--model MODEL]
 └── sources/          # Issue tracker integrations
-    ├── index.ts      # Source factory
-    ├── linear.ts     # Linear GraphQL API
-    └── trello.ts     # Trello REST API
+    ├── index.ts           # Source factory
+    ├── linear.ts          # Linear GraphQL API
+    ├── trello.ts          # Trello REST API
+    ├── plane.ts           # Plane REST API
+    ├── shortcut.ts        # Shortcut REST API
+    ├── gitlab-issues.ts   # GitLab Issues REST API
+    ├── github-issues.ts   # GitHub Issues REST API
+    └── jira.ts            # Jira REST API
 ```
 
 ## Key Flows
