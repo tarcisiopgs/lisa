@@ -319,6 +319,8 @@ async function runConfigWizard(): Promise<void> {
 		opencode: "OpenCode",
 		copilot: "GitHub Copilot CLI",
 		cursor: "Cursor Agent",
+		goose: "Goose",
+		aider: "Aider",
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {

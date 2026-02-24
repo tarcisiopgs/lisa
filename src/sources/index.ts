@@ -1,4 +1,5 @@
 import type { Source, SourceName } from "../types.js";
+import { GitHubIssuesSource } from "./github-issues.js";
 import { GitLabIssuesSource } from "./gitlab-issues.js";
 import { JiraSource } from "./jira.js";
 import { LinearSource } from "./linear.js";
@@ -12,6 +13,7 @@ const sources: Record<SourceName, () => Source> = {
 	plane: () => new PlaneSource(),
 	shortcut: () => new ShortcutSource(),
 	"gitlab-issues": () => new GitLabIssuesSource(),
+	"github-issues": () => new GitHubIssuesSource(),
 	jira: () => new JiraSource(),
 };
 
