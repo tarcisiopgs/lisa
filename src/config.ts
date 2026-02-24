@@ -90,6 +90,11 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		sourceConfig.pick_from = sourceConfig.project;
 	}
 
+	// For GitLab Issues, team holds the project path/ID
+	if (parsed.source === "gitlab-issues" && !sourceConfig.team && rawSource.project) {
+		sourceConfig.team = rawSource.project;
+	}
+
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
 		...(parsed as Partial<LisaConfig>),
@@ -135,14 +140,21 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 					in_progress: sc.in_progress,
 					done: sc.done,
 				}
-			: {
-					team: sc.team,
-					project: sc.project,
-					label: sc.label,
-					pick_from: sc.pick_from,
-					in_progress: sc.in_progress,
-					done: sc.done,
-				};
+			: config.source === "gitlab-issues"
+				? {
+						team: sc.team,
+						label: sc.label,
+						in_progress: sc.in_progress,
+						done: sc.done,
+					}
+				: {
+						team: sc.team,
+						project: sc.project,
+						label: sc.label,
+						pick_from: sc.pick_from,
+						in_progress: sc.in_progress,
+						done: sc.done,
+					};
 
 	const output = { ...config, source_config: sourceYaml };
 	writeFileSync(configPath, stringify(output), "utf-8");
