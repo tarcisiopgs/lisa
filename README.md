@@ -55,7 +55,7 @@ Lisa follows a deterministic pipeline:
 └─────────┘    └──────────┘    └───────────┘    └──────────┘    └────┘    └────────┘
 ```
 
-1. **Fetch** — Pulls the next issue from Linear, Trello, or GitLab Issues matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
+1. **Fetch** — Pulls the next issue from Linear, Trello, GitLab Issues, or GitHub Issues matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, and commits.
 4. **Validate** — Runs the project's test suite. If tests fail, the session is aborted and the issue reverts.
@@ -119,6 +119,9 @@ export TRELLO_TOKEN=""
 # Required when source = gitlab-issues
 export GITLAB_TOKEN=""
 export GITLAB_BASE_URL=""  # optional; defaults to https://gitlab.com
+
+# Required when source = github-issues
+export GITHUB_TOKEN=""     # same token used for PR creation
 ```
 
 ## Commands
@@ -132,7 +135,7 @@ export GITLAB_BASE_URL=""  # optional; defaults to https://gitlab.com
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
-| `lisa run --source NAME` | Override issue source (linear, trello, gitlab-issues) |
+| `lisa run --source NAME` | Override issue source (linear, trello, gitlab-issues, github-issues) |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (cli, token) |
 | `lisa run --json` | Output as JSON lines |
@@ -190,14 +193,14 @@ overseer:
 
 ### Source-Specific Fields
 
-| Field | Linear | Trello | GitLab Issues |
-|-------|--------|--------|---------------|
-| `team` | Team name | Board name | Project path (`namespace/project`) or numeric ID |
-| `project` | Project name | — | — |
-| `pick_from` | Status to pick issues from | List to pick cards from | — |
-| `label` | Label to filter issues | Label to filter cards | Label to filter issues |
-| `in_progress` | In-progress status | In-progress column | Label to apply on activate |
-| `done` | Destination status after PR | Destination column after PR | Closes the issue |
+| Field | Linear | Trello | GitLab Issues | GitHub Issues |
+|-------|--------|--------|---------------|---------------|
+| `team` | Team name | Board name | Project path (`namespace/project`) or numeric ID | `owner/repo` |
+| `project` | Project name | — | — | — |
+| `pick_from` | Status to pick issues from | List to pick cards from | — | — |
+| `label` | Label to filter issues | Label to filter cards | Label to filter issues | Label to filter issues |
+| `in_progress` | In-progress status | In-progress column | Label to apply on activate | Label to apply on activate |
+| `done` | Destination status after PR | Destination column after PR | Closes the issue | Closes the issue |
 
 GitLab Issues example:
 
@@ -205,6 +208,17 @@ GitLab Issues example:
 source: gitlab-issues
 source_config:
   team: my-org/my-repo     # namespace/project path or numeric project ID
+  label: ready              # issues with this label are picked up
+  in_progress: in-progress  # label applied when Lisa starts working
+  done: ""                  # issue is closed after PR (value unused)
+```
+
+GitHub Issues example:
+
+```yaml
+source: github-issues
+source_config:
+  team: my-org/my-repo     # owner/repo
   label: ready              # issues with this label are picked up
   in_progress: in-progress  # label applied when Lisa starts working
   done: ""                  # issue is closed after PR (value unused)
