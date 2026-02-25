@@ -11,6 +11,35 @@ function formatElapsed(ms: number): string {
 	return `${seconds}s`;
 }
 
+// Wraps a title into at most two lines of `maxWidth` chars each.
+// Prefers word boundaries; falls back to hard-cutting if a single word exceeds maxWidth.
+function wrapTitle(title: string, maxWidth: number): [string, string] {
+	if (title.length <= maxWidth) return [title, ""];
+
+	const words = title.split(" ");
+	let line1 = "";
+	let i = 0;
+
+	for (; i < words.length; i++) {
+		const word = words[i] ?? "";
+		const candidate = line1 ? `${line1} ${word}` : word;
+		if (candidate.length > maxWidth) break;
+		line1 = candidate;
+	}
+
+	// If no word fit (single very long word), hard-cut
+	if (!line1) {
+		line1 = title.slice(0, maxWidth);
+		const rest = title.slice(maxWidth);
+		const line2 = rest.length > maxWidth ? `${rest.slice(0, maxWidth - 1)}…` : rest;
+		return [line1, line2];
+	}
+
+	const remaining = words.slice(i).join(" ");
+	const line2 = remaining.length > maxWidth ? `${remaining.slice(0, maxWidth - 1)}…` : remaining;
+	return [line1, line2];
+}
+
 export function Card({ card, isSelected = false }: { card: KanbanCard; isSelected?: boolean }) {
 	const [now, setNow] = useState(Date.now());
 
@@ -42,7 +71,13 @@ export function Card({ card, isSelected = false }: { card: KanbanCard; isSelecte
 	const selectionBar = isSelected ? "▐" : " ";
 	const selectionColor = isSelected ? "yellow" : "white";
 
-	const truncated = card.title.length > 30 ? `${card.title.slice(0, 27)}…` : card.title;
+	// CARD_TITLE_WIDTH must stay in sync with CARD_INNER_WIDTH in column.tsx.
+	// Derivation: column border (2) + column paddingX (2) + card border (2) +
+	// selection bar (1) + card paddingX (2) + status glyph + space (2) = 11 overhead
+	// subtracted from terminal width / 3. Using a safe fixed width of 28 chars keeps
+	// titles readable at any terminal width >= ~100 cols.
+	const CARD_TITLE_WIDTH = 28;
+	const [titleLine1, titleLine2] = wrapTitle(card.title, CARD_TITLE_WIDTH);
 
 	return (
 		<Box
@@ -65,12 +100,15 @@ export function Card({ card, isSelected = false }: { card: KanbanCard; isSelecte
 					<Text color={statusColor}>{statusGlyph}</Text>
 				</Box>
 
-				{/* Title row */}
+				{/* Title: always two rows to keep card height stable */}
 				<Text bold={isSelected} dimColor={!isSelected}>
-					{truncated}
+					{titleLine1}
+				</Text>
+				<Text bold={isSelected} dimColor={!isSelected}>
+					{titleLine2}
 				</Text>
 
-				{/* Timer row (only when relevant) */}
+				{/* Timer / completion / error row */}
 				{card.column === "in_progress" && card.startedAt !== undefined && (
 					<Box flexDirection="row" marginTop={0}>
 						<Text color="yellow">
