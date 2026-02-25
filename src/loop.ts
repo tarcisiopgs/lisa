@@ -396,6 +396,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
+		// Ensure the issue exists in the kanban (may be missing if added after initial fetch)
+		kanbanEmitter.emit("issue:queued", issue);
+
 		// Move issue to in-progress status before starting work
 		const previousStatus = config.source_config.pick_from;
 		try {
