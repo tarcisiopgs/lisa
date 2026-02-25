@@ -146,6 +146,39 @@ describe("ensureLogsGitignore", () => {
 		expect(result).toBe(false);
 		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
 	});
+
+	it("returns false when .lisa/ is already in .gitignore", async () => {
+		const { existsSync, readFileSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(readFileSync).mockReturnValue("node_modules\n.lisa/\n" as never);
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(false);
+		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
+	});
+
+	it("returns false when .lisa/* is already in .gitignore", async () => {
+		const { existsSync, readFileSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(readFileSync).mockReturnValue("node_modules\n.lisa/*\n" as never);
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(false);
+		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
+	});
+
+	it("returns false when .lisa is already in .gitignore", async () => {
+		const { existsSync, readFileSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(readFileSync).mockReturnValue("node_modules\n.lisa\n" as never);
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(false);
+		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
+	});
 });
 
 describe("cleanupOrphanedWorktree", () => {
