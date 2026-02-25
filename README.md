@@ -57,7 +57,7 @@ Lisa follows a deterministic pipeline:
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, runs tests, and commits.
 4. **Validate** — If the agent's tests pass and pre-push hooks succeed, the branch is pushed. If hooks fail, Lisa re-invokes the agent with the error output and retries.
-5. **PR** — Pushes the branch and creates a pull request referencing the original issue. The PR body includes a footer crediting the provider that resolved it.
+5. **PR** — Pushes the branch and creates a pull request referencing the original issue.
 6. **Update** — Moves the issue to the `done` status and removes the pickup label.
 7. **Next** — Picks the next issue. When there are no more matching issues, Lisa stops.
 
@@ -86,7 +86,9 @@ Lisa follows a deterministic pipeline:
 
 At least one provider must be installed and available in your PATH.
 
-> **Cursor Free plan** — `lisa init` automatically detects Free accounts and restricts model selection to `auto` only. On paid plans, a curated list of top-tier models is shown (`composer-1.5`, `opus-4.6`, `sonnet-4.6`, `gpt-5.3-codex`, etc.).
+> **Cursor Free plan** — `lisa init` automatically detects Free accounts and restricts model selection to `auto` only. On paid plans, available models are fetched live from `cursor --list-models` and filtered to a curated top-tier list (`composer-1.5`, `opus-4.6`, `sonnet-4.6`, `gpt-5.3-codex`, etc.).
+
+> **OpenCode** — `lisa init` fetches available models from `opencode models` and filters them based on which API keys are present in your environment (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`). Only models from providers you have credentials for are shown.
 
 ### Fallback Chain
 
@@ -180,12 +182,14 @@ When running in an interactive terminal, `lisa run` renders a real-time Kanban b
 └──────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
 ```
 
+In-progress cards show a live elapsed timer. When the loop is paused, the active card displays a visual pause indicator. The detail view includes a scroll bar when output overflows.
+
 ### Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Move to next column |
-| `Shift+Tab` | Move to previous column |
+| `←` / `→` | Move between columns |
+| `Tab` / `Shift+Tab` | Move between columns (alternative) |
 | `↑` / `↓` | Navigate cards / scroll output |
 | `Enter` | Open issue detail view (streams provider output) |
 | `Esc` | Close detail view, return to board |
