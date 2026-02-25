@@ -32,6 +32,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
+	const hasInProgress = inProgress.length > 0;
 
 	// Animate the terminal tab title based on kanban state
 	useEffect(() => {
@@ -87,6 +88,25 @@ export function KanbanApp({ config }: KanbanAppProps) {
 			const next = !paused;
 			setPaused(next);
 			kanbanEmitter.emit(next ? "loop:pause" : "loop:resume");
+			kanbanEmitter.emit(next ? "loop:pause-provider" : "loop:resume-provider");
+			return;
+		}
+
+		if (input === "k" && hasInProgress) {
+			kanbanEmitter.emit("loop:kill");
+			if (!paused) {
+				setPaused(true);
+				kanbanEmitter.emit("loop:pause");
+			}
+			return;
+		}
+
+		if (input === "s" && hasInProgress) {
+			kanbanEmitter.emit("loop:skip");
+			if (paused) {
+				setPaused(false);
+				kanbanEmitter.emit("loop:resume");
+			}
 			return;
 		}
 
@@ -145,6 +165,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 				cwd={process.cwd()}
 				activeView={activeView}
 				paused={paused}
+				hasInProgress={hasInProgress}
 			/>
 			{activeView === "board" || !selectedCard ? (
 				<Board

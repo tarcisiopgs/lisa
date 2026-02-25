@@ -2,6 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { OverseerConfig } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,12 +42,25 @@ export function startOverseer(
 	}
 
 	let killed = false;
+	let paused = false;
 	let lastSnapshot: string | undefined;
 	let lastChangeTime = Date.now();
 	let timer: ReturnType<typeof setInterval> | null = null;
 
+	const onPauseProvider = () => {
+		paused = true;
+	};
+	const onResumeProvider = () => {
+		paused = false;
+		// Reset idle timer so paused time is not counted as stuck
+		lastChangeTime = Date.now();
+	};
+
+	kanbanEmitter.on("loop:pause-provider", onPauseProvider);
+	kanbanEmitter.on("loop:resume-provider", onResumeProvider);
+
 	const check = async () => {
-		if (killed) return;
+		if (killed || paused) return;
 
 		try {
 			const snapshot = await getSnapshot(cwd);
@@ -88,6 +102,8 @@ export function startOverseer(
 				clearInterval(timer);
 				timer = null;
 			}
+			kanbanEmitter.off("loop:pause-provider", onPauseProvider);
+			kanbanEmitter.off("loop:resume-provider", onResumeProvider);
 		},
 		wasKilled() {
 			return killed;

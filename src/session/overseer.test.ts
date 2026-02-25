@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverseerConfig } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { getGitSnapshot, STUCK_MESSAGE, startOverseer } from "./overseer.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -74,6 +75,8 @@ describe("startOverseer (enabled)", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+		kanbanEmitter.removeAllListeners("loop:pause-provider");
+		kanbanEmitter.removeAllListeners("loop:resume-provider");
 	});
 
 	it("does not kill when snapshot changes between checks", async () => {
@@ -168,12 +171,14 @@ describe("startOverseer (enabled)", () => {
 		const proc = makeMockProc();
 		const getSnapshot = vi.fn(async () => "same");
 
-		startOverseer(proc, "/any", makeConfig(), getSnapshot);
+		const handle = startOverseer(proc, "/any", makeConfig(), getSnapshot);
 
 		// Advance well past the threshold — first kill should clear the timer
 		await vi.advanceTimersByTimeAsync(10_000);
 
 		expect(proc.killCalls.length).toBeLessThanOrEqual(1);
+
+		handle.stop();
 	});
 
 	it("swallows errors from getSnapshot without killing", async () => {
@@ -190,5 +195,113 @@ describe("startOverseer (enabled)", () => {
 		handle.stop();
 		expect(handle.wasKilled()).toBe(false);
 		expect(proc.killCalls).toHaveLength(0);
+	});
+});
+
+// ── startOverseer — pause/resume via kanbanEmitter ────────────────────────
+
+describe("startOverseer (pause/resume)", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		kanbanEmitter.removeAllListeners("loop:pause-provider");
+		kanbanEmitter.removeAllListeners("loop:resume-provider");
+	});
+
+	it("does not kill while paused even if stuck threshold is exceeded", async () => {
+		const proc = makeMockProc();
+		const getSnapshot = vi.fn(async () => "same-snapshot");
+
+		const handle = startOverseer(proc, "/any", makeConfig(), getSnapshot);
+
+		// First check: baseline
+		await vi.advanceTimersByTimeAsync(1000);
+
+		// Pause the provider
+		kanbanEmitter.emit("loop:pause-provider");
+
+		// Advance well past the threshold while paused
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(handle.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
+
+		handle.stop();
+	});
+
+	it("resets idle timer on resume so paused time is not counted as stuck", async () => {
+		const proc = makeMockProc();
+		const getSnapshot = vi.fn(async () => "same-snapshot");
+
+		const handle = startOverseer(proc, "/any", makeConfig(), getSnapshot);
+
+		// First check: baseline
+		await vi.advanceTimersByTimeAsync(1000);
+		// Second check: idle = 1s
+		await vi.advanceTimersByTimeAsync(1000);
+
+		// Pause the provider (idle = 2s at this point, threshold = 3s)
+		kanbanEmitter.emit("loop:pause-provider");
+		// Advance time while paused
+		await vi.advanceTimersByTimeAsync(5000);
+
+		// Resume — idle timer should reset
+		kanbanEmitter.emit("loop:resume-provider");
+
+		// Advance 2s after resume — total idle since resume = 2s < 3s threshold
+		await vi.advanceTimersByTimeAsync(2000);
+
+		expect(handle.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
+
+		handle.stop();
+	});
+
+	it("can be paused and resumed multiple times", async () => {
+		const proc = makeMockProc();
+		const getSnapshot = vi.fn(async () => "same-snapshot");
+
+		const handle = startOverseer(proc, "/any", makeConfig(), getSnapshot);
+
+		// First check: baseline
+		await vi.advanceTimersByTimeAsync(1000);
+
+		// Pause, advance, resume
+		kanbanEmitter.emit("loop:pause-provider");
+		await vi.advanceTimersByTimeAsync(3000);
+		kanbanEmitter.emit("loop:resume-provider");
+
+		// Advance 2s (within threshold)
+		await vi.advanceTimersByTimeAsync(2000);
+
+		// Pause again, advance past threshold
+		kanbanEmitter.emit("loop:pause-provider");
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(handle.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
+
+		handle.stop();
+	});
+
+	it("stop() cleans up kanbanEmitter listeners", () => {
+		const proc = makeMockProc();
+		const getSnapshot = vi.fn(async () => "same-snapshot");
+
+		const beforePause = kanbanEmitter.listenerCount("loop:pause-provider");
+		const beforeResume = kanbanEmitter.listenerCount("loop:resume-provider");
+
+		const handle = startOverseer(proc, "/any", makeConfig(), getSnapshot);
+
+		expect(kanbanEmitter.listenerCount("loop:pause-provider")).toBe(beforePause + 1);
+		expect(kanbanEmitter.listenerCount("loop:resume-provider")).toBe(beforeResume + 1);
+
+		handle.stop();
+
+		expect(kanbanEmitter.listenerCount("loop:pause-provider")).toBe(beforePause);
+		expect(kanbanEmitter.listenerCount("loop:resume-provider")).toBe(beforeResume);
 	});
 });

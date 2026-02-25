@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createProvider, isCompleteProviderExhaustion, isEligibleForFallback } from "./index.js";
+import {
+	createProvider,
+	isCompleteProviderExhaustion,
+	isEligibleForFallback,
+	runWithFallback,
+} from "./index.js";
 
 describe("createProvider", () => {
 	it("creates a claude provider", () => {
@@ -197,4 +202,52 @@ describe("isCompleteProviderExhaustion", () => {
 			]),
 		).toBe(false);
 	});
+});
+
+describe("runWithFallback — shouldAbort", () => {
+	it("stops the fallback chain when shouldAbort returns true", async () => {
+		// Use models that won't actually be available — the key test is that it
+		// skips all of them without even checking availability.
+		const result = await runWithFallback(
+			[
+				{ provider: "claude", model: "model-a" },
+				{ provider: "claude", model: "model-b" },
+			],
+			"test prompt",
+			{
+				logFile: "/dev/null",
+				cwd: "/tmp",
+				shouldAbort: () => true,
+			},
+		);
+
+		// When shouldAbort is true from the start, no models should be attempted
+		expect(result.success).toBe(false);
+		expect(result.attempts).toHaveLength(0);
+	});
+
+	it("does not short-circuit when shouldAbort returns false", async () => {
+		let aborted = false;
+		const result = await runWithFallback(
+			[
+				{ provider: "claude", model: "model-a" },
+				{ provider: "claude", model: "model-b" },
+			],
+			"test prompt",
+			{
+				logFile: "/dev/null",
+				cwd: "/tmp",
+				shouldAbort: () => {
+					// Abort after the first model is attempted
+					if (aborted) return true;
+					aborted = true;
+					return false;
+				},
+			},
+		);
+
+		// First model should be attempted, second should be aborted
+		expect(result.success).toBe(false);
+		expect(result.attempts.length).toBe(1);
+	}, 15_000);
 });

@@ -104,6 +104,10 @@ export async function runWithFallback(
 	const attempts: ModelAttempt[] = [];
 
 	for (const spec of models) {
+		if (opts.shouldAbort?.()) {
+			break;
+		}
+
 		const provider = createProvider(spec.provider);
 		const available = await provider.isAvailable();
 

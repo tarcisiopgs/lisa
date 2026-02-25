@@ -11,6 +11,10 @@ export interface KanbanCard {
 	prUrl?: string;
 	hasError?: boolean;
 	outputLog: string;
+	skipped?: boolean;
+	killed?: boolean;
+	pausedAt?: number;
+	pauseAccumulated?: number;
 }
 
 export interface KanbanStateData {
@@ -42,7 +46,16 @@ export function useKanbanState(): KanbanStateData {
 			setCards((prev) =>
 				prev.map((c) =>
 					c.id === issueId
-						? { ...c, column: "in_progress" as const, startedAt: Date.now(), hasError: false }
+						? {
+								...c,
+								column: "in_progress" as const,
+								startedAt: Date.now(),
+								hasError: false,
+								skipped: false,
+								killed: false,
+								pausedAt: undefined,
+								pauseAccumulated: 0,
+							}
 						: c,
 				),
 			);
@@ -66,6 +79,60 @@ export function useKanbanState(): KanbanStateData {
 			);
 		};
 
+		const onSkipped = (issueId: string) => {
+			setCards((prev) =>
+				prev.map((c) =>
+					c.id === issueId
+						? {
+								...c,
+								column: "backlog" as const,
+								startedAt: undefined,
+								skipped: true,
+								hasError: false,
+								pausedAt: undefined,
+							}
+						: c,
+				),
+			);
+		};
+
+		const onKilled = (issueId: string) => {
+			setCards((prev) =>
+				prev.map((c) =>
+					c.id === issueId
+						? {
+								...c,
+								column: "backlog" as const,
+								startedAt: undefined,
+								killed: true,
+								hasError: false,
+								pausedAt: undefined,
+							}
+						: c,
+				),
+			);
+		};
+
+		const onProviderPaused = () => {
+			setCards((prev) =>
+				prev.map((c) => (c.column === "in_progress" ? { ...c, pausedAt: Date.now() } : c)),
+			);
+		};
+
+		const onProviderResumed = () => {
+			setCards((prev) =>
+				prev.map((c) => {
+					if (c.column !== "in_progress" || !c.pausedAt) return c;
+					const pauseDuration = Date.now() - c.pausedAt;
+					return {
+						...c,
+						pausedAt: undefined,
+						pauseAccumulated: (c.pauseAccumulated ?? 0) + pauseDuration,
+					};
+				}),
+			);
+		};
+
 		const onOutput = (issueId: string, text: string) => {
 			setCards((prev) =>
 				prev.map((c) => (c.id === issueId ? { ...c, outputLog: c.outputLog + text } : c)),
@@ -76,6 +143,10 @@ export function useKanbanState(): KanbanStateData {
 		kanbanEmitter.on("issue:started", onStarted);
 		kanbanEmitter.on("issue:done", onDone);
 		kanbanEmitter.on("issue:reverted", onReverted);
+		kanbanEmitter.on("issue:skipped", onSkipped);
+		kanbanEmitter.on("issue:killed", onKilled);
+		kanbanEmitter.on("provider:paused", onProviderPaused);
+		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:output", onOutput);
 
 		const onEmpty = () => setIsEmpty(true);
@@ -88,6 +159,10 @@ export function useKanbanState(): KanbanStateData {
 			kanbanEmitter.off("issue:started", onStarted);
 			kanbanEmitter.off("issue:done", onDone);
 			kanbanEmitter.off("issue:reverted", onReverted);
+			kanbanEmitter.off("issue:skipped", onSkipped);
+			kanbanEmitter.off("issue:killed", onKilled);
+			kanbanEmitter.off("provider:paused", onProviderPaused);
+			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);

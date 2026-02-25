@@ -44,12 +44,68 @@ let activeCleanup: { issueId: string; previousStatus: string; source: Source } |
 let activeProviderPid: number | null = null;
 let shuttingDown = false;
 let loopPaused = false;
+let providerPaused = false;
+let userKilled = false;
+let userSkipped = false;
 
 kanbanEmitter.on("loop:pause", () => {
 	loopPaused = true;
 });
 kanbanEmitter.on("loop:resume", () => {
 	loopPaused = false;
+});
+
+kanbanEmitter.on("loop:pause-provider", () => {
+	if (activeProviderPid) {
+		try {
+			process.kill(activeProviderPid, "SIGSTOP");
+		} catch {
+			// Process may have already exited
+		}
+		providerPaused = true;
+		kanbanEmitter.emit("provider:paused");
+	}
+});
+
+kanbanEmitter.on("loop:resume-provider", () => {
+	if (activeProviderPid && providerPaused) {
+		try {
+			process.kill(activeProviderPid, "SIGCONT");
+		} catch {
+			// Process may have already exited
+		}
+		providerPaused = false;
+		kanbanEmitter.emit("provider:resumed");
+	}
+});
+
+function killActiveProvider(): void {
+	if (!activeProviderPid) return;
+	if (providerPaused) {
+		try {
+			process.kill(activeProviderPid, "SIGCONT");
+		} catch {}
+		providerPaused = false;
+	}
+	try {
+		process.kill(activeProviderPid, "SIGTERM");
+	} catch {}
+	const pid = activeProviderPid;
+	setTimeout(() => {
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {}
+	}, 5000);
+}
+
+kanbanEmitter.on("loop:kill", () => {
+	userKilled = true;
+	killActiveProvider();
+});
+
+kanbanEmitter.on("loop:skip", () => {
+	userSkipped = true;
+	killActiveProvider();
 });
 
 export interface LoopOptions {
@@ -383,6 +439,47 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		if (!sessionResult.success) {
+			// Check if this was a user-initiated kill or skip
+			if (userKilled) {
+				userKilled = false;
+				providerPaused = false;
+				logger.warn(`Issue ${issue.id} killed by user.`);
+				try {
+					await source.updateStatus(issue.id, previousStatus);
+					logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+				} catch (err) {
+					logger.error(
+						`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+				kanbanEmitter.emit("issue:killed", issue.id);
+				activeCleanup = null;
+				notify();
+				// Kill pauses the loop — waitIfPaused() at the start of the next iteration
+				// will block until the user resumes (loopPaused is set by the TUI via loop:pause)
+				if (opts.once) break;
+				continue;
+			}
+
+			if (userSkipped) {
+				userSkipped = false;
+				providerPaused = false;
+				logger.warn(`Issue ${issue.id} skipped by user.`);
+				try {
+					await source.updateStatus(issue.id, previousStatus);
+					logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+				} catch (err) {
+					logger.error(
+						`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+				kanbanEmitter.emit("issue:skipped", issue.id);
+				activeCleanup = null;
+				notify();
+				if (opts.once) break;
+				continue;
+			}
+
 			// All models failed — revert issue to previous status
 			logger.error(`All models failed for ${issue.id}. Reverting to "${previousStatus}".`);
 			logAttemptHistory(sessionResult);
@@ -652,6 +749,7 @@ async function runNativeWorktreeSession(
 		onProcess: (pid) => {
 			activeProviderPid = pid;
 		},
+		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
 
@@ -781,6 +879,7 @@ async function runManualWorktreeSession(
 		onProcess: (pid) => {
 			activeProviderPid = pid;
 		},
+		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
 
@@ -857,6 +956,7 @@ async function runWorktreeMultiRepoSession(
 		onProcess: (pid) => {
 			activeProviderPid = pid;
 		},
+		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
 
@@ -1032,6 +1132,7 @@ async function runMultiRepoStep(
 		onProcess: (pid) => {
 			activeProviderPid = pid;
 		},
+		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
 
@@ -1132,6 +1233,7 @@ async function runBranchSession(
 		onProcess: (pid) => {
 			activeProviderPid = pid;
 		},
+		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
 

@@ -51,17 +51,25 @@ export function Card({
 }) {
 	const [now, setNow] = useState(Date.now());
 
+	const isPausedInProgress = paused && card.column === "in_progress";
+
 	useEffect(() => {
-		if (card.column !== "in_progress") return;
+		if (card.column !== "in_progress" || isPausedInProgress) return;
 		const interval = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(interval);
-	}, [card.column]);
+	}, [card.column, isPausedInProgress]);
 
 	// Determine status indicator and color
 	let statusGlyph: string;
 	let statusColor: string;
 
-	if (card.hasError) {
+	if (card.killed) {
+		statusGlyph = "✖";
+		statusColor = "red";
+	} else if (card.skipped) {
+		statusGlyph = "⏭";
+		statusColor = "gray";
+	} else if (card.hasError) {
 		statusGlyph = "✖";
 		statusColor = "red";
 	} else if (card.column === "in_progress") {
@@ -87,7 +95,12 @@ export function Card({
 	const CARD_TITLE_WIDTH = 28;
 	const [titleLine1, titleLine2] = wrapTitle(card.title, CARD_TITLE_WIDTH);
 
-	const isPausedInProgress = paused && card.column === "in_progress";
+	// Compute elapsed time accounting for pause duration
+	let elapsedMs: number | null = null;
+	if (card.column === "in_progress" && card.startedAt !== undefined) {
+		const pauseOffset = (card.pauseAccumulated ?? 0) + (card.pausedAt ? now - card.pausedAt : 0);
+		elapsedMs = Math.max(0, now - card.startedAt - pauseOffset);
+	}
 
 	return (
 		<Box
@@ -96,7 +109,15 @@ export function Card({
 			marginBottom={0}
 			borderStyle="single"
 			borderColor={
-				card.hasError ? "red" : isPausedInProgress ? "gray" : isSelected ? "yellow" : "gray"
+				card.hasError || card.killed
+					? "red"
+					: card.skipped
+						? "gray"
+						: isPausedInProgress
+							? "gray"
+							: isSelected
+								? "yellow"
+								: "gray"
 			}
 		>
 			{/* Selection bar */}
@@ -121,7 +142,7 @@ export function Card({
 				</Text>
 
 				{/* Timer / completion / error row */}
-				{card.column === "in_progress" && card.startedAt !== undefined && (
+				{card.column === "in_progress" && elapsedMs !== null && (
 					<Box flexDirection="row" marginTop={0}>
 						{isPausedInProgress ? (
 							<Text color="gray">{"⏸"}</Text>
@@ -132,7 +153,7 @@ export function Card({
 						)}
 						<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
 							{" "}
-							{formatElapsed(now - card.startedAt)}
+							{formatElapsed(elapsedMs)}
 						</Text>
 					</Box>
 				)}
@@ -144,7 +165,9 @@ export function Card({
 							{formatElapsed(card.finishedAt - card.startedAt)}
 						</Text>
 					)}
-				{card.hasError && <Text color="red">FAILED</Text>}
+				{card.killed && <Text color="red">KILLED</Text>}
+				{card.skipped && <Text color="gray">SKIPPED</Text>}
+				{card.hasError && !card.killed && !card.skipped && <Text color="red">FAILED</Text>}
 			</Box>
 		</Box>
 	);

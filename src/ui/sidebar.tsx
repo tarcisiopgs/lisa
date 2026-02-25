@@ -8,9 +8,17 @@ interface SidebarProps {
 	cwd: string;
 	activeView: "board" | "detail";
 	paused?: boolean;
+	hasInProgress?: boolean;
 }
 
-export function Sidebar({ provider, source, cwd, activeView, paused = false }: SidebarProps) {
+export function Sidebar({
+	provider,
+	source,
+	cwd,
+	activeView,
+	paused = false,
+	hasInProgress = false,
+}: SidebarProps) {
 	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
 
@@ -103,6 +111,8 @@ export function Sidebar({ provider, source, cwd, activeView, paused = false }: S
 					<Text dimColor>{"[↑↓]  navigate    "}</Text>
 					<Text dimColor>{"[↵]   view detail "}</Text>
 					<Text dimColor>{paused ? "[p]   resume      " : "[p]   pause       "}</Text>
+					{hasInProgress && <Text dimColor>{"[k]   kill issue  "}</Text>}
+					{hasInProgress && <Text dimColor>{"[s]   skip issue  "}</Text>}
 					<Text dimColor>{"[q]   quit        "}</Text>
 				</Box>
 			) : (

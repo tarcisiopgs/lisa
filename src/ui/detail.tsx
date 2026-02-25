@@ -32,7 +32,14 @@ function scrollBar(pct: number, width = 8): string {
 	return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
-function statusLabel(column: string, hasError?: boolean): { text: string; color: string } {
+function statusLabel(
+	column: string,
+	hasError?: boolean,
+	killed?: boolean,
+	skipped?: boolean,
+): { text: string; color: string } {
+	if (killed) return { text: "KILLED", color: "red" };
+	if (skipped) return { text: "SKIPPED", color: "gray" };
 	if (hasError) return { text: "FAILED", color: "red" };
 	if (column === "in_progress") return { text: "IN PROGRESS", color: "yellow" };
 	if (column === "done") return { text: "DONE", color: "green" };
@@ -45,11 +52,13 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const [userScrolled, setUserScrolled] = useState(false);
 	const prevOutputLen = useRef(card.outputLog.length);
 
+	const isPausedInProgress = card.column === "in_progress" && !!card.pausedAt;
+
 	useEffect(() => {
-		if (card.column !== "in_progress") return;
+		if (card.column !== "in_progress" || isPausedInProgress) return;
 		const interval = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(interval);
-	}, [card.column]);
+	}, [card.column, isPausedInProgress]);
 
 	useEffect(() => {
 		if (!userScrolled && card.outputLog.length !== prevOutputLen.current) {
@@ -85,13 +94,14 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const startLine = Math.max(0, lines.length - bodyRows - logScrollOffset);
 	const visibleLines = lines.slice(startLine, startLine + bodyRows);
 
-	const status = statusLabel(card.column, card.hasError);
+	const status = statusLabel(card.column, card.hasError, card.killed, card.skipped);
 
 	let elapsedDisplay: string | null = null;
 	let isRunning = false;
 	if (card.column === "in_progress" && card.startedAt !== undefined) {
-		elapsedDisplay = formatElapsed(now - card.startedAt);
-		isRunning = true;
+		const pauseOffset = (card.pauseAccumulated ?? 0) + (card.pausedAt ? now - card.pausedAt : 0);
+		elapsedDisplay = formatElapsed(Math.max(0, now - card.startedAt - pauseOffset));
+		isRunning = !isPausedInProgress;
 	} else if (
 		card.column === "done" &&
 		card.startedAt !== undefined &&
@@ -140,7 +150,15 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 							<Text color="yellow" bold>{` ${elapsedDisplay}`}</Text>
 						</Box>
 					)}
-					{!isRunning && elapsedDisplay && (
+					{isPausedInProgress && elapsedDisplay && (
+						<Box flexDirection="row" marginRight={2}>
+							<Text color="gray">{"⏸ "}</Text>
+							<Text color="gray" bold>
+								{elapsedDisplay}
+							</Text>
+						</Box>
+					)}
+					{!isRunning && !isPausedInProgress && elapsedDisplay && (
 						<Box flexDirection="row" marginRight={2}>
 							<Text color="green">{"✔ "}</Text>
 							<Text color="green" bold>
