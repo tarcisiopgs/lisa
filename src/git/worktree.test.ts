@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanupOrphanedWorktree, determineRepoPath, generateBranchName } from "./worktree.js";
+import {
+	cleanupOrphanedWorktree,
+	determineRepoPath,
+	ensureLogsGitignore,
+	generateBranchName,
+} from "./worktree.js";
 
 vi.mock("execa", () => ({
 	execa: vi.fn(),
+}));
+
+vi.mock("node:fs", () => ({
+	existsSync: vi.fn(),
+	readFileSync: vi.fn(),
+	appendFileSync: vi.fn(),
 }));
 
 describe("generateBranchName", () => {
@@ -80,6 +91,60 @@ describe("determineRepoPath", () => {
 	it("prefers repo field over title prefix", () => {
 		const result = determineRepoPath(repos, { repo: "api", title: "App: misleading" }, workspace);
 		expect(result).toBe("/workspace/api");
+	});
+});
+
+describe("ensureLogsGitignore", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns false and does nothing when not a git repo", async () => {
+		const { existsSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(false);
+
+		const result = ensureLogsGitignore("/not-a-repo");
+
+		expect(result).toBe(false);
+		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
+	});
+
+	it("creates .gitignore with Lisa block when file does not exist", async () => {
+		const { existsSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockImplementation((p) => String(p).endsWith(".git"));
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(true);
+		expect(vi.mocked(appendFileSync)).toHaveBeenCalledWith(
+			expect.stringContaining(".gitignore"),
+			"# Lisa\n.lisa/logs/*\n",
+		);
+	});
+
+	it("appends Lisa block when .gitignore exists but entry is missing", async () => {
+		const { existsSync, readFileSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(readFileSync).mockReturnValue("node_modules\n" as never);
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(true);
+		expect(vi.mocked(appendFileSync)).toHaveBeenCalledWith(
+			expect.stringContaining(".gitignore"),
+			"# Lisa\n.lisa/logs/*\n",
+		);
+	});
+
+	it("does not duplicate entry when .lisa/logs/* already exists", async () => {
+		const { existsSync, readFileSync, appendFileSync } = await import("node:fs");
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(readFileSync).mockReturnValue("node_modules\n.lisa/logs/*\n" as never);
+
+		const result = ensureLogsGitignore("/repo");
+
+		expect(result).toBe(false);
+		expect(vi.mocked(appendFileSync)).not.toHaveBeenCalled();
 	});
 });
 
