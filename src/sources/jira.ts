@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -58,6 +59,18 @@ async function jiraPut<T>(path: string, body: unknown): Promise<T> {
 	return jiraFetch<T>("PUT", path, body);
 }
 
+interface JiraIssueLink {
+	type: { name: string; inward: string; outward: string };
+	inwardIssue?: {
+		key: string;
+		fields: { status: { name: string; statusCategory: { key: string } } };
+	};
+	outwardIssue?: {
+		key: string;
+		fields: { status: { name: string; statusCategory: { key: string } } };
+	};
+}
+
 interface JiraIssue {
 	id: string;
 	key: string;
@@ -68,6 +81,7 @@ interface JiraIssue {
 		priority: { name: string } | null;
 		status: { name: string };
 		labels: string[];
+		issuelinks?: JiraIssueLink[];
 	};
 }
 
@@ -126,7 +140,7 @@ export class JiraSource implements Source {
 		const jql = encodeURIComponent(
 			`project = "${config.team}" AND ${labelClause} AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
 		);
-		const fields = "summary,description,priority,status,labels";
+		const fields = "summary,description,priority,status,labels,issuelinks";
 
 		const data = await jiraGet<JiraSearchResult>(
 			`/search?jql=${jql}&fields=${fields}&maxResults=50`,
@@ -135,8 +149,43 @@ export class JiraSource implements Source {
 		const issues = data.issues ?? [];
 		if (issues.length === 0) return null;
 
+		// Check blocking relations for each issue
+		const unblocked: JiraIssue[] = [];
+		const blocked: { key: string; blockers: string[] }[] = [];
+
+		for (const issue of issues) {
+			const activeBlockers = (issue.fields.issuelinks ?? [])
+				.filter((link) => {
+					// "inwardIssue" with inward description containing "is blocked by"
+					// means this issue is blocked by the inwardIssue
+					if (link.inwardIssue && link.type.inward.toLowerCase().includes("is blocked by")) {
+						return link.inwardIssue.fields.status.statusCategory.key !== "done";
+					}
+					// "outwardIssue" with outward description "blocks" means nothing for *this* issue
+					// (this issue blocks the outward one, not the other way around)
+					return false;
+				})
+				.map((link) => link.inwardIssue?.key ?? "");
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ key: issue.key, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(`  ${entry.key} — blocked by: ${entry.blockers.join(", ")}`);
+				}
+			}
+			return null;
+		}
+
 		// Sort by Jira priority (Highest=1 → Lowest=5, no priority=max)
-		const sorted = [...issues].sort((a, b) => priorityRank(a) - priorityRank(b));
+		const sorted = [...unblocked].sort((a, b) => priorityRank(a) - priorityRank(b));
 
 		const issue = sorted[0];
 		if (!issue) return null;

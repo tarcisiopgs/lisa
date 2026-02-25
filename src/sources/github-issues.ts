@@ -1,9 +1,13 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_URL = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 const PRIORITY_LABELS = ["p1", "p2", "p3"];
+
+// Matches "depends on #N", "blocked by #N", case-insensitive, supports multiple formats
+const DEPENDENCY_PATTERN = /(?:depends\s+on|blocked\s+by)\s+#(\d+)/gi;
 
 function getAuthHeaders(): Record<string, string> {
 	const token = process.env.GITHUB_TOKEN;
@@ -61,6 +65,7 @@ interface GitHubIssue {
 	html_url: string;
 	labels: { name: string }[];
 	created_at: string;
+	state?: string;
 }
 
 function priorityRank(labels: { name: string }[]): number {
@@ -104,6 +109,17 @@ export function parseGitHubIssueNumber(id: string): {
 	return { owner: "", repo: "", number: id };
 }
 
+export function parseDependencies(body: string | null): number[] {
+	if (!body) return [];
+	const deps: number[] = [];
+	const matches = body.matchAll(DEPENDENCY_PATTERN);
+	for (const match of matches) {
+		const num = Number.parseInt(match[1] ?? "", 10);
+		if (!Number.isNaN(num)) deps.push(num);
+	}
+	return [...new Set(deps)];
+}
+
 function makeIssueId(owner: string, repo: string, number: number): string {
 	return `${owner}/${repo}#${number}`;
 }
@@ -120,8 +136,54 @@ export class GitHubIssuesSource implements Source {
 		const issues = await githubGet<GitHubIssue[]>(path);
 		if (issues.length === 0) return null;
 
+		// Check blocking relations parsed from issue body
+		const unblocked: GitHubIssue[] = [];
+		const blocked: { number: number; blockers: number[] }[] = [];
+
+		for (const issue of issues) {
+			const depNumbers = parseDependencies(issue.body);
+			if (depNumbers.length === 0) {
+				unblocked.push(issue);
+				continue;
+			}
+
+			// Check if any referenced issues are still open
+			const activeBlockers: number[] = [];
+			for (const depNum of depNumbers) {
+				try {
+					const dep = await githubGet<GitHubIssue>(`/repos/${owner}/${repo}/issues/${depNum}`);
+					// GitHub returns closed issues with state !== "open"
+					// If the dependency issue is still open, it's an active blocker
+					if (!dep.state || dep.state === "open") {
+						activeBlockers.push(depNum);
+					}
+				} catch {
+					// If we can't fetch, assume still open
+					activeBlockers.push(depNum);
+				}
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ number: issue.number, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.number} — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority labels (p1/p2/p3) first, then by created_at ascending
-		const sorted = [...issues].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.labels);
 			const pb = priorityRank(b.labels);
 			if (pa !== pb) return pa - pb;

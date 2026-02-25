@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubIssuesSource, parseGitHubIssueNumber } from "./github-issues.js";
+import { GitHubIssuesSource, parseDependencies, parseGitHubIssueNumber } from "./github-issues.js";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -34,6 +34,43 @@ function mockFetch(response: unknown, ok = true, status = 200) {
 		text: async () => JSON.stringify(response),
 	});
 }
+
+// ---------------------------------------------------------------------------
+// parseDependencies
+// ---------------------------------------------------------------------------
+
+describe("parseDependencies", () => {
+	it("returns empty array for null body", () => {
+		expect(parseDependencies(null)).toEqual([]);
+	});
+
+	it("returns empty array for body without dependencies", () => {
+		expect(parseDependencies("Just a regular issue description")).toEqual([]);
+	});
+
+	it("parses 'depends on #N'", () => {
+		expect(parseDependencies("This depends on #42")).toEqual([42]);
+	});
+
+	it("parses 'blocked by #N'", () => {
+		expect(parseDependencies("This is blocked by #10")).toEqual([10]);
+	});
+
+	it("parses multiple dependencies", () => {
+		const body = "depends on #1\nblocked by #2\ndepends on #3";
+		expect(parseDependencies(body)).toEqual([1, 2, 3]);
+	});
+
+	it("is case-insensitive", () => {
+		expect(parseDependencies("Depends On #5")).toEqual([5]);
+		expect(parseDependencies("BLOCKED BY #7")).toEqual([7]);
+	});
+
+	it("deduplicates issue numbers", () => {
+		const body = "depends on #1\nblocked by #1";
+		expect(parseDependencies(body)).toEqual([1]);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // parseGitHubIssueNumber
@@ -226,6 +263,119 @@ describe("GitHubIssuesSource", () => {
 			await expect(source.fetchNextIssue(badConfig)).rejects.toThrow(
 				'Invalid owner/repo format: "invalid-format"',
 			);
+		});
+
+		it("skips issues blocked by open dependencies", async () => {
+			const blockedIssue = makeIssue({
+				number: 1,
+				title: "Blocked issue",
+				body: "depends on #99",
+			});
+			const unblockedIssue = makeIssue({
+				number: 2,
+				title: "Unblocked issue",
+				body: "No dependencies here",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedIssue, unblockedIssue];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const blockedIssue = makeIssue({
+				number: 1,
+				title: "Blocked",
+				body: "blocked by #99",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedIssue];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("does not skip issues when dependency is closed", async () => {
+			const issue = makeIssue({
+				number: 1,
+				title: "Issue with closed dep",
+				body: "depends on #99",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [issue];
+				else if (url.includes("/issues/99"))
+					data = { number: 99, state: "closed", title: "Done dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Issue with closed dep");
+		});
+
+		it("respects priority among unblocked issues", async () => {
+			const blockedP1 = makeIssue({
+				number: 1,
+				title: "P1 blocked",
+				body: "blocked by #99",
+				labels: [{ name: "ready" }, { name: "p1" }],
+			});
+			const unblockedP3 = makeIssue({
+				number: 2,
+				title: "P3 unblocked",
+				labels: [{ name: "ready" }, { name: "p3" }],
+			});
+			const unblockedP2 = makeIssue({
+				number: 3,
+				title: "P2 unblocked",
+				labels: [{ name: "ready" }, { name: "p2" }],
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedP1, unblockedP3, unblockedP2];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("P2 unblocked");
 		});
 	});
 

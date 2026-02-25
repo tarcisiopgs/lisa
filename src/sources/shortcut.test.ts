@@ -31,6 +31,13 @@ function makeLabel(overrides: Partial<{ id: number; name: string; archived: bool
 	return { id: 100, name: "lisa", color: null, archived: false, ...overrides };
 }
 
+interface ShortcutStoryLink {
+	id: number;
+	subject_id: number;
+	object_id: number;
+	verb: string;
+}
+
 function makeStory(
 	overrides: Partial<{
 		id: number;
@@ -41,6 +48,7 @@ function makeStory(
 		label_ids: number[];
 		position: number;
 		priority: number | null;
+		story_links: ShortcutStoryLink[];
 	}> = {},
 ) {
 	return {
@@ -52,6 +60,7 @@ function makeStory(
 		label_ids: [100],
 		position: 1000,
 		priority: 2,
+		story_links: [] as ShortcutStoryLink[],
 		...overrides,
 	};
 }
@@ -122,8 +131,9 @@ describe("ShortcutSource", () => {
 	describe("fetchNextIssue", () => {
 		it("returns null when no stories found", async () => {
 			global.fetch = mockFetchSequence([
-				ok([makeWorkflow()]), // GET /api/v3/workflows
+				ok([makeWorkflow()]), // GET /api/v3/workflows (resolve state IDs)
 				ok([makeLabel()]), // GET /api/v3/labels
+				ok([makeWorkflow()]), // GET /api/v3/workflows (resolve done states)
 				ok({ data: [], next: null }), // POST /api/v3/stories/search
 			]);
 
@@ -135,6 +145,7 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel()]),
+				ok([makeWorkflow()]),
 				ok({ data: [], next: null }),
 			]);
 
@@ -146,6 +157,7 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel()]),
+				ok([makeWorkflow()]),
 				ok({ data: [makeStory({ id: 12345, name: "Fix the bug" })], next: null }),
 			]);
 
@@ -167,6 +179,7 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel()]),
+				ok([makeWorkflow()]),
 				ok({ data: stories, next: null }),
 			]);
 
@@ -183,6 +196,7 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel()]),
+				ok([makeWorkflow()]),
 				ok({ data: stories, next: null }),
 			]);
 
@@ -199,6 +213,7 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel()]),
+				ok([makeWorkflow()]),
 				ok({ data: stories, next: null }),
 			]);
 
@@ -267,11 +282,98 @@ describe("ShortcutSource", () => {
 			global.fetch = mockFetchSequence([
 				ok(workflows),
 				ok([makeLabel()]),
+				ok(workflows),
 				ok({ data: [makeStory()], next: null }),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result).not.toBeNull();
+		});
+
+		it("skips blocked stories and returns unblocked one", async () => {
+			const blockedStory = makeStory({
+				id: 1,
+				name: "Blocked story",
+				story_links: [{ id: 1, subject_id: 999, object_id: 1, verb: "blocks" }],
+			});
+			const unblockedStory = makeStory({ id: 2, name: "Unblocked story" });
+			// Blocker story is not in done state
+			const blockerStory = makeStory({ id: 999, workflow_state_id: 500000003 });
+
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]), // resolve state IDs
+				ok([makeLabel()]), // resolve label IDs
+				ok([makeWorkflow()]), // resolve done states
+				ok({ data: [blockedStory, unblockedStory], next: null }), // search
+				ok(blockerStory), // fetch blocker story
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked story");
+		});
+
+		it("returns null when all stories are blocked", async () => {
+			const blockedStory = makeStory({
+				id: 1,
+				name: "Blocked story",
+				story_links: [{ id: 1, subject_id: 999, object_id: 1, verb: "blocks" }],
+			});
+			const blockerStory = makeStory({ id: 999, workflow_state_id: 500000003 });
+
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]),
+				ok([makeLabel()]),
+				ok([makeWorkflow()]),
+				ok({ data: [blockedStory], next: null }),
+				ok(blockerStory),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("ignores blockers in done state", async () => {
+			const story = makeStory({
+				id: 1,
+				name: "Story with done blocker",
+				story_links: [{ id: 1, subject_id: 999, object_id: 1, verb: "blocks" }],
+			});
+			// Blocker is in "Done" state (500000004)
+			const blockerStory = makeStory({ id: 999, workflow_state_id: 500000004 });
+
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]),
+				ok([makeLabel()]),
+				ok([makeWorkflow()]),
+				ok({ data: [story], next: null }),
+				ok(blockerStory),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Story with done blocker");
+		});
+
+		it("respects priority among unblocked stories", async () => {
+			const blockedP1 = makeStory({
+				id: 1,
+				name: "P1 blocked",
+				priority: 1,
+				story_links: [{ id: 1, subject_id: 999, object_id: 1, verb: "blocks" }],
+			});
+			const unblockedP3 = makeStory({ id: 2, name: "P3 unblocked", priority: 3 });
+			const unblockedP2 = makeStory({ id: 3, name: "P2 unblocked", priority: 2 });
+			const blockerStory = makeStory({ id: 999, workflow_state_id: 500000003 });
+
+			global.fetch = mockFetchSequence([
+				ok([makeWorkflow()]),
+				ok([makeLabel()]),
+				ok([makeWorkflow()]),
+				ok({ data: [blockedP1, unblockedP3, unblockedP2], next: null }),
+				ok(blockerStory),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("P2 unblocked");
 		});
 	});
 

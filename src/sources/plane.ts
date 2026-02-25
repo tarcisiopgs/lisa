@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const DEFAULT_BASE_URL = "https://api.plane.so";
@@ -97,6 +98,13 @@ interface PlaneProject {
 interface PlaneComment {
 	id: string;
 	comment_html: string;
+}
+
+interface PlaneRelation {
+	id: string;
+	relation_type: string;
+	related_issue: string;
+	issue: string;
 }
 
 // Handles both paginated ({ results: T[] }) and plain array responses
@@ -221,8 +229,62 @@ export class PlaneSource implements Source {
 		const matching = data.results.filter((i) => labelIds.every((lid) => i.label_ids.includes(lid)));
 		if (matching.length === 0) return null;
 
+		// Fetch all states to check if blocking issues are completed
+		const allStates = await fetchAll<PlaneState>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/states/`,
+		);
+		const doneGroups = new Set(["completed", "cancelled"]);
+		const doneStateIds = new Set(allStates.filter((s) => doneGroups.has(s.group)).map((s) => s.id));
+
+		// Check blocking relations for each issue
+		const unblocked: PlaneIssue[] = [];
+		const blocked: { id: string; name: string; blockers: string[] }[] = [];
+
+		for (const issue of matching) {
+			const relations = await fetchAll<PlaneRelation>(
+				`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issue.id}/relations/`,
+			);
+
+			// "blocked_by" means this issue is blocked by the related_issue
+			const blockerIds = relations
+				.filter((r) => r.relation_type === "blocked_by")
+				.map((r) => r.related_issue);
+
+			// Check if blockers are still active (not in a done state)
+			const activeBlockers: string[] = [];
+			for (const blockerId of blockerIds) {
+				try {
+					const blocker = await planeGet<PlaneIssue>(
+						`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${blockerId}/`,
+					);
+					if (!doneStateIds.has(blocker.state)) {
+						activeBlockers.push(blockerId);
+					}
+				} catch {
+					// If we can't fetch the blocker, assume it's still active
+					activeBlockers.push(blockerId);
+				}
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ id: issue.id, name: issue.name, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(`  ${entry.name} — blocked by: ${entry.blockers.join(", ")}`);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority: urgent=1 < high=2 < medium=3 < low=4 < none=5
-		const sorted = [...matching].sort(
+		const sorted = [...unblocked].sort(
 			(a, b) => priorityRank(a.priority) - priorityRank(b.priority),
 		);
 

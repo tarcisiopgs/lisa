@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_BASE_URL = "https://api.app.shortcut.com";
@@ -56,6 +57,13 @@ interface ShortcutLabel {
 	archived: boolean;
 }
 
+interface ShortcutStoryLink {
+	id: number;
+	subject_id: number;
+	object_id: number;
+	verb: string;
+}
+
 interface ShortcutStory {
 	id: number;
 	name: string;
@@ -65,6 +73,7 @@ interface ShortcutStory {
 	label_ids: number[];
 	position: number;
 	priority: number | null;
+	story_links: ShortcutStoryLink[];
 }
 
 interface ShortcutStorySearchResult {
@@ -136,6 +145,17 @@ export class ShortcutSource implements Source {
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
 		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
+		// Resolve all workflow states to determine "done" states
+		const workflows = await shortcutGet<ShortcutWorkflow[]>("/api/v3/workflows");
+		const doneStateIds = new Set<number>();
+		for (const workflow of workflows) {
+			for (const state of workflow.states) {
+				if (state.type === "done") {
+					doneStateIds.add(state.id);
+				}
+			}
+		}
+
 		// Search for stories in the given workflow states with the given labels (AND)
 		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
 			workflow_state_ids: stateIds,
@@ -146,8 +166,53 @@ export class ShortcutSource implements Source {
 		const stories = searchResult.data ?? [];
 		if (stories.length === 0) return null;
 
+		// Check blocking relations for each story
+		const unblocked: ShortcutStory[] = [];
+		const blocked: { id: number; name: string; blockers: number[] }[] = [];
+
+		for (const story of stories) {
+			const storyLinks = story.story_links ?? [];
+			// "blocks" verb: subject_id blocks object_id
+			// If this story is the object (object_id === story.id), the subject is blocking it
+			const blockerIds = storyLinks
+				.filter((link) => link.verb === "blocks" && link.object_id === story.id)
+				.map((link) => link.subject_id);
+
+			// Check if blockers are still active
+			const activeBlockers: number[] = [];
+			for (const blockerId of blockerIds) {
+				try {
+					const blocker = await shortcutGet<ShortcutStory>(`/api/v3/stories/${blockerId}`);
+					if (!doneStateIds.has(blocker.workflow_state_id)) {
+						activeBlockers.push(blockerId);
+					}
+				} catch {
+					// If we can't fetch, assume still active
+					activeBlockers.push(blockerId);
+				}
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(story);
+			} else {
+				blocked.push({ id: story.id, name: story.name, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.id} (${entry.name}) — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority ascending (lower = higher priority), then by position
-		const sorted = [...stories].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.priority);
 			const pb = priorityRank(b.priority);
 			if (pa !== pb) return pa - pb;
