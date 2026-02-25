@@ -37,6 +37,8 @@ export class LinearSource implements Source {
 	name = "linear" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {
 				nodes: {
@@ -46,6 +48,7 @@ export class LinearSource implements Source {
 					description: string;
 					url: string;
 					priority: number;
+					labels: { nodes: { name: string }[] };
 					inverseRelations: {
 						nodes: {
 							type: string;
@@ -75,6 +78,7 @@ export class LinearSource implements Source {
 						description
 						url
 						priority
+						labels { nodes { name } }
 						inverseRelations(first: 50) {
 							nodes {
 								type
@@ -90,12 +94,19 @@ export class LinearSource implements Source {
 			{
 				teamName: config.team,
 				projectName: config.project,
-				labelName: config.label,
+				labelName: primaryLabel,
 				statusName: config.pick_from,
 			},
 		);
 
-		const issues = data.issues.nodes;
+		// Client-side filter: ensure issue has ALL configured labels (AND logic)
+		const issues =
+			labels.length > 1
+				? data.issues.nodes.filter((issue) => {
+						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
+						return labels.every((l) => issueLabels.has(l.toLowerCase()));
+					})
+				: data.issues.nodes;
 		if (issues.length === 0) return null;
 
 		// Separate unblocked from blocked issues based on dependency relations
@@ -303,6 +314,8 @@ export class LinearSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {
 				nodes: {
@@ -310,6 +323,7 @@ export class LinearSource implements Source {
 					title: string;
 					description: string;
 					url: string;
+					labels: { nodes: { name: string }[] };
 				}[];
 			};
 		}>(
@@ -328,18 +342,28 @@ export class LinearSource implements Source {
 						title
 						description
 						url
+						labels { nodes { name } }
 					}
 				}
 			}`,
 			{
 				teamName: config.team,
 				projectName: config.project,
-				labelName: config.label,
+				labelName: primaryLabel,
 				statusName: config.pick_from,
 			},
 		);
 
-		return data.issues.nodes.map((issue) => ({
+		// Client-side filter: ensure issue has ALL configured labels (AND logic)
+		const filtered =
+			labels.length > 1
+				? data.issues.nodes.filter((issue) => {
+						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
+						return labels.every((l) => issueLabels.has(l.toLowerCase()));
+					})
+				: data.issues.nodes;
+
+		return filtered.map((issue) => ({
 			id: issue.identifier,
 			title: issue.title,
 			description: issue.description || "",

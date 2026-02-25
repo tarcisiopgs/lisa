@@ -98,14 +98,17 @@ export class TrelloSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const board = await findBoardByName(config.team);
 		const list = await findListByName(board.id, config.pick_from);
-		const label = await findLabelByName(board.id, config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
+		);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
 			"fields=name,desc,url,idLabels,idList",
 		);
 
-		const matching = cards.filter((c) => c.idLabels.includes(label.id));
+		const matching = cards.filter((c) => labelIds.every((lid) => c.idLabels.includes(lid)));
 		if (matching.length === 0) return null;
 
 		const card = matching[0];
@@ -159,7 +162,10 @@ export class TrelloSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const board = await findBoardByName(config.team);
 		const list = await findListByName(board.id, config.pick_from);
-		const label = await findLabelByName(board.id, config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
+		);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
@@ -167,7 +173,7 @@ export class TrelloSource implements Source {
 		);
 
 		return cards
-			.filter((c) => c.idLabels.includes(label.id))
+			.filter((c) => labelIds.every((lid) => c.idLabels.includes(lid)))
 			.map((c) => ({
 				id: c.id,
 				title: c.name,

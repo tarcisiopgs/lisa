@@ -113,7 +113,8 @@ export class GitHubIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const label = encodeURIComponent(config.label);
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
 		const issues = await githubGet<GitHubIssue[]>(path);
@@ -182,7 +183,8 @@ export class GitHubIssuesSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const label = encodeURIComponent(config.label);
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
 		const issues = await githubGet<GitHubIssue[]>(path);

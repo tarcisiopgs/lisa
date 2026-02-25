@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
+import { formatLabels, getRemoveLabel } from "./config.js";
 import { appendPrAttribution } from "./git/github.js";
 import {
 	createWorktree,
@@ -240,7 +241,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	installSignalHandlers();
 
 	logger.log(
-		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${config.source_config.label}, workflow: ${config.workflow})`,
+		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow})`,
 	);
 
 	// Recover orphan issues stuck in in_progress from previous interrupted runs
@@ -285,7 +286,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		if (opts.issueId) {
 			logger.log(`Fetching issue '${opts.issueId}' from ${config.source}...`);
 		} else {
-			logger.log(`Fetching next '${config.source_config.label}' issue from ${config.source}...`);
+			logger.log(
+				`Fetching next '${formatLabels(config.source_config)}' issue from ${config.source}...`,
+			);
 		}
 
 		if (opts.dryRun) {
@@ -325,7 +328,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			if (opts.issueId) {
 				logger.error(`Issue '${opts.issueId}' not found.`);
 			} else {
-				logger.ok(`No more issues with label '${config.source_config.label}'. Done.`);
+				logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
 				if (session === 1) {
 					kanbanEmitter.emit("work:empty");
 				}
@@ -458,7 +461,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		// Update issue status + remove label atomically (single API call for Linear)
 		try {
 			const doneStatus = config.source_config.done;
-			const labelToRemove = opts.issueId ? undefined : config.source_config.label;
+			const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
 			await source.completeIssue(issue.id, doneStatus, labelToRemove);
 			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
 			for (const prUrl of sessionResult.prUrls) {

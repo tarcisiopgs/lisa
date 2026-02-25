@@ -121,8 +121,10 @@ export class JiraSource implements Source {
 	name = "jira" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labelClause = labels.map((l) => `labels = "${l}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${config.team}" AND labels = "${config.label}" AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
+			`project = "${config.team}" AND ${labelClause} AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels";
 
@@ -203,8 +205,10 @@ export class JiraSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labelClause = labels.map((l) => `labels = "${l}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${config.team}" AND labels = "${config.label}" AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
+			`project = "${config.team}" AND ${labelClause} AND status = "${config.pick_from}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels";
 
