@@ -16,6 +16,13 @@ interface IssueDetailProps {
 	onBack: () => void;
 }
 
+function logLineColor(line: string): string {
+	if (/error|Error|ERROR|✖/.test(line)) return "red";
+	if (/warning|Warning|WARNING|warn/.test(line)) return "yellow";
+	if (/✔|success|Success/.test(line)) return "green";
+	return "white";
+}
+
 function statusLabel(column: string, hasError?: boolean): { text: string; color: string } {
 	if (hasError) return { text: "FAILED", color: "red" };
 	if (column === "in_progress") return { text: "IN PROGRESS", color: "yellow" };
@@ -184,12 +191,15 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 						</Text>
 					</Box>
 				) : (
-					visibleLines.map((line, i) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: log lines have no stable key
-						<Text key={i} color="white" dimColor>
-							{line}
-						</Text>
-					))
+					visibleLines.map((line, i) => {
+						const color = logLineColor(line);
+						return (
+							// biome-ignore lint/suspicious/noArrayIndexKey: log lines have no stable key
+							<Text key={i} color={color} dimColor={color === "white"}>
+								{line}
+							</Text>
+						);
+					})
 				)}
 			</Box>
 		</Box>
