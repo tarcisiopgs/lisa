@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ProjectContext } from "./context.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -410,5 +411,128 @@ describe("prompt delegation — provider does push/PR/tracker", () => {
 		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], undefined, undefined, false);
 		expect(prompt).toContain("Skip tracker update");
 		expect(prompt).not.toContain("lisa issue done");
+	});
+});
+
+function makeProjectContext(overrides?: Partial<ProjectContext>): ProjectContext {
+	return {
+		qualityScripts: [
+			{ name: "lint", command: "biome lint" },
+			{ name: "test", command: "vitest run" },
+		],
+		testPattern: {
+			location: "colocated",
+			style: "describe-it",
+			mocking: ["vi.mock/vi.fn"],
+			example: '// src/utils.test.ts\nimport { describe, it } from "vitest";',
+		},
+		codeTools: [{ name: "Biome", configFile: "biome.json" }],
+		projectTree: "src/\n  index.ts\npackage.json",
+		...overrides,
+	};
+}
+
+describe("project context injection", () => {
+	const ctx = makeProjectContext();
+
+	it("worktree prompt includes project context when provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+		expect(prompt).toContain("`lint`: `biome lint`");
+		expect(prompt).toContain("### Test Patterns");
+		expect(prompt).toContain("### Code Tools");
+		expect(prompt).toContain("**Biome**");
+		expect(prompt).toContain("### Project Structure");
+	});
+
+	it("worktree prompt omits project context when not provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+		);
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("branch prompt includes project context when provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "branch" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+	});
+
+	it("branch prompt omits project context when not provided", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }), "vitest");
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("native worktree prompt includes project context when provided", () => {
+		const prompt = buildNativeWorktreePrompt(
+			makeIssue(),
+			"/tmp/repo",
+			"vitest",
+			"npm",
+			"main",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+		expect(prompt).toContain("### Test Patterns");
+		expect(prompt).toContain("colocated next to source files");
+		expect(prompt).toContain("describe/it blocks");
+	});
+
+	it("native worktree prompt omits project context when not provided", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue());
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("scoped prompt includes project context when provided", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(
+			makeIssue(),
+			step,
+			[],
+			"vitest",
+			"npm",
+			false,
+			"main",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+	});
+
+	it("scoped prompt omits project context when not provided", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("project context appears between description and instructions", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		const descIndex = prompt.indexOf("Implement the feature X as described.");
+		const ctxIndex = prompt.indexOf("## Project Context");
+		const instrIndex = prompt.indexOf("## Instructions");
+		expect(descIndex).toBeLessThan(ctxIndex);
+		expect(ctxIndex).toBeLessThan(instrIndex);
 	});
 });
