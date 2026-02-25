@@ -60,12 +60,21 @@ export interface LisaConfig {
 	overseer?: OverseerConfig;
 }
 
+export interface DependencyContext {
+	issueId: string;
+	branch: string;
+	prUrl: string;
+	changedFiles: string[];
+}
+
 export interface Issue {
 	id: string;
 	title: string;
 	description: string;
 	url: string;
 	repo?: string;
+	dependency?: DependencyContext;
+	completedBlockerIds?: string[];
 }
 
 export interface ModelSpec {

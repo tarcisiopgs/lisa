@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { formatProjectContext, type ProjectContext } from "./context.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
-import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
@@ -122,6 +122,26 @@ If an update is needed, modify only the affected sections. Keep the existing sty
 `;
 }
 
+export function buildDependencyContext(dep: DependencyContext): string {
+	const fileList =
+		dep.changedFiles.length > 0
+			? dep.changedFiles.map((f) => `  - \`${f}\``).join("\n")
+			: "  (no files detected)";
+
+	return `## Dependency Context
+
+**This branch was created from the branch of issue ${dep.issueId}** (\`${dep.branch}\`), which has an open PR: ${dep.prUrl}
+
+The following files were changed by the dependency and are already available in your working tree:
+${fileList}
+
+**Important:**
+- Do NOT reimplement or modify code that was introduced by ${dep.issueId} — it already exists in your branch.
+- Your PR must target \`${dep.branch}\` as its base branch (not \`main\`), so the diff only shows YOUR changes.
+- When ${dep.issueId}'s PR is merged, your PR will be automatically re-targeted to \`main\`.
+`;
+}
+
 function buildWorktreePrompt(
 	issue: Issue,
 	testRunner?: TestRunner,
@@ -136,6 +156,8 @@ function buildWorktreePrompt(
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
@@ -154,8 +176,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}
-
+${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -182,7 +203,7 @@ ${readmeBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
    Capture the PR URL from the output.
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -223,9 +244,11 @@ function buildBranchPrompt(
 		.join("\n");
 
 	const baseBranch = config.base_branch;
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
-	const baseBranchInstruction =
-		config.repos.length > 0
+	const baseBranchInstruction = issue.dependency
+		? `From \`${issue.dependency.branch}\` (dependency branch)`
+		: config.repos.length > 0
 			? "From the repo's base branch (listed above)"
 			: `From \`${baseBranch}\``;
 
@@ -234,6 +257,7 @@ function buildBranchPrompt(
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -247,7 +271,7 @@ function buildBranchPrompt(
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}
+${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -279,7 +303,7 @@ ${readmeBlock}
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
 6. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>" --base ${baseBranch}\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>" --base ${prBase}\`
    Capture the PR URL from the output.
 
 7. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -317,6 +341,8 @@ export function buildNativeWorktreePrompt(
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
@@ -335,8 +361,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}
-
+${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -362,7 +387,7 @@ ${readmeBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
    Capture the PR URL from the output.
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
@@ -467,6 +492,8 @@ export function buildScopedImplementPrompt(
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
 	const previousBlock =
 		previousResults.length > 0
@@ -491,7 +518,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}
+${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:
@@ -524,7 +551,7 @@ ${readmeBlock}
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
 5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
+   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
    Capture the PR URL from the output.
 ${trackerStep}
 7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa-manifest.json` in the **current directory**"} with JSON:

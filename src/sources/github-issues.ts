@@ -139,6 +139,8 @@ export class GitHubIssuesSource implements Source {
 		// Check blocking relations parsed from issue body
 		const unblocked: GitHubIssue[] = [];
 		const blocked: { number: number; blockers: number[] }[] = [];
+		// Track closed (resolved) blocker IDs per issue for dependency resolution
+		const closedBlockerMap = new Map<number, string[]>();
 
 		for (const issue of issues) {
 			const depNumbers = parseDependencies(issue.body);
@@ -149,18 +151,23 @@ export class GitHubIssuesSource implements Source {
 
 			// Check if any referenced issues are still open
 			const activeBlockers: number[] = [];
+			const closedBlockers: string[] = [];
 			for (const depNum of depNumbers) {
 				try {
 					const dep = await githubGet<GitHubIssue>(`/repos/${owner}/${repo}/issues/${depNum}`);
-					// GitHub returns closed issues with state !== "open"
-					// If the dependency issue is still open, it's an active blocker
 					if (!dep.state || dep.state === "open") {
 						activeBlockers.push(depNum);
+					} else {
+						closedBlockers.push(makeIssueId(owner, repo, depNum));
 					}
 				} catch {
 					// If we can't fetch, assume still open
 					activeBlockers.push(depNum);
 				}
+			}
+
+			if (closedBlockers.length > 0) {
+				closedBlockerMap.set(issue.number, closedBlockers);
 			}
 
 			if (activeBlockers.length === 0) {
@@ -193,11 +200,13 @@ export class GitHubIssuesSource implements Source {
 		const issue = sorted[0];
 		if (!issue) return null;
 
+		const completedBlockerIds = closedBlockerMap.get(issue.number);
 		return {
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,
 			description: issue.body ?? "",
 			url: issue.html_url,
+			...(completedBlockerIds && { completedBlockerIds }),
 		};
 	}
 

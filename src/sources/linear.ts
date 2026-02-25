@@ -110,14 +110,25 @@ export class LinearSource implements Source {
 		if (issues.length === 0) return null;
 
 		// Separate unblocked from blocked issues based on dependency relations
-		const unblocked: typeof issues = [];
+		const unblocked: (typeof issues)[number][] = [];
 		const blocked: { identifier: string; blockers: string[] }[] = [];
+		// Track completed blocker IDs per issue for dependency resolution
+		const completedBlockerMap = new Map<string, string[]>();
 
 		for (const issue of issues) {
-			const activeBlockers = issue.inverseRelations.nodes
-				.filter((r) => r.type === "blocks")
+			const blockerRelations = issue.inverseRelations.nodes.filter((r) => r.type === "blocks");
+
+			const activeBlockers = blockerRelations
 				.filter((r) => r.issue.state.type !== "completed" && r.issue.state.type !== "canceled")
 				.map((r) => r.issue.identifier);
+
+			const completedBlockers = blockerRelations
+				.filter((r) => r.issue.state.type === "completed")
+				.map((r) => r.issue.identifier);
+
+			if (completedBlockers.length > 0) {
+				completedBlockerMap.set(issue.identifier, completedBlockers);
+			}
 
 			if (activeBlockers.length === 0) {
 				unblocked.push(issue);
@@ -145,11 +156,14 @@ export class LinearSource implements Source {
 
 		const issue = unblocked[0];
 		if (!issue) return null;
+
+		const completedBlockerIds = completedBlockerMap.get(issue.identifier);
 		return {
 			id: issue.identifier,
 			title: issue.title,
 			description: issue.description || "",
 			url: issue.url,
+			...(completedBlockerIds && { completedBlockerIds }),
 		};
 	}
 
