@@ -14,7 +14,8 @@ export type ProviderName =
 	| "copilot"
 	| "cursor"
 	| "goose"
-	| "aider";
+	| "aider"
+	| "codex";
 export type LogFormat = "text" | "json";
 export type WorkflowMode = "worktree" | "branch";
 

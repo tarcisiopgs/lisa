@@ -403,6 +403,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		cursor: "Cursor Agent",
 		goose: "Goose",
 		aider: "Aider",
+		codex: "OpenAI Codex",
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
@@ -412,6 +413,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		copilot: ["claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2"],
 		goose: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
 		aider: ["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"],
+		codex: ["gpt-5.1-codex-mini", "gpt-5.1-codex-max", "gpt-5.2-codex", "gpt-5.2", "gpt-5.3-codex"],
 		// cursor: populated dynamically below (fetchCursorModels)
 	};
 
@@ -426,6 +428,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 				`  ${pc.bold("Gemini CLI")}         ${pc.dim("npm i -g @google/gemini-cli")}\n` +
 				`  ${pc.bold("OpenCode")}           ${pc.dim("npm i -g opencode")}\n` +
 				`  ${pc.bold("GitHub Copilot CLI")} ${pc.dim("npm i -g @github/copilot-cli")}\n` +
+				`  ${pc.bold("OpenAI Codex")}       ${pc.dim("npm i -g @openai/codex")}\n` +
 				`  ${pc.bold("Goose")}              ${pc.dim("https://block.github.io/goose")}\n` +
 				`  ${pc.bold("Aider")}              ${pc.dim("pip install aider-chat")}`,
 		);

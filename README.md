@@ -82,6 +82,7 @@ Lisa follows a deterministic pipeline:
 | Cursor Agent | `cursor` | `agent` / `cursor-agent` |
 | Goose | `goose` | `goose` |
 | Aider | `aider` | `aider` |
+| OpenAI Codex | `codex` | `codex` |
 
 At least one provider must be installed and available in your PATH.
 
