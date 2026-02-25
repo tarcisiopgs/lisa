@@ -21,9 +21,9 @@ function hyperlink(url: string, text: string): string {
 }
 
 function logLineColor(line: string): string {
-	if (/error|Error|ERROR|✖/.test(line)) return "red";
-	if (/warning|Warning|WARNING|warn/.test(line)) return "yellow";
-	if (/✔|success|Success/.test(line)) return "green";
+	if (/\berror\b|✖/i.test(line)) return "red";
+	if (/\bwarn(ing)?\b/i.test(line)) return "yellow";
+	if (/✔|\bsuccess\b/i.test(line)) return "green";
 	return "white";
 }
 
