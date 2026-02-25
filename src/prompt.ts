@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { formatProjectContext, type ProjectContext } from "./context.js";
 import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
@@ -35,12 +36,13 @@ export function buildImplementPrompt(
 	config: LisaConfig,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	projectContext?: ProjectContext,
 ): string {
 	if (config.workflow === "worktree") {
-		return buildWorktreePrompt(issue, testRunner, pm, config.base_branch);
+		return buildWorktreePrompt(issue, testRunner, pm, config.base_branch, projectContext);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner, pm);
+	return buildBranchPrompt(issue, config, testRunner, pm, projectContext);
 }
 
 function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
@@ -98,10 +100,12 @@ function buildWorktreePrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
@@ -117,6 +121,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
+${contextBlock ? `\n${contextBlock}\n` : ""}
 
 ## Instructions
 
@@ -172,6 +177,7 @@ function buildBranchPrompt(
 	config: LisaConfig,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	projectContext?: ProjectContext,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -191,6 +197,7 @@ function buildBranchPrompt(
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -204,7 +211,7 @@ function buildBranchPrompt(
 ### Description
 
 ${issue.description}
-
+${contextBlock ? `\n${contextBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -266,10 +273,12 @@ export function buildNativeWorktreePrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const manifestLocation = repoPath
 		? `\`${join(repoPath, ".lisa-manifest.json")}\``
 		: "`.lisa-manifest.json` in the **current directory**";
@@ -288,6 +297,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
+${contextBlock ? `\n${contextBlock}\n` : ""}
 
 ## Instructions
 
@@ -410,10 +420,12 @@ export function buildScopedImplementPrompt(
 	pm?: PackageManager,
 	isLastStep = false,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 
 	const previousBlock =
 		previousResults.length > 0
@@ -438,7 +450,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-
+${contextBlock ? `\n${contextBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:

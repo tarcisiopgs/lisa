@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
 import { formatLabels, getRemoveLabel } from "./config.js";
+import { analyzeProject } from "./context.js";
 import { appendPrAttribution } from "./git/github.js";
 import {
 	createWorktree,
@@ -624,11 +625,19 @@ async function runNativeWorktreeSession(
 	const testRunner = detectTestRunner(repoPath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(repoPath);
+	const projectContext = analyzeProject(repoPath);
 
 	// Clean stale manifest from previous run
 	cleanupManifest(repoPath);
 
-	const prompt = buildNativeWorktreePrompt(issue, repoPath, testRunner, pm, _defaultBranch);
+	const prompt = buildNativeWorktreePrompt(
+		issue,
+		repoPath,
+		testRunner,
+		pm,
+		_defaultBranch,
+		projectContext,
+	);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
@@ -756,8 +765,9 @@ async function runManualWorktreeSession(
 		logger.log(`Detected test runner: ${testRunner}`);
 	}
 	const pm = detectPackageManager(worktreePath);
+	const projectContext = analyzeProject(worktreePath);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
@@ -985,6 +995,7 @@ async function runMultiRepoStep(
 	const testRunner = detectTestRunner(worktreePath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(worktreePath);
+	const projectContext = analyzeProject(worktreePath);
 
 	// Start lifecycle resources for this repo step
 	const repoConfig = config.repos.find((r) => resolve(config.workspace, r.path) === step.repoPath);
@@ -1008,6 +1019,7 @@ async function runMultiRepoStep(
 		pm,
 		isLastStep,
 		defaultBranch,
+		projectContext,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
@@ -1079,8 +1091,9 @@ async function runBranchSession(
 		logger.log(`Detected test runner: ${testRunner}`);
 	}
 	const pm = detectPackageManager(workspace);
+	const projectContext = analyzeProject(workspace);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext);
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
