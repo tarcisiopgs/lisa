@@ -192,16 +192,6 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 					))
 				)}
 			</Box>
-
-			{/* Footer */}
-			<Box justifyContent="space-between" borderStyle="single" borderColor="gray" paddingX={1}>
-				<Text color="gray" dimColor>
-					{"[↑↓] scroll"}
-				</Text>
-				<Text color="yellow" dimColor>
-					{"[Esc] back to board"}
-				</Text>
-			</Box>
 		</Box>
 	);
 }
