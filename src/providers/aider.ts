@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { getOutputMode } from "../output/logger.js";
 import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { spawnWithPty, stripAnsi } from "./pty.js";
 
 export class AiderProvider implements Provider {
 	name = "aider" as const;
@@ -28,25 +29,20 @@ export class AiderProvider implements Provider {
 
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const proc = spawn(
-				"sh",
-				["-c", `aider --message "$(cat '${promptFile}')" --yes-always ${modelFlag}`],
-				{
-					cwd: opts.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				},
-			);
+			const command = `aider --message "$(cat '${promptFile}')" --yes-always ${modelFlag}`;
+			const { proc, isPty } = spawnWithPty(command, { cwd: opts.cwd });
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 
 			const chunks: string[] = [];
 
-			proc.stdout.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stdout.write(text);
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
-					kanbanEmitter.emit("issue:output", opts.issueId, text);
+					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
 				try {
@@ -54,9 +50,10 @@ export class AiderProvider implements Provider {
 				} catch {}
 			});
 
-			proc.stderr.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stderr.write(text);
+			proc.stderr?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}
