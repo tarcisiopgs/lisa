@@ -8,7 +8,7 @@ import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
 import { configExists, findConfigDir, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
-import { ensureWorktreeGitignore } from "./git/worktree.js";
+import { ensureLogsGitignore, ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
 import { getAllProvidersWithAvailability } from "./providers/index.js";
@@ -729,6 +729,9 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	};
 
 	saveConfig(cfg);
+	if (ensureLogsGitignore(process.cwd())) {
+		clack.log.info("Added .lisa/logs/* to .gitignore");
+	}
 	clack.outro(
 		`${pc.green("All set!")} Config saved to ${pc.cyan(".lisa/config.yaml")}\n` +
 			`  Run ${pc.bold(pc.cyan("lisa run"))} to start resolving issues.`,

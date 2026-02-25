@@ -102,6 +102,34 @@ export function ensureWorktreeGitignore(repoRoot: string): void {
 	}
 }
 
+const LOGS_GITIGNORE_ENTRY = ".lisa/logs/*";
+
+/**
+ * Ensures `.lisa/logs/*` is present in `.gitignore`.
+ * Returns true if the file was updated, false if already present or not a git repo.
+ */
+export function ensureLogsGitignore(repoRoot: string): boolean {
+	if (!existsSync(join(repoRoot, ".git"))) {
+		return false;
+	}
+
+	const gitignorePath = join(repoRoot, ".gitignore");
+
+	if (!existsSync(gitignorePath)) {
+		appendFileSync(gitignorePath, `# Lisa\n${LOGS_GITIGNORE_ENTRY}\n`);
+		return true;
+	}
+
+	const content = readFileSync(gitignorePath, "utf-8");
+	if (content.split("\n").some((line) => line.trim() === LOGS_GITIGNORE_ENTRY)) {
+		return false;
+	}
+
+	const separator = content.endsWith("\n") ? "" : "\n";
+	appendFileSync(gitignorePath, `${separator}# Lisa\n${LOGS_GITIGNORE_ENTRY}\n`);
+	return true;
+}
+
 export async function findBranchByIssueId(
 	repoRoot: string,
 	issueId: string,
