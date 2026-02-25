@@ -21,6 +21,7 @@ interface BoardProps {
 	workComplete: { total: number; duration: number } | null;
 	activeColIndex?: number;
 	activeCardIndex?: number;
+	paused?: boolean;
 }
 
 export function Board({
@@ -30,6 +31,7 @@ export function Board({
 	workComplete,
 	activeColIndex = 0,
 	activeCardIndex = 0,
+	paused = false,
 }: BoardProps) {
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
@@ -87,18 +89,21 @@ export function Board({
 					cards={backlog}
 					isFocused={activeColIndex === 0}
 					activeCardIndex={activeColIndex === 0 ? activeCardIndex : 0}
+					paused={paused}
 				/>
 				<Column
 					label={labels.inProgress}
 					cards={inProgress}
 					isFocused={activeColIndex === 1}
 					activeCardIndex={activeColIndex === 1 ? activeCardIndex : 0}
+					paused={paused}
 				/>
 				<Column
 					label={labels.done}
 					cards={done}
 					isFocused={activeColIndex === 2}
 					activeCardIndex={activeColIndex === 2 ? activeCardIndex : 0}
+					paused={paused}
 				/>
 			</Box>
 		</Box>

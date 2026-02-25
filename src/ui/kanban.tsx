@@ -125,6 +125,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 					workComplete={workComplete}
 					activeColIndex={activeColIndex}
 					activeCardIndex={activeCardIndex}
+					paused={paused}
 				/>
 			) : (
 				<IssueDetail card={selectedCard} onBack={() => setActiveView("board")} />
