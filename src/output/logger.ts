@@ -2,12 +2,10 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import pc from "picocolors";
 
-export type OutputMode = "default" | "json" | "quiet" | "tui";
+export type OutputMode = "default" | "tui";
 
 let logFilePath: string | null = null;
 let outputMode: OutputMode = "default";
-
-const jsonEvents: Record<string, unknown>[] = [];
 
 export function setOutputMode(mode: OutputMode): void {
 	outputMode = mode;
@@ -18,11 +16,7 @@ export function getOutputMode(): OutputMode {
 }
 
 function shouldPrintToConsole(): boolean {
-	return outputMode !== "quiet" && outputMode !== "tui";
-}
-
-export function getJsonEvents(): Record<string, unknown>[] {
-	return jsonEvents;
+	return outputMode !== "tui";
 }
 
 export function initLogFile(path: string): void {
@@ -44,17 +38,7 @@ function writeToFile(level: string, message: string): void {
 	}
 }
 
-function emitJson(level: string, message: string): void {
-	const event = { time: timestamp(), level, message };
-	jsonEvents.push(event);
-	console.log(JSON.stringify(event));
-}
-
 export function log(message: string): void {
-	if (outputMode === "json") {
-		emitJson("info", message);
-		return;
-	}
 	if (shouldPrintToConsole()) {
 		console.log(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
@@ -62,10 +46,6 @@ export function log(message: string): void {
 }
 
 export function warn(message: string): void {
-	if (outputMode === "json") {
-		emitJson("warn", message);
-		return;
-	}
 	if (shouldPrintToConsole()) {
 		console.error(`${pc.yellow("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
@@ -73,10 +53,6 @@ export function warn(message: string): void {
 }
 
 export function error(message: string): void {
-	if (outputMode === "json") {
-		emitJson("error", message);
-		return;
-	}
 	if (shouldPrintToConsole()) {
 		console.error(`${pc.red("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
@@ -84,10 +60,6 @@ export function error(message: string): void {
 }
 
 export function ok(message: string): void {
-	if (outputMode === "json") {
-		emitJson("ok", message);
-		return;
-	}
 	if (shouldPrintToConsole()) {
 		console.log(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}

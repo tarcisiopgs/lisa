@@ -53,15 +53,11 @@ const run = defineCommand({
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 		github: { type: "string", description: "GitHub method: cli or token" },
-		json: { type: "boolean", description: "Output as JSON lines", default: false },
-		quiet: { type: "boolean", description: "Suppress non-essential output", default: false },
 	},
 	async run({ args }) {
-		const isTUI = process.stdout.isTTY && !args.json && !args.quiet;
+		const isTTY = !!process.stdout.isTTY;
 
-		if (args.json) setOutputMode("json");
-		else if (args.quiet) setOutputMode("quiet");
-		else if (isTUI) setOutputMode("tui");
+		setOutputMode(isTTY ? "tui" : "default");
 
 		banner(); // no-op in tui mode since outputMode !== "default"
 
@@ -91,7 +87,7 @@ const run = defineCommand({
 			process.exit(1);
 		}
 
-		if (isTUI) {
+		if (isTTY) {
 			const { render } = await import("ink");
 			const { createElement } = await import("react");
 			const { KanbanApp } = await import("./ui/kanban.js");
