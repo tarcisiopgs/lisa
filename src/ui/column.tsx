@@ -9,8 +9,8 @@ interface ColumnProps {
 	activeCardIndex?: number;
 }
 
-// Each card: border (2) + content rows (3) + marginBottom (0) = 5 rows total
-const CARD_HEIGHT = 5;
+// Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + status row (1) = 6 rows total
+const CARD_HEIGHT = 6;
 const HEADER_ROWS = 4; // column header band + spacing
 
 export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }: ColumnProps) {
