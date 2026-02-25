@@ -18,6 +18,7 @@ export function Sidebar({ provider, source, cwd, activeView, paused = false }: S
 		<Box
 			flexDirection="column"
 			width={28}
+			flexShrink={0}
 			borderStyle="single"
 			borderColor="yellow"
 			paddingX={1}
