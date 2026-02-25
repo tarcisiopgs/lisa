@@ -6,10 +6,12 @@ interface SidebarProps {
 	provider: string;
 	source: string;
 	cwd: string;
+	activeView: "board" | "detail";
+	paused?: boolean;
 }
 
-export function Sidebar({ provider, source, cwd }: SidebarProps) {
-	const dir = basename(cwd);
+export function Sidebar({ provider, source, cwd, activeView, paused = false }: SidebarProps) {
+	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
 
 	return (
@@ -42,9 +44,9 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 
 			{/* Status indicator */}
 			<Box marginBottom={1}>
-				<Text color="green">{"▶ "}</Text>
-				<Text color="green" bold>
-					RUNNING
+				<Text color={paused ? "yellow" : "green"}>{paused ? "⏸ " : "▶ "}</Text>
+				<Text color={paused ? "yellow" : "green"} bold>
+					{paused ? "PAUSED" : "RUNNING"}
 				</Text>
 			</Box>
 
@@ -92,12 +94,22 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 			<Box flexGrow={1} />
 
 			<Text color="yellow">{"────────────────────────"}</Text>
-			<Box marginTop={1} flexDirection="column">
-				<Text dimColor>{"[Tab]  next column"}</Text>
-				<Text dimColor>{"[↑↓]  navigate    "}</Text>
-				<Text dimColor>{"[↵]   view detail "}</Text>
-				<Text dimColor>{"[q]   quit        "}</Text>
-			</Box>
+
+			{/* Dynamic legend */}
+			{activeView === "board" ? (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[Tab]  next column"}</Text>
+					<Text dimColor>{"[↑↓]  navigate    "}</Text>
+					<Text dimColor>{"[↵]   view detail "}</Text>
+					<Text dimColor>{paused ? "[p]   resume      " : "[p]   pause       "}</Text>
+					<Text dimColor>{"[q]   quit        "}</Text>
+				</Box>
+			) : (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[↑↓]  scroll      "}</Text>
+					<Text dimColor>{"[Esc] back to board"}</Text>
+				</Box>
+			)}
 		</Box>
 	);
 }

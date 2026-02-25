@@ -18,6 +18,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
+	const [paused, setPaused] = useState(false);
 
 	// Listen for clean-exit signal from the loop's SIGINT cleanup
 	useEffect(() => {
@@ -55,6 +56,13 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 		if (activeView === "detail") {
 			if (key.escape) setActiveView("board");
+			return;
+		}
+
+		if (input === "p") {
+			const next = !paused;
+			setPaused(next);
+			kanbanEmitter.emit(next ? "loop:pause" : "loop:resume");
 			return;
 		}
 
@@ -102,7 +110,13 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
-			<Sidebar provider={config.provider} source={config.source} cwd={process.cwd()} />
+			<Sidebar
+				provider={config.provider}
+				source={config.source}
+				cwd={process.cwd()}
+				activeView={activeView}
+				paused={paused}
+			/>
 			{activeView === "board" || !selectedCard ? (
 				<Board
 					cards={cards}

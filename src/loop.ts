@@ -41,6 +41,14 @@ import { kanbanEmitter } from "./ui/state.js";
 let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;
 let activeProviderPid: number | null = null;
 let shuttingDown = false;
+let loopPaused = false;
+
+kanbanEmitter.on("loop:pause", () => {
+	loopPaused = true;
+});
+kanbanEmitter.on("loop:resume", () => {
+	loopPaused = false;
+});
 
 export interface LoopOptions {
 	once: boolean;
@@ -259,6 +267,9 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		const logFile = resolve(config.logs.dir, `session_${session}_${timestamp}.log`);
 
 		logger.divider(session);
+
+		// Wait if the user has paused the loop from the TUI
+		await waitIfPaused();
 
 		// 1. Fetch issue — either by ID or from queue
 		startSpinner("fetching issue...");
@@ -1148,4 +1159,10 @@ async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitIfPaused(): Promise<void> {
+	while (loopPaused) {
+		await sleep(500);
+	}
 }
