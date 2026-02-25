@@ -104,6 +104,7 @@ export interface RunOptions {
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
 	onProcess?: (pid: number) => void; // called when the provider spawns its child process
+	shouldAbort?: () => boolean; // checked between fallback attempts to stop the chain early
 }
 
 export interface RunResult {
