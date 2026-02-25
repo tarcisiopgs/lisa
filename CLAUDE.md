@@ -60,7 +60,7 @@ src/
 │   ├── overseer.ts   # Stuck-provider detection via periodic git status checks
 │   └── guardrails.ts # Failed-session log: reads/writes .lisa/guardrails.md
 ├── output/           # Logging and terminal output
-│   ├── logger.ts     # Logging (console + file, supports text/json/quiet)
+│   ├── logger.ts     # Logging (console + file, supports default/tui modes)
 │   └── terminal.ts   # Terminal title (OSC), spinner, bell notification
 ├── providers/        # AI agent implementations (spawn child processes)
 │   ├── index.ts      # Provider factory, runWithFallback(), fallback eligibility

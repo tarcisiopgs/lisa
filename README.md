@@ -156,8 +156,6 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --source NAME` | Override issue source |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (`cli` or `token`) |
-| `lisa run --json` | Output as JSON lines |
-| `lisa run --quiet` | Suppress non-essential output |
 | `lisa init` | Create `.lisa/config.yaml` interactively |
 | `lisa config` | Edit config interactively |
 | `lisa config --show` | Print current config as JSON |
@@ -234,7 +232,6 @@ loop:
 
 logs:
   dir: .lisa/logs
-  format: text       # "text" or "json"
 
 # Optional — kill stuck providers
 overseer:
