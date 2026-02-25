@@ -98,6 +98,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	cursor: "Cursor Agent",
 	goose: "Goose",
 	aider: "Aider",
+	codex: "OpenAI Codex",
 };
 
 function formatProviderName(providerUsed: string): string {

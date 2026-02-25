@@ -61,7 +61,16 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	if (!config.models || config.models.length === 0) {
 		return [{ provider: config.provider }];
 	}
-	const knownProviders = new Set<string>(["claude", "gemini", "opencode", "copilot", "cursor"]);
+	const knownProviders = new Set<string>([
+		"claude",
+		"gemini",
+		"opencode",
+		"copilot",
+		"cursor",
+		"goose",
+		"aider",
+		"codex",
+	]);
 	for (const m of config.models) {
 		if (knownProviders.has(m) && m !== config.provider) {
 			logger.warn(

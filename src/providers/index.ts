@@ -14,6 +14,7 @@ import type {
 } from "../types/index.js";
 import { AiderProvider } from "./aider.js";
 import { ClaudeProvider } from "./claude.js";
+import { CodexProvider } from "./codex.js";
 import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
 import { GeminiProvider } from "./gemini.js";
@@ -28,6 +29,7 @@ const providers: Record<ProviderName, () => Provider> = {
 	cursor: () => new CursorProvider(),
 	goose: () => new GooseProvider(),
 	aider: () => new AiderProvider(),
+	codex: () => new CodexProvider(),
 };
 
 export async function getAvailableProviders(): Promise<Provider[]> {
