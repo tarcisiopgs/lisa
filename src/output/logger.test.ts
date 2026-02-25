@@ -49,11 +49,12 @@ describe("setOutputMode", () => {
 
 	it("prints to console in default mode", () => {
 		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-		logger.log("test message");
-
-		expect(consoleSpy).toHaveBeenCalled();
-		consoleSpy.mockRestore();
+		try {
+			logger.log("test message");
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 });
 
@@ -75,9 +76,12 @@ describe("tui output mode", () => {
 		logger.setOutputMode("tui");
 
 		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-		logger.log("hello from tui");
-		expect(consoleSpy).not.toHaveBeenCalled();
-		consoleSpy.mockRestore();
+		try {
+			logger.log("hello from tui");
+			expect(consoleSpy).not.toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
 
 		const content = readFileSync(logPath, "utf-8");
 		expect(content).toContain("hello from tui");
