@@ -33,12 +33,14 @@ import {
 	isCompleteProviderExhaustion,
 	runWithFallback,
 } from "./providers/index.js";
+import { discoverLifecycle } from "./session/discovery.js";
 import { migrateGuardrails } from "./session/guardrails.js";
 import { startResources, stopResources } from "./session/lifecycle.js";
 import { createSource } from "./sources/index.js";
 import type {
 	ExecutionPlan,
 	FallbackResult,
+	LifecycleConfig,
 	LisaConfig,
 	ModelSpec,
 	PlanStep,
@@ -648,6 +650,11 @@ function findRepoConfig(
 	return config.repos[0];
 }
 
+function resolveLifecycle(repo: RepoConfig | undefined, cwd: string): LifecycleConfig | null {
+	if (repo?.lifecycle) return repo.lifecycle;
+	return discoverLifecycle(cwd);
+}
+
 async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<string | null> {
 	try {
 		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
@@ -720,9 +727,11 @@ async function runNativeWorktreeSession(
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
-	if (repo?.lifecycle) {
+	const lifecycle = resolveLifecycle(repo, repoPath);
+	if (lifecycle) {
+		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(repo, repoPath);
+		const started = await startResources(effectiveRepo, repoPath);
 		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
@@ -774,7 +783,7 @@ async function runNativeWorktreeSession(
 		);
 	} catch {}
 
-	if (repo?.lifecycle) await stopResources();
+	if (lifecycle) await stopResources();
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
@@ -847,9 +856,11 @@ async function runManualWorktreeSession(
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
-	if (repo?.lifecycle) {
+	const lifecycle = resolveLifecycle(repo, worktreePath);
+	if (lifecycle) {
+		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(repo, worktreePath);
+		const started = await startResources(effectiveRepo, worktreePath);
 		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
@@ -906,7 +917,7 @@ async function runManualWorktreeSession(
 	}
 
 	// Stop lifecycle resources after implementation
-	if (repo?.lifecycle) {
+	if (lifecycle) {
 		await stopResources();
 	}
 
@@ -1110,9 +1121,11 @@ async function runMultiRepoStep(
 
 	// Start lifecycle resources for this repo step
 	const repoConfig = config.repos.find((r) => resolve(config.workspace, r.path) === step.repoPath);
-	if (repoConfig?.lifecycle) {
+	const lifecycle = resolveLifecycle(repoConfig, worktreePath);
+	if (lifecycle) {
+		const effectiveRepo = { ...repoConfig, lifecycle } as RepoConfig;
 		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
-		const started = await startResources(repoConfig, worktreePath);
+		const started = await startResources(effectiveRepo, worktreePath);
 		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for step ${stepNum}. Aborting.`);
@@ -1150,7 +1163,7 @@ async function runMultiRepoStep(
 	stopSpinner();
 
 	// Stop lifecycle resources after implementation
-	if (repoConfig?.lifecycle) await stopResources();
+	if (lifecycle) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1211,10 +1224,12 @@ async function runBranchSession(
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
-	if (repo?.lifecycle) {
+	const lifecycleCwd = repo ? resolve(workspace, repo.path) : workspace;
+	const lifecycle = resolveLifecycle(repo, lifecycleCwd);
+	if (lifecycle) {
+		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const cwd = resolve(workspace, repo.path);
-		const started = await startResources(repo, cwd);
+		const started = await startResources(effectiveRepo, lifecycleCwd);
 		stopSpinner();
 		if (!started) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
@@ -1260,7 +1275,7 @@ async function runBranchSession(
 	}
 
 	// Stop lifecycle resources after implementation
-	if (repo?.lifecycle) {
+	if (lifecycle) {
 		await stopResources();
 	}
 
