@@ -40,7 +40,15 @@ function wrapTitle(title: string, maxWidth: number): [string, string] {
 	return [line1, line2];
 }
 
-export function Card({ card, isSelected = false }: { card: KanbanCard; isSelected?: boolean }) {
+export function Card({
+	card,
+	isSelected = false,
+	paused = false,
+}: {
+	card: KanbanCard;
+	isSelected?: boolean;
+	paused?: boolean;
+}) {
 	const [now, setNow] = useState(Date.now());
 
 	useEffect(() => {
@@ -79,13 +87,17 @@ export function Card({ card, isSelected = false }: { card: KanbanCard; isSelecte
 	const CARD_TITLE_WIDTH = 28;
 	const [titleLine1, titleLine2] = wrapTitle(card.title, CARD_TITLE_WIDTH);
 
+	const isPausedInProgress = paused && card.column === "in_progress";
+
 	return (
 		<Box
 			flexDirection="row"
 			paddingX={0}
 			marginBottom={0}
 			borderStyle="single"
-			borderColor={card.hasError ? "red" : isSelected ? "yellow" : "gray"}
+			borderColor={
+				card.hasError ? "red" : isPausedInProgress ? "gray" : isSelected ? "yellow" : "gray"
+			}
 		>
 			{/* Selection bar */}
 			<Text color={selectionColor}>{selectionBar}</Text>
@@ -111,10 +123,17 @@ export function Card({ card, isSelected = false }: { card: KanbanCard; isSelecte
 				{/* Timer / completion / error row */}
 				{card.column === "in_progress" && card.startedAt !== undefined && (
 					<Box flexDirection="row" marginTop={0}>
-						<Text color="yellow">
-							<Spinner type="dots" />
+						{isPausedInProgress ? (
+							<Text color="gray">{"⏸"}</Text>
+						) : (
+							<Text color="yellow">
+								<Spinner type="dots" />
+							</Text>
+						)}
+						<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
+							{" "}
+							{formatElapsed(now - card.startedAt)}
 						</Text>
-						<Text color="yellow"> {formatElapsed(now - card.startedAt)}</Text>
 					</Box>
 				)}
 				{card.column === "done" &&

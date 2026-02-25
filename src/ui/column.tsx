@@ -7,13 +7,20 @@ interface ColumnProps {
 	cards: KanbanCard[];
 	isFocused?: boolean;
 	activeCardIndex?: number;
+	paused?: boolean;
 }
 
 // Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + status row (1) = 6 rows total
 const CARD_HEIGHT = 6;
 const HEADER_ROWS = 4; // column header band + spacing
 
-export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }: ColumnProps) {
+export function Column({
+	label,
+	cards,
+	isFocused = false,
+	activeCardIndex = 0,
+	paused = false,
+}: ColumnProps) {
 	const terminalRows = process.stdout.rows ?? 24;
 	const visibleCount = Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
 
@@ -75,7 +82,7 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 			{visibleCards.map((card, idx) => {
 				const absoluteIdx = scrollOffset + idx;
 				const isSelected = isFocused && absoluteIdx === activeCardIndex;
-				return <Card key={card.id} card={card} isSelected={isSelected} />;
+				return <Card key={card.id} card={card} isSelected={isSelected} paused={paused} />;
 			})}
 
 			{/* Empty state */}
