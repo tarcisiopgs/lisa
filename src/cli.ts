@@ -295,16 +295,22 @@ const issue = defineCommand({
 	subCommands: { get: issueGet, done: issueDone },
 });
 
-// Fallback used when `agent --list-models` is unavailable
-const CURSOR_MODELS_FALLBACK = [
+// Curated list of Cursor models shown on paid plans — top-tier only, no quality-suffix variants
+const CURSOR_PREFERRED_MODELS = [
 	"auto",
 	"composer-1.5",
-	"opus-4.6-thinking",
-	"opus-4.6",
-	"sonnet-4.6",
+	"composer-1",
 	"gpt-5.3-codex",
 	"gpt-5.2",
+	"gpt-5.1-codex-max",
+	"opus-4.6-thinking",
+	"opus-4.6",
+	"sonnet-4.6-thinking",
+	"sonnet-4.6",
 	"gemini-3.1-pro",
+	"gemini-3-pro",
+	"grok",
+	"kimi-k2.5",
 ];
 
 function fetchCursorModels(): string[] {
@@ -317,20 +323,22 @@ function fetchCursorModels(): string[] {
 				return false;
 			}
 		});
-		if (!bin) return CURSOR_MODELS_FALLBACK;
+		if (!bin) return CURSOR_PREFERRED_MODELS;
 		const raw = execSync(`${bin} --list-models`, { encoding: "utf-8", timeout: 10000 });
 		// Strip ANSI escape codes, parse "model-id - Display Name" lines
 		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
 		const clean = raw.replace(/\x1b\[[0-9;]*[mGKHFA-Z]/g, "");
-		const models = clean
+		const all = clean
 			.split("\n")
 			.map((l) => l.trim())
 			.filter((l) => l.includes(" - "))
 			.map((l) => (l.split(" - ")[0] ?? "").trim())
 			.filter(Boolean);
-		return models.length > 0 ? models : CURSOR_MODELS_FALLBACK;
+		// Filter to curated list, preserving preferred order
+		const filtered = CURSOR_PREFERRED_MODELS.filter((m) => all.includes(m));
+		return filtered.length > 0 ? filtered : CURSOR_PREFERRED_MODELS;
 	} catch {
-		return CURSOR_MODELS_FALLBACK;
+		return CURSOR_PREFERRED_MODELS;
 	}
 }
 
