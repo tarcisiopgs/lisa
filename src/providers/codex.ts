@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { getOutputMode } from "../output/logger.js";
 import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { spawnWithPty, stripAnsi } from "./pty.js";
 
 export class CodexProvider implements Provider {
 	name = "codex" as const;
@@ -28,11 +29,10 @@ export class CodexProvider implements Provider {
 
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const cmd = `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag} "$(cat '${promptFile}')"`;
+			const command = `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag} "$(cat '${promptFile}')"`;
 
-			const proc = spawn("sh", ["-c", cmd], {
+			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
 				env: { ...process.env, CODEX_QUIET_MODE: "1" },
 			});
 
@@ -41,11 +41,12 @@ export class CodexProvider implements Provider {
 
 			const chunks: string[] = [];
 
-			proc.stdout.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stdout.write(text);
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
-					kanbanEmitter.emit("issue:output", opts.issueId, text);
+					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
 				try {
@@ -53,9 +54,10 @@ export class CodexProvider implements Provider {
 				} catch {}
 			});
 
-			proc.stderr.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stderr.write(text);
+			proc.stderr?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}
