@@ -1,6 +1,6 @@
 node_modules/
 dist/
-.lisa/logs/
+.lisa/
 *.log
 .DS_Store
 package-lock.json
@@ -9,7 +9,6 @@ pnpm-lock.yaml
 .worktrees
 .env
 .env.*
-.lisa/config.yaml
 
 # Docs
 docs/
