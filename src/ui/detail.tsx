@@ -27,6 +27,11 @@ function logLineColor(line: string): string {
 	return "white";
 }
 
+function scrollBar(pct: number, width = 8): string {
+	const filled = Math.round((pct / 100) * width);
+	return "▓".repeat(filled) + "░".repeat(width - filled);
+}
+
 function statusLabel(column: string, hasError?: boolean): { text: string; color: string } {
 	if (hasError) return { text: "FAILED", color: "red" };
 	if (column === "in_progress") return { text: "IN PROGRESS", color: "yellow" };
@@ -103,8 +108,8 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 
 	// Scroll position indicator
 	const totalLines = lines.length;
-	const scrollPct =
-		totalLines <= bodyRows ? "100%" : `${Math.round(((startLine + bodyRows) / totalLines) * 100)}%`;
+	const scrollPctNum =
+		totalLines <= bodyRows ? 100 : Math.round(((startLine + bodyRows) / totalLines) * 100);
 
 	return (
 		<Box
@@ -175,7 +180,11 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				<Text color="gray" dimColor>
 					{"PROVIDER OUTPUT"}
 				</Text>
-				{userScrolled && <Text color="yellow" dimColor>{`scroll ${scrollPct}`}</Text>}
+				{userScrolled && (
+					<Text color="yellow" dimColor>
+						{scrollBar(scrollPctNum)}
+					</Text>
+				)}
 				{!userScrolled && totalLines > bodyRows && (
 					<Text color="gray" dimColor>
 						{"auto-scroll"}
