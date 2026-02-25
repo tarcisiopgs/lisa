@@ -14,7 +14,13 @@ interface ColumnProps {
 const CARD_HEIGHT = 6;
 const HEADER_ROWS = 4; // column header band + spacing
 
-export function Column({ label, cards, isFocused = false, activeCardIndex = 0, paused = false }: ColumnProps) {
+export function Column({
+	label,
+	cards,
+	isFocused = false,
+	activeCardIndex = 0,
+	paused = false,
+}: ColumnProps) {
 	const terminalRows = process.stdout.rows ?? 24;
 	const visibleCount = Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
 

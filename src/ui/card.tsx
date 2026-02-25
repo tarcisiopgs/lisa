@@ -44,7 +44,11 @@ export function Card({
 	card,
 	isSelected = false,
 	paused = false,
-}: { card: KanbanCard; isSelected?: boolean; paused?: boolean }) {
+}: {
+	card: KanbanCard;
+	isSelected?: boolean;
+	paused?: boolean;
+}) {
 	const [now, setNow] = useState(Date.now());
 
 	useEffect(() => {
@@ -91,7 +95,9 @@ export function Card({
 			paddingX={0}
 			marginBottom={0}
 			borderStyle="single"
-			borderColor={card.hasError ? "red" : isPausedInProgress ? "gray" : isSelected ? "yellow" : "gray"}
+			borderColor={
+				card.hasError ? "red" : isPausedInProgress ? "gray" : isSelected ? "yellow" : "gray"
+			}
 		>
 			{/* Selection bar */}
 			<Text color={selectionColor}>{selectionBar}</Text>

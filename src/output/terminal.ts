@@ -1,5 +1,3 @@
-import { getOutputMode } from "./logger.js";
-
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
 

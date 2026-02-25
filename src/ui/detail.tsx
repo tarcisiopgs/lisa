@@ -180,7 +180,11 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				<Text color="gray" dimColor>
 					{"PROVIDER OUTPUT"}
 				</Text>
-				{userScrolled && <Text color="yellow" dimColor>{scrollBar(scrollPctNum)}</Text>}
+				{userScrolled && (
+					<Text color="yellow" dimColor>
+						{scrollBar(scrollPctNum)}
+					</Text>
+				)}
 				{!userScrolled && totalLines > bodyRows && (
 					<Text color="gray" dimColor>
 						{"auto-scroll"}
