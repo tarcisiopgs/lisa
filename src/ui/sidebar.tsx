@@ -99,7 +99,7 @@ export function Sidebar({ provider, source, cwd, activeView, paused = false }: S
 			{/* Dynamic legend */}
 			{activeView === "board" ? (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{"[Tab]  next column"}</Text>
+					<Text dimColor>{"[←→]  columns     "}</Text>
 					<Text dimColor>{"[↑↓]  navigate    "}</Text>
 					<Text dimColor>{"[↵]   view detail "}</Text>
 					<Text dimColor>{paused ? "[p]   resume      " : "[p]   pause       "}</Text>

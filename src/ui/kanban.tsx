@@ -90,7 +90,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 			return;
 		}
 
-		if (key.tab && !key.shift) {
+		if (key.rightArrow) {
 			const nextCol = (activeColIndex + 1) % 3;
 			setActiveColIndex(nextCol);
 			const colLen = columnCards[nextCol]?.length ?? 0;
@@ -98,7 +98,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 			return;
 		}
 
-		if (key.tab && key.shift) {
+		if (key.leftArrow) {
 			const prevCol = (activeColIndex + 2) % 3;
 			setActiveColIndex(prevCol);
 			const colLen = columnCards[prevCol]?.length ?? 0;
