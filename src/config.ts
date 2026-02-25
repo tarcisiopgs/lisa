@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import type {
 	LisaConfig,
-	LogFormat,
 	OverseerConfig,
 	ProviderName,
 	SourceConfig,
@@ -38,10 +37,6 @@ const DEFAULT_CONFIG: LisaConfig = {
 	loop: {
 		cooldown: 0,
 		max_sessions: 0,
-	},
-	logs: {
-		dir: "",
-		format: "" as LogFormat,
 	},
 	overseer: { ...DEFAULT_OVERSEER_CONFIG },
 };
@@ -121,12 +116,14 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		sourceConfig.team = rawSource.project as string;
 	}
 
+	// Strip legacy `logs` field from parsed YAML (moved to system cache)
+	const { logs: _ignoredLogs, ...parsedWithoutLogs } = parsed as Record<string, unknown>;
+
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
-		...(parsed as Partial<LisaConfig>),
+		...(parsedWithoutLogs as Partial<LisaConfig>),
 		source_config: sourceConfig,
 		loop: { ...DEFAULT_CONFIG.loop, ...((parsed.loop ?? {}) as LisaConfig["loop"]) },
-		logs: { ...DEFAULT_CONFIG.logs, ...((parsed.logs ?? {}) as LisaConfig["logs"]) },
 		overseer: {
 			...DEFAULT_OVERSEER_CONFIG,
 			...((parsed.overseer ?? {}) as Partial<OverseerConfig>),

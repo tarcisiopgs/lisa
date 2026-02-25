@@ -179,7 +179,6 @@ describe("saveConfig", () => {
 			base_branch: "main",
 			repos: [],
 			loop: { cooldown: 0, max_sessions: 0 },
-			logs: { dir: "/logs", format: "text" },
 		};
 
 		saveConfig(config, tmpDir);
@@ -207,7 +206,6 @@ describe("saveConfig", () => {
 			base_branch: "main",
 			repos: [],
 			loop: { cooldown: 0, max_sessions: 0 },
-			logs: { dir: "/logs", format: "text" },
 		};
 
 		saveConfig(config, tmpDir);
@@ -236,7 +234,6 @@ describe("mergeWithFlags", () => {
 		base_branch: "main",
 		repos: [],
 		loop: { cooldown: 0, max_sessions: 0 },
-		logs: { dir: "/logs", format: "text" },
 	};
 
 	it("overrides provider when flag is set", () => {
@@ -360,7 +357,6 @@ describe("saveConfig multi-label", () => {
 			base_branch: "main",
 			repos: [],
 			loop: { cooldown: 0, max_sessions: 0 },
-			logs: { dir: "/logs", format: "text" },
 		};
 
 		saveConfig(config, tmpDir);
@@ -387,7 +383,6 @@ describe("saveConfig multi-label", () => {
 			base_branch: "main",
 			repos: [],
 			loop: { cooldown: 0, max_sessions: 0 },
-			logs: { dir: "/logs", format: "text" },
 		};
 
 		saveConfig(config, tmpDir);
@@ -415,7 +410,6 @@ describe("mergeWithFlags multi-label", () => {
 		base_branch: "main",
 		repos: [],
 		loop: { cooldown: 0, max_sessions: 0 },
-		logs: { dir: "/logs", format: "text" },
 	};
 
 	it("splits comma-separated label flag into array", () => {

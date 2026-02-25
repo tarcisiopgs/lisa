@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { execa } from "execa";
 import { formatLabels, getRemoveLabel } from "./config.js";
 import { analyzeProject } from "./context.js";
@@ -12,6 +12,13 @@ import {
 } from "./git/worktree.js";
 import * as logger from "./output/logger.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./output/terminal.js";
+import {
+	ensureCacheDir,
+	getLogsDir,
+	getManifestPath,
+	getPlanPath,
+	rotateLogFiles,
+} from "./paths.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -26,6 +33,7 @@ import {
 	isCompleteProviderExhaustion,
 	runWithFallback,
 } from "./providers/index.js";
+import { migrateGuardrails } from "./session/guardrails.js";
 import { startResources, stopResources } from "./session/lifecycle.js";
 import { createSource } from "./sources/index.js";
 import type {
@@ -100,10 +108,8 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	}));
 }
 
-const PLAN_FILE = ".lisa-plan.json";
-
-function readLisaPlan(dir: string): ExecutionPlan | null {
-	const planPath = join(dir, PLAN_FILE);
+function readLisaPlan(cwd: string): ExecutionPlan | null {
+	const planPath = getPlanPath(cwd);
 	if (!existsSync(planPath)) return null;
 	try {
 		return JSON.parse(readFileSync(planPath, "utf-8").trim()) as ExecutionPlan;
@@ -112,13 +118,11 @@ function readLisaPlan(dir: string): ExecutionPlan | null {
 	}
 }
 
-function cleanupPlan(dir: string): void {
+function cleanupPlan(cwd: string): void {
 	try {
-		unlinkSync(join(dir, PLAN_FILE));
+		unlinkSync(getPlanPath(cwd));
 	} catch {}
 }
-
-const MANIFEST_FILE = ".lisa-manifest.json";
 
 interface LisaManifest {
 	repoPath?: string;
@@ -126,8 +130,8 @@ interface LisaManifest {
 	prUrl?: string;
 }
 
-function readLisaManifest(dir: string): LisaManifest | null {
-	const manifestPath = join(dir, MANIFEST_FILE);
+function readLisaManifest(cwd: string): LisaManifest | null {
+	const manifestPath = getManifestPath(cwd);
 	if (!existsSync(manifestPath)) return null;
 	try {
 		return JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
@@ -136,12 +140,10 @@ function readLisaManifest(dir: string): LisaManifest | null {
 	}
 }
 
-function cleanupManifest(dir: string): void {
+function cleanupManifest(cwd: string): void {
 	try {
-		unlinkSync(join(dir, MANIFEST_FILE));
-	} catch {
-		// File may not exist — ignore
-	}
+		unlinkSync(getManifestPath(cwd));
+	} catch {}
 }
 
 function installSignalHandlers(): void {
@@ -238,8 +240,14 @@ async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<
 export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<void> {
 	const source = createSource(config.source);
 	const models = resolveModels(config);
+	const workspace = resolve(config.workspace);
 
 	installSignalHandlers();
+
+	// Prepare system cache directory and migrate legacy artifacts
+	ensureCacheDir(workspace);
+	migrateGuardrails(workspace);
+	rotateLogFiles(workspace);
 
 	logger.log(
 		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow})`,
@@ -275,7 +283,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
-		const logFile = resolve(config.logs.dir, `session_${session}_${timestamp}.log`);
+		const logFile = resolve(getLogsDir(workspace), `session_${session}_${timestamp}.log`);
 
 		logger.divider(session);
 
@@ -627,8 +635,10 @@ async function runNativeWorktreeSession(
 	const pm = detectPackageManager(repoPath);
 	const projectContext = analyzeProject(repoPath);
 
+	const workspace = resolve(config.workspace);
+
 	// Clean stale manifest from previous run
-	cleanupManifest(repoPath);
+	cleanupManifest(workspace);
 
 	const prompt = buildNativeWorktreePrompt(
 		issue,
@@ -637,6 +647,7 @@ async function runNativeWorktreeSession(
 		pm,
 		_defaultBranch,
 		projectContext,
+		getManifestPath(workspace),
 	);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
@@ -645,7 +656,7 @@ async function runNativeWorktreeSession(
 	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: repoPath,
-		guardrailsDir: repoPath,
+		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
 		useNativeWorktree: true,
@@ -666,17 +677,15 @@ async function runNativeWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		cleanupManifest(repoPath);
+		cleanupManifest(workspace);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	const manifest = readLisaManifest(repoPath);
-	cleanupManifest(repoPath);
+	const manifest = readLisaManifest(workspace);
+	cleanupManifest(workspace);
 
 	if (!manifest?.prUrl) {
-		logger.error(
-			`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}. Aborting.`,
-		);
+		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
 		const worktreePath = manifest?.branch
 			? await findWorktreeForBranch(repoPath, manifest.branch)
 			: null;
@@ -767,6 +776,7 @@ async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
+	const workspace = resolve(config.workspace);
 	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
@@ -775,7 +785,7 @@ async function runManualWorktreeSession(
 	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: worktreePath,
-		guardrailsDir: repoPath,
+		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
@@ -804,14 +814,12 @@ async function runManualWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Read manifest written by agent
-	const manifest = readLisaManifest(worktreePath);
-	cleanupManifest(worktreePath);
+	// Read manifest from cache
+	const manifest = readLisaManifest(workspace);
+	cleanupManifest(workspace);
 
 	if (!manifest?.prUrl) {
-		logger.error(
-			`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}. Aborting.`,
-		);
+		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
@@ -881,7 +889,7 @@ async function runWorktreeMultiRepoSession(
 	// Read execution plan
 	const plan = readLisaPlan(workspace);
 	if (!plan?.steps || plan.steps.length === 0) {
-		logger.error(`Agent did not produce a valid .lisa-plan.json for ${issue.id}. Aborting.`);
+		logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
 		cleanupPlan(workspace);
 		return {
 			success: false,
@@ -1011,6 +1019,7 @@ async function runMultiRepoStep(
 	}
 
 	// Run scoped implementation
+	const workspace = resolve(config.workspace);
 	const prompt = buildScopedImplementPrompt(
 		issue,
 		step,
@@ -1020,13 +1029,14 @@ async function runMultiRepoStep(
 		isLastStep,
 		defaultBranch,
 		projectContext,
+		getManifestPath(workspace),
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: worktreePath,
-		guardrailsDir: repoPath,
+		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
@@ -1051,11 +1061,11 @@ async function runMultiRepoStep(
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
 
-	const manifest = readLisaManifest(worktreePath);
-	cleanupManifest(worktreePath);
+	const manifest = readLisaManifest(workspace);
+	cleanupManifest(workspace);
 
 	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a .lisa-manifest.json with prUrl for step ${stepNum}.`);
+		logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
@@ -1158,7 +1168,7 @@ async function runBranchSession(
 	cleanupManifest(workspace);
 
 	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a .lisa-manifest.json with prUrl for ${issue.id}.`);
+		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
