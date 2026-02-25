@@ -19,6 +19,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const [activeColIndex, setActiveColIndex] = useState(0);
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 	const [paused, setPaused] = useState(false);
+	const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
 	// Listen for clean-exit signal from the loop's SIGINT cleanup
 	useEffect(() => {
@@ -47,6 +48,26 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const done = cards.filter((c) => c.column === "done");
 	const columnCards = [backlog, inProgress, done];
 
+	// When the selected card changes column, sync the kanban cursor to its new position
+	useEffect(() => {
+		if (!selectedCardId || activeView !== "detail") return;
+		const card = cards.find((c) => c.id === selectedCardId);
+		if (!card) return;
+		const colIndexMap: Record<"backlog" | "in_progress" | "done", number> = {
+			backlog: 0,
+			in_progress: 1,
+			done: 2,
+		};
+		const newColIndex = colIndexMap[card.column];
+		const colCards = cards.filter((c) => c.column === card.column);
+		const newCardIndex = Math.max(
+			0,
+			colCards.findIndex((c) => c.id === selectedCardId),
+		);
+		setActiveColIndex(newColIndex);
+		setActiveCardIndex(newCardIndex);
+	}, [cards, selectedCardId, activeView]);
+
 	useInput((input, key) => {
 		if (input === "q") {
 			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
@@ -55,7 +76,10 @@ export function KanbanApp({ config }: KanbanAppProps) {
 		}
 
 		if (activeView === "detail") {
-			if (key.escape) setActiveView("board");
+			if (key.escape) {
+				setActiveView("board");
+				setSelectedCardId(null);
+			}
 			return;
 		}
 
@@ -94,8 +118,11 @@ export function KanbanApp({ config }: KanbanAppProps) {
 		}
 
 		if (key.return) {
-			const colLen = columnCards[activeColIndex]?.length ?? 0;
-			if (colLen > 0) setActiveView("detail");
+			const card = columnCards[activeColIndex]?.[activeCardIndex];
+			if (card) {
+				setSelectedCardId(card.id);
+				setActiveView("detail");
+			}
 		}
 	});
 
@@ -106,7 +133,9 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	};
 
 	const selectedCard =
-		activeView === "detail" ? (columnCards[activeColIndex]?.[activeCardIndex] ?? null) : null;
+		activeView === "detail" && selectedCardId
+			? (cards.find((c) => c.id === selectedCardId) ?? null)
+			: null;
 
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
@@ -128,7 +157,13 @@ export function KanbanApp({ config }: KanbanAppProps) {
 					paused={paused}
 				/>
 			) : (
-				<IssueDetail card={selectedCard} onBack={() => setActiveView("board")} />
+				<IssueDetail
+					card={selectedCard}
+					onBack={() => {
+						setActiveView("board");
+						setSelectedCardId(null);
+					}}
+				/>
 			)}
 		</Box>
 	);
