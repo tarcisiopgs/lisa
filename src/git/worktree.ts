@@ -103,10 +103,12 @@ export function ensureWorktreeGitignore(repoRoot: string): void {
 }
 
 const LOGS_GITIGNORE_ENTRY = ".lisa/logs/*";
+const LOGS_PARENT_PATTERNS = [".lisa/", ".lisa", ".lisa/*", LOGS_GITIGNORE_ENTRY];
 
 /**
  * Ensures `.lisa/logs/*` is present in `.gitignore`.
  * Returns true if the file was updated, false if already present or not a git repo.
+ * Skips appending when a broader pattern (e.g. `.lisa/`) already covers it.
  */
 export function ensureLogsGitignore(repoRoot: string): boolean {
 	if (!existsSync(join(repoRoot, ".git"))) {
@@ -121,7 +123,9 @@ export function ensureLogsGitignore(repoRoot: string): boolean {
 	}
 
 	const content = readFileSync(gitignorePath, "utf-8");
-	if (content.split("\n").some((line) => line.trim() === LOGS_GITIGNORE_ENTRY)) {
+	const lines = content.split("\n").map((line) => line.trim());
+
+	if (LOGS_PARENT_PATTERNS.some((pattern) => lines.includes(pattern))) {
 		return false;
 	}
 
