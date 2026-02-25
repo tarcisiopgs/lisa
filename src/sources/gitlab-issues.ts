@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const DEFAULT_BASE_URL = "https://gitlab.com";
@@ -58,6 +59,13 @@ interface GitLabIssue {
 	web_url: string;
 	labels: string[];
 	created_at: string;
+	state: string;
+}
+
+interface GitLabIssueLink {
+	source: { iid: number; state: string };
+	target: { iid: number; state: string };
+	link_type: string;
 }
 
 function priorityRank(labels: string[]): number {
@@ -94,8 +102,49 @@ export class GitLabIssuesSource implements Source {
 		const issues = await gitlabGet<GitLabIssue[]>(path);
 		if (issues.length === 0) return null;
 
+		// Check blocking relations for each issue
+		const unblocked: GitLabIssue[] = [];
+		const blocked: { iid: number; blockers: number[] }[] = [];
+
+		for (const issue of issues) {
+			const links = await gitlabGet<GitLabIssueLink[]>(
+				`/projects/${project}/issues/${issue.iid}/links`,
+			);
+
+			const activeBlockers = links
+				.filter((link) => {
+					// "is_blocked_by": this issue is the target, the source blocks it
+					if (link.link_type === "is_blocked_by") {
+						return link.source.state !== "closed";
+					}
+					// "blocks": this issue is the source, the target is blocking it
+					// (when fetched from this issue's perspective, "blocks" means the *other* issue blocks this one
+					// only if this issue is the target)
+					return false;
+				})
+				.map((link) => link.source.iid);
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ iid: issue.iid, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.iid} — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority labels (p1/p2/p3) first, then by created_at ascending
-		const sorted = [...issues].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.labels);
 			const pb = priorityRank(b.labels);
 			if (pa !== pb) return pa - pb;

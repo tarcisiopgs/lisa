@@ -9,7 +9,7 @@ function makeProject(overrides: Partial<{ id: string; name: string; identifier: 
 	return { id: "project-uuid-1", name: "My Project", identifier: "DEV", ...overrides };
 }
 
-function makeState(overrides: Partial<{ id: string; name: string }> = {}) {
+function makeState(overrides: Partial<{ id: string; name: string; group: string }> = {}) {
 	return {
 		id: "state-uuid-1",
 		name: "Todo",
@@ -170,6 +170,12 @@ describe("PlaneSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("fetchNextIssue", () => {
+		// Helper: common states including a "completed" state for blocking checks
+		const allStates = [
+			makeState({ id: "state-uuid-1", name: "Todo" }),
+			makeState({ id: "state-done", name: "Done", group: "completed" }),
+		];
+
 		it("returns null when no matching issues found", async () => {
 			global.fetch = mockFetchSequence([
 				ok(makePage([makeProject()])), // resolveProject
@@ -200,6 +206,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1", name: "Fix bug" })])),
+				ok(allStates), // fetchAll states for blocking check
+				ok([]), // fetch relations for issue
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -222,6 +230,10 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage(issues)),
+				ok(allStates),
+				ok([]), // relations for id-low
+				ok([]), // relations for id-urgent
+				ok([]), // relations for id-medium
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -239,6 +251,9 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage(issues)),
+				ok(allStates),
+				ok([]), // relations for id-none
+				ok([]), // relations for id-low
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -251,10 +266,88 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ description_stripped: null })])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.description).toBe("");
+		});
+
+		it("skips blocked issues and returns unblocked one", async () => {
+			const issues = [
+				makeIssue({ id: "blocked-id", name: "Blocked issue" }),
+				makeIssue({ id: "unblocked-id", name: "Unblocked issue" }),
+			];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "blocked-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-uuid-1" })), // blocker not in done state
+				ok([]), // relations for unblocked-id
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const issues = [makeIssue({ id: "blocked-id", name: "Blocked issue" })];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "blocked-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-uuid-1" })),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("ignores blockers in completed state", async () => {
+			const issues = [makeIssue({ id: "issue-id", name: "Issue with done blocker" })];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "issue-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-done" })), // blocker in done state
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Issue with done blocker");
 		});
 
 		it("throws when PLANE_API_TOKEN is not set", async () => {
@@ -308,6 +401,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue()])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(configByName);
@@ -322,6 +417,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue()])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(configByUuid);
@@ -698,12 +795,19 @@ describe("PlaneSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("app URL", () => {
+		const allStates = [
+			makeState({ id: "state-uuid-1", name: "Todo" }),
+			makeState({ id: "state-done", name: "Done", group: "completed" }),
+		];
+
 		it("uses app.plane.so for default cloud API URL", async () => {
 			global.fetch = mockFetchSequence([
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1" })])),
+				ok(allStates),
+				ok([]),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -718,6 +822,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1" })])),
+				ok(allStates),
+				ok([]),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
