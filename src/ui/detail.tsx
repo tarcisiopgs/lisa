@@ -16,6 +16,10 @@ interface IssueDetailProps {
 	onBack: () => void;
 }
 
+function hyperlink(url: string, text: string): string {
+	return `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
+}
+
 function logLineColor(line: string): string {
 	if (/error|Error|ERROR|✖/.test(line)) return "red";
 	if (/warning|Warning|WARNING|warn/.test(line)) return "yellow";
@@ -155,7 +159,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 					<Text color="yellow" dimColor>
 						{"PR: "}
 					</Text>
-					<Text color="yellow">{card.prUrl}</Text>
+					<Text color="yellow">{hyperlink(card.prUrl, card.prUrl)}</Text>
 				</Box>
 			)}
 
