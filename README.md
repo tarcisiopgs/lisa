@@ -85,6 +85,8 @@ Lisa follows a deterministic pipeline:
 
 At least one provider must be installed and available in your PATH.
 
+> **Cursor Free plan** — `lisa init` automatically detects Free accounts and restricts model selection to `auto` only. On paid plans, a curated list of top-tier models is shown (`composer-1.5`, `opus-4.6`, `sonnet-4.6`, `gpt-5.3-codex`, etc.).
+
 ### Fallback Chain
 
 Configure multiple models — Lisa tries each in order. Transient errors (429, quota, timeout, network) trigger the next model; non-transient errors stop the chain.
@@ -183,12 +185,13 @@ When running in an interactive terminal, `lisa run` renders a real-time Kanban b
 |-----|--------|
 | `Tab` | Move to next column |
 | `Shift+Tab` | Move to previous column |
-| `↑` / `↓` | Navigate cards within a column |
+| `↑` / `↓` | Navigate cards / scroll output |
 | `Enter` | Open issue detail view (streams provider output) |
 | `Esc` | Close detail view, return to board |
+| `p` | Pause / resume — loop finishes the current issue then waits |
 | `q` | Quit |
 
-The terminal tab title also updates in real time: it shows a spinner with the active issue ID while work is in progress, and a checkmark when done.
+The sidebar legend updates contextually: board shortcuts when browsing the Kanban, scroll and back hints when viewing issue detail. The terminal tab title also updates in real time: it shows a spinner with the active issue ID while work is in progress, and a checkmark when done.
 
 ## Configuration
 
