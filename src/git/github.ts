@@ -1,5 +1,6 @@
 import { execa } from "execa";
 import type { GitHubMethod } from "../types/index.js";
+import { stripProviderAttribution } from "./pr-body.js";
 
 const API_URL = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -112,7 +113,7 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 		const { body } = JSON.parse(bodyJson) as { body: string };
 		const providerName = formatProviderName(providerUsed);
 		const attribution = `\n\n---\n🤖 Resolved by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerName}**`;
-		const newBody = (body ?? "") + attribution;
+		const newBody = stripProviderAttribution(body ?? "") + attribution;
 		await execa("gh", ["pr", "edit", prUrl, "--body", newBody]);
 	} catch {
 		// Non-fatal — PR body update is best-effort
