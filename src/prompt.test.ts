@@ -40,7 +40,6 @@ function makeConfig(overrides?: Partial<LisaConfig>): LisaConfig {
 		base_branch: "main",
 		repos: [],
 		loop: { cooldown: 0, max_sessions: 0 },
-		logs: { dir: "/tmp/logs", format: "text" },
 		...overrides,
 	};
 }
@@ -241,12 +240,20 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).toContain(".lisa-manifest.json");
 	});
 
-	it("writes manifest to repoPath when provided", () => {
-		const prompt = buildNativeWorktreePrompt(makeIssue(), "/tmp/my-repo");
-		expect(prompt).toContain("/tmp/my-repo/.lisa-manifest.json");
+	it("writes manifest to manifestPath when provided", () => {
+		const prompt = buildNativeWorktreePrompt(
+			makeIssue(),
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"/tmp/cache/manifest.json",
+		);
+		expect(prompt).toContain("/tmp/cache/manifest.json");
 	});
 
-	it("writes manifest to current directory when repoPath not provided", () => {
+	it("writes manifest to current directory when manifestPath not provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
 		expect(prompt).toContain("in the **current directory**");
 	});
@@ -302,9 +309,9 @@ describe("buildPlanningPrompt", () => {
 		expect(prompt).toContain("Do NOT implement anything");
 	});
 
-	it("mentions .lisa-plan.json", () => {
+	it("mentions plan file path", () => {
 		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
-		expect(prompt).toContain(".lisa-plan.json");
+		expect(prompt).toContain("plan.json");
 	});
 
 	it("describes JSON structure with steps", () => {

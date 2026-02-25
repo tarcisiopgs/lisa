@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { formatProjectContext, type ProjectContext } from "./context.js";
+import { getManifestPath, getPlanPath } from "./paths.js";
 import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
@@ -38,11 +39,21 @@ export function buildImplementPrompt(
 	pm?: PackageManager,
 	projectContext?: ProjectContext,
 ): string {
+	const workspace = resolve(config.workspace);
+	const manifestPath = getManifestPath(workspace);
+
 	if (config.workflow === "worktree") {
-		return buildWorktreePrompt(issue, testRunner, pm, config.base_branch, projectContext);
+		return buildWorktreePrompt(
+			issue,
+			testRunner,
+			pm,
+			config.base_branch,
+			projectContext,
+			manifestPath,
+		);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner, pm, projectContext);
+	return buildBranchPrompt(issue, config, testRunner, pm, projectContext, manifestPath);
 }
 
 function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
@@ -101,11 +112,15 @@ function buildWorktreePrompt(
 	pm?: PackageManager,
 	baseBranch?: string,
 	projectContext?: ProjectContext,
+	manifestPath?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const manifestLocation = manifestPath
+		? `\`${manifestPath}\``
+		: "`.lisa-manifest.json` in the **current directory**";
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
@@ -156,7 +171,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
    Wait 1 second before calling this command.
 
-7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+7. **Write manifest**: Create ${manifestLocation} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
@@ -178,6 +193,7 @@ function buildBranchPrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	projectContext?: ProjectContext,
+	manifestPath?: string,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -198,7 +214,7 @@ function buildBranchPrompt(
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
-	const manifestPath = join(workspace, ".lisa-manifest.json");
+	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 
@@ -250,7 +266,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
    Wait 1 second before calling this command.
 
-8. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
+8. **Write manifest**: Before finishing, create \`${resolvedManifestPath}\` with JSON:
    \`\`\`json
    {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
@@ -269,18 +285,19 @@ ${testBlock}${readmeBlock}${hookBlock}
 
 export function buildNativeWorktreePrompt(
 	issue: Issue,
-	repoPath?: string,
+	_repoPath?: string,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
 	projectContext?: ProjectContext,
+	manifestPath?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
-	const manifestLocation = repoPath
-		? `\`${join(repoPath, ".lisa-manifest.json")}\``
+	const manifestLocation = manifestPath
+		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -357,7 +374,7 @@ export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
 		})
 		.join("\n");
 
-	const planPath = join(workspace, ".lisa-plan.json");
+	const planPath = getPlanPath(workspace);
 
 	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
 
@@ -421,6 +438,7 @@ export function buildScopedImplementPrompt(
 	isLastStep = false,
 	baseBranch?: string,
 	projectContext?: ProjectContext,
+	manifestPath?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const readmeBlock = buildReadmeInstructions();
@@ -486,7 +504,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
    Capture the PR URL from the output.
 ${trackerStep}
-7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa-manifest.json` in the **current directory**"} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`

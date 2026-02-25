@@ -16,9 +16,10 @@ import {
 	saveConfig,
 } from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
-import { ensureLogsGitignore, ensureWorktreeGitignore } from "./git/worktree.js";
+import { ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
+import { getLogsDir } from "./paths.js";
 import { getAllProvidersWithAvailability } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import type {
@@ -177,12 +178,12 @@ const status = defineCommand({
 		console.log(`  Pick from:   ${pc.bold(config.source_config.pick_from)}`);
 		console.log(`  In progress: ${pc.bold(config.source_config.in_progress)}`);
 		console.log(`  Done:        ${pc.bold(config.source_config.done)}`);
-		console.log(`  Logs:        ${pc.dim(config.logs.dir)}`);
+		const logsDir = getLogsDir(process.cwd());
+		console.log(`  Logs:        ${pc.dim(logsDir)}`);
 
 		// Count log files
-		const { readdirSync, existsSync } = await import("node:fs");
-		if (existsSync(config.logs.dir)) {
-			const logs = readdirSync(config.logs.dir).filter((f: string) => f.endsWith(".log"));
+		if (existsSync(logsDir)) {
+			const logs = readdirSync(logsDir).filter((f: string) => f.endsWith(".log"));
 			console.log(`\n${pc.cyan("Sessions:")} ${logs.length} log file(s) found`);
 		} else {
 			console.log(`\n${pc.dim("No sessions yet.")}`);
@@ -759,13 +760,9 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		base_branch: baseBranch,
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
-		logs: { dir: ".lisa/logs", format: "text" },
 	};
 
 	saveConfig(cfg);
-	if (ensureLogsGitignore(process.cwd())) {
-		clack.log.info("Added .lisa/logs/* to .gitignore");
-	}
 	clack.outro(
 		`${pc.green("All set!")} Config saved to ${pc.cyan(".lisa/config.yaml")}\n` +
 			`  Run ${pc.bold(pc.cyan("lisa run"))} to start resolving issues.`,

@@ -2,12 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getGuardrailsPath } from "../paths.js";
 import {
 	appendEntry,
 	buildGuardrailsSection,
 	extractContext,
 	extractErrorType,
 	guardrailsPath,
+	migrateGuardrails,
 	readGuardrails,
 } from "./guardrails.js";
 
@@ -22,8 +24,44 @@ afterEach(() => {
 });
 
 describe("guardrailsPath", () => {
-	it("returns the correct path", () => {
-		expect(guardrailsPath("/project")).toBe("/project/.lisa/guardrails.md");
+	it("returns the cache path", () => {
+		const path = guardrailsPath("/project");
+		expect(path).toBe(getGuardrailsPath("/project"));
+		expect(path).toContain("guardrails.md");
+		expect(path).not.toContain(".lisa/guardrails.md");
+	});
+});
+
+describe("migrateGuardrails", () => {
+	it("copies legacy .lisa/guardrails.md to cache", () => {
+		const legacyDir = join(tmpDir, ".lisa");
+		mkdirSync(legacyDir, { recursive: true });
+		writeFileSync(join(legacyDir, "guardrails.md"), "# Legacy content");
+
+		migrateGuardrails(tmpDir);
+
+		const cachePath = getGuardrailsPath(tmpDir);
+		expect(existsSync(cachePath)).toBe(true);
+		expect(readFileSync(cachePath, "utf-8")).toBe("# Legacy content");
+	});
+
+	it("does not overwrite existing cache file", () => {
+		const legacyDir = join(tmpDir, ".lisa");
+		mkdirSync(legacyDir, { recursive: true });
+		writeFileSync(join(legacyDir, "guardrails.md"), "# Legacy content");
+
+		const cachePath = getGuardrailsPath(tmpDir);
+		mkdirSync(join(cachePath, ".."), { recursive: true });
+		writeFileSync(cachePath, "# Already migrated");
+
+		migrateGuardrails(tmpDir);
+
+		expect(readFileSync(cachePath, "utf-8")).toBe("# Already migrated");
+	});
+
+	it("does nothing when no legacy file exists", () => {
+		migrateGuardrails(tmpDir);
+		expect(existsSync(getGuardrailsPath(tmpDir))).toBe(false);
 	});
 });
 
@@ -33,9 +71,9 @@ describe("readGuardrails", () => {
 	});
 
 	it("returns file content when file exists", () => {
-		const lisaDir = join(tmpDir, ".lisa");
-		mkdirSync(lisaDir, { recursive: true });
-		writeFileSync(guardrailsPath(tmpDir), "# Guardrails\n\ncontent here");
+		const cachePath = guardrailsPath(tmpDir);
+		mkdirSync(join(cachePath, ".."), { recursive: true });
+		writeFileSync(cachePath, "# Guardrails\n\ncontent here");
 		expect(readGuardrails(tmpDir)).toBe("# Guardrails\n\ncontent here");
 	});
 

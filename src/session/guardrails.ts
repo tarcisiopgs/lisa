@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { getGuardrailsPath } from "../paths.js";
 
-const GUARDRAILS_FILE = ".lisa/guardrails.md";
+const LEGACY_GUARDRAILS_FILE = ".lisa/guardrails.md";
 const MAX_ENTRIES = 20;
 const CONTEXT_LINES = 20;
 
@@ -13,12 +14,30 @@ export interface GuardrailEntry {
 	context: string;
 }
 
-export function guardrailsPath(dir: string): string {
-	return join(dir, GUARDRAILS_FILE);
+export function guardrailsPath(cwd: string): string {
+	return getGuardrailsPath(cwd);
 }
 
-export function readGuardrails(dir: string): string {
-	const path = guardrailsPath(dir);
+/**
+ * Migrates legacy .lisa/guardrails.md to the cache directory if it exists.
+ */
+export function migrateGuardrails(cwd: string): void {
+	const legacyPath = join(cwd, LEGACY_GUARDRAILS_FILE);
+	if (!existsSync(legacyPath)) return;
+
+	const cachePath = getGuardrailsPath(cwd);
+	if (existsSync(cachePath)) return;
+
+	const cacheDir = dirname(cachePath);
+	if (!existsSync(cacheDir)) {
+		mkdirSync(cacheDir, { recursive: true });
+	}
+
+	copyFileSync(legacyPath, cachePath);
+}
+
+export function readGuardrails(cwd: string): string {
+	const path = getGuardrailsPath(cwd);
 	if (!existsSync(path)) return "";
 	try {
 		return readFileSync(path, "utf-8");
@@ -27,8 +46,8 @@ export function readGuardrails(dir: string): string {
 	}
 }
 
-export function buildGuardrailsSection(dir: string): string {
-	const content = readGuardrails(dir);
+export function buildGuardrailsSection(cwd: string): string {
+	const content = readGuardrails(cwd);
 	if (!content.trim()) return "";
 	return `\n## Guardrails — Avoid these known pitfalls\n\n${content}\n`;
 }

@@ -16,7 +16,6 @@ export type ProviderName =
 	| "goose"
 	| "aider"
 	| "codex";
-export type LogFormat = "text" | "json";
 export type WorkflowMode = "worktree" | "branch";
 
 export interface ResourceConfig {
@@ -62,11 +61,6 @@ export interface OverseerConfig {
 	stuck_threshold: number;
 }
 
-export interface LogsConfig {
-	dir: string;
-	format: LogFormat;
-}
-
 export interface LisaConfig {
 	provider: ProviderName;
 	models?: string[];
@@ -78,7 +72,6 @@ export interface LisaConfig {
 	base_branch: string;
 	repos: RepoConfig[];
 	loop: LoopConfig;
-	logs: LogsConfig;
 	overseer?: OverseerConfig;
 }
 
