@@ -209,13 +209,16 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.team;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelId = await resolveLabelId(workspaceSlug, projectId, config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
+		);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
 		);
 
-		const matching = data.results.filter((i) => i.label_ids.includes(labelId));
+		const matching = data.results.filter((i) => labelIds.every((lid) => i.label_ids.includes(lid)));
 		if (matching.length === 0) return null;
 
 		// Sort by priority: urgent=1 < high=2 < medium=3 < low=4 < none=5
@@ -281,14 +284,17 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.team;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelId = await resolveLabelId(workspaceSlug, projectId, config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
+		);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
 		);
 
 		return data.results
-			.filter((i) => i.label_ids.includes(labelId))
+			.filter((i) => labelIds.every((lid) => i.label_ids.includes(lid)))
 			.map((i) => {
 				const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${i.id}`;
 				return {

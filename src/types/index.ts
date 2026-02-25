@@ -44,7 +44,8 @@ export interface RepoConfig {
 export interface SourceConfig {
 	team: string;
 	project: string;
-	label: string;
+	label: string | string[];
+	remove_label?: string;
 	pick_from: string;
 	in_progress: string;
 	done: string;

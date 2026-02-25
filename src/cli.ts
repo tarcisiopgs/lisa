@@ -6,7 +6,15 @@ import { join, resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import pc from "picocolors";
-import { configExists, findConfigDir, loadConfig, mergeWithFlags, saveConfig } from "./config.js";
+import {
+	configExists,
+	findConfigDir,
+	formatLabels,
+	getRemoveLabel,
+	loadConfig,
+	mergeWithFlags,
+	saveConfig,
+} from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
 import { ensureLogsGitignore, ensureWorktreeGitignore } from "./git/worktree.js";
 import { runLoop } from "./loop.js";
@@ -161,7 +169,7 @@ const status = defineCommand({
 		console.log(`  Provider:    ${pc.bold(config.provider)}`);
 		console.log(`  Source:      ${pc.bold(config.source)}`);
 		console.log(`  Workflow:    ${pc.bold(config.workflow)}`);
-		console.log(`  Label:       ${pc.bold(config.source_config.label)}`);
+		console.log(`  Label:       ${pc.bold(formatLabels(config.source_config))}`);
 		console.log(`  ${isLinear ? "Team" : "Board"}:       ${pc.bold(config.source_config.team)}`);
 		if (isLinear) {
 			console.log(`  Project:     ${pc.bold(config.source_config.project)}`);
@@ -276,7 +284,11 @@ const issueDone = defineCommand({
 		const source = createSource(config.source);
 		try {
 			await source.attachPullRequest(args.id, args["pr-url"]);
-			await source.completeIssue(args.id, config.source_config.done, config.source_config.label);
+			await source.completeIssue(
+				args.id,
+				config.source_config.done,
+				getRemoveLabel(config.source_config),
+			);
 			console.log(JSON.stringify({ success: true, issueId: args.id, prUrl: args["pr-url"] }));
 		} catch (err) {
 			console.error(
@@ -576,13 +588,34 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
 	const team = teamAnswer as string;
 
+	const existingLabelStr = existing
+		? Array.isArray(existing.source_config.label)
+			? existing.source_config.label.join(", ")
+			: existing.source_config.label
+		: "";
 	const labelAnswer = await clack.text({
-		message: "Which label marks issues as ready for the agent to pick up?",
-		initialValue: existing?.source_config.label ?? "ready",
-		placeholder: "e.g. ready, ai, lisa",
+		message: "Which label(s) mark issues as ready? (comma-separated for multiple, e.g. ready,api)",
+		initialValue: existingLabelStr || "ready",
+		placeholder: "e.g. ready  or  ready, api",
 	});
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
-	const label = labelAnswer as string;
+	const labelParts = (labelAnswer as string)
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	const label: string | string[] = labelParts.length === 1 ? (labelParts[0] as string) : labelParts;
+
+	let removeLabel: string | undefined;
+	if (Array.isArray(label) && label.length > 1) {
+		const removeLabelAnswer = await clack.text({
+			message:
+				"Which label should be removed when an issue is completed? (required for multi-label)",
+			initialValue: existing?.source_config.remove_label ?? label[0] ?? "",
+			placeholder: `e.g. ${label[0]}`,
+		});
+		if (clack.isCancel(removeLabelAnswer)) return process.exit(0);
+		removeLabel = (removeLabelAnswer as string) || undefined;
+	}
 
 	let project: string;
 	let pickFrom: string;
@@ -715,6 +748,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			team,
 			project,
 			label,
+			...(removeLabel ? { remove_label: removeLabel } : {}),
 			pick_from: pickFrom,
 			in_progress: inProgress,
 			done,

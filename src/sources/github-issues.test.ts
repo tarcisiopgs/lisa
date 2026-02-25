@@ -158,6 +158,23 @@ describe("GitHubIssuesSource", () => {
 			expect(result?.title).toBe("Older issue");
 		});
 
+		it("passes multiple labels as comma-separated in URL", async () => {
+			let capturedUrl: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				capturedUrl = url;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => [],
+					text: async () => "[]",
+				});
+			});
+
+			await source.fetchNextIssue({ ...baseConfig, label: ["ready", "api"] });
+
+			expect(capturedUrl).toContain("labels=ready,api");
+		});
+
 		it("includes priority label sort URL params", async () => {
 			let capturedUrl: string | undefined;
 			global.fetch = vi.fn().mockImplementation((url: string) => {

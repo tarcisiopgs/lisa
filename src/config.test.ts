@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	configExists,
 	findConfigDir,
+	formatLabels,
 	getConfigPath,
+	getLabelsArray,
+	getRemoveLabel,
 	loadConfig,
 	mergeWithFlags,
 	saveConfig,
 } from "./config.js";
-import type { LisaConfig } from "./types/index.js";
+import type { LisaConfig, SourceConfig } from "./types/index.js";
 
 describe("getConfigPath", () => {
 	it("returns .lisa/config.yaml path relative to cwd", () => {
@@ -265,6 +268,279 @@ describe("mergeWithFlags", () => {
 		const merged = mergeWithFlags(baseConfig, {});
 		expect(merged.provider).toBe("claude");
 		expect(merged.source).toBe("linear");
+	});
+});
+
+describe("loadConfig multi-label", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("loads label as array when YAML contains a list", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+source: linear
+source_config:
+  team: MyTeam
+  project: MyProject
+  label:
+    - ready
+    - api
+  remove_label: ready
+  pick_from: Todo
+  in_progress: In Progress
+  done: Done
+`,
+		);
+
+		const config = loadConfig(tmpDir);
+		expect(config.source_config.label).toEqual(["ready", "api"]);
+		expect(config.source_config.remove_label).toBe("ready");
+	});
+
+	it("loads label as string when YAML contains a scalar", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+source: linear
+source_config:
+  team: MyTeam
+  project: MyProject
+  label: ready
+  pick_from: Todo
+  in_progress: In Progress
+  done: Done
+`,
+		);
+
+		const config = loadConfig(tmpDir);
+		expect(config.source_config.label).toBe("ready");
+		expect(config.source_config.remove_label).toBeUndefined();
+	});
+});
+
+describe("saveConfig multi-label", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("saves remove_label when set", () => {
+		const config: LisaConfig = {
+			provider: "claude",
+			source: "linear",
+			source_config: {
+				team: "MyTeam",
+				project: "MyProject",
+				label: ["ready", "api"],
+				remove_label: "ready",
+				pick_from: "Todo",
+				in_progress: "In Progress",
+				done: "Done",
+			},
+			github: "cli",
+			workflow: "worktree",
+			workspace: "/workspace",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 0 },
+			logs: { dir: "/logs", format: "text" },
+		};
+
+		saveConfig(config, tmpDir);
+
+		const content = readFileSync(join(tmpDir, ".lisa", "config.yaml"), "utf-8");
+		expect(content).toContain("remove_label: ready");
+	});
+
+	it("omits remove_label when not set", () => {
+		const config: LisaConfig = {
+			provider: "claude",
+			source: "linear",
+			source_config: {
+				team: "MyTeam",
+				project: "MyProject",
+				label: "ready",
+				pick_from: "Todo",
+				in_progress: "In Progress",
+				done: "Done",
+			},
+			github: "cli",
+			workflow: "worktree",
+			workspace: "/workspace",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 0 },
+			logs: { dir: "/logs", format: "text" },
+		};
+
+		saveConfig(config, tmpDir);
+
+		const content = readFileSync(join(tmpDir, ".lisa", "config.yaml"), "utf-8");
+		expect(content).not.toContain("remove_label");
+	});
+});
+
+describe("mergeWithFlags multi-label", () => {
+	const baseConfig: LisaConfig = {
+		provider: "claude",
+		source: "linear",
+		source_config: {
+			team: "Team",
+			project: "Project",
+			label: "lisa",
+			pick_from: "Todo",
+			in_progress: "In Progress",
+			done: "Done",
+		},
+		github: "cli",
+		workflow: "worktree",
+		workspace: "/workspace",
+		base_branch: "main",
+		repos: [],
+		loop: { cooldown: 0, max_sessions: 0 },
+		logs: { dir: "/logs", format: "text" },
+	};
+
+	it("splits comma-separated label flag into array", () => {
+		const merged = mergeWithFlags(baseConfig, { label: "ready, api" });
+		expect(merged.source_config.label).toEqual(["ready", "api"]);
+	});
+
+	it("keeps single label as string", () => {
+		const merged = mergeWithFlags(baseConfig, { label: "ready" });
+		expect(merged.source_config.label).toBe("ready");
+	});
+});
+
+describe("getRemoveLabel", () => {
+	it("returns remove_label when set", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: ["ready", "api"],
+			remove_label: "ready",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getRemoveLabel(sc)).toBe("ready");
+	});
+
+	it("returns single string label when remove_label is not set", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getRemoveLabel(sc)).toBe("ready");
+	});
+
+	it("returns undefined for array label without remove_label", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: ["ready", "api"],
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getRemoveLabel(sc)).toBeUndefined();
+	});
+});
+
+describe("getLabelsArray", () => {
+	it("returns array as-is", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: ["ready", "api"],
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getLabelsArray(sc)).toEqual(["ready", "api"]);
+	});
+
+	it("wraps single string in array", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getLabelsArray(sc)).toEqual(["ready"]);
+	});
+
+	it("returns empty array for empty string", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: "",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(getLabelsArray(sc)).toEqual([]);
+	});
+});
+
+describe("formatLabels", () => {
+	it("formats array labels as comma-separated", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: ["ready", "api"],
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(formatLabels(sc)).toBe("ready, api");
+	});
+
+	it("formats single string label", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(formatLabels(sc)).toBe("ready");
+	});
+
+	it("returns (none) for empty label", () => {
+		const sc: SourceConfig = {
+			team: "",
+			project: "",
+			label: "",
+			pick_from: "",
+			in_progress: "",
+			done: "",
+		};
+		expect(formatLabels(sc)).toBe("(none)");
 	});
 });
 

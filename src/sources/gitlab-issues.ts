@@ -87,7 +87,8 @@ export class GitLabIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const project = parseGitLabProject(config.team);
-		const label = encodeURIComponent(config.label);
+		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);
@@ -165,7 +166,8 @@ export class GitLabIssuesSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const project = parseGitLabProject(config.team);
-		const label = encodeURIComponent(config.label);
+		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);

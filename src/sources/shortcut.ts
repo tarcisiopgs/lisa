@@ -133,12 +133,13 @@ export class ShortcutSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelId = await resolveLabelId(config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
-		// Search for stories in the given workflow states with the given label
+		// Search for stories in the given workflow states with the given labels (AND)
 		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
 			workflow_state_ids: stateIds,
-			label_ids: [labelId],
+			label_ids: labelIds,
 			archived: false,
 		});
 
@@ -201,11 +202,12 @@ export class ShortcutSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelId = await resolveLabelId(config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
 		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
 			workflow_state_ids: stateIds,
-			label_ids: [labelId],
+			label_ids: labelIds,
 			archived: false,
 		});
 
