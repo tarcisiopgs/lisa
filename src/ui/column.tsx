@@ -10,8 +10,8 @@ interface ColumnProps {
 	paused?: boolean;
 }
 
-// Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + status row (1) = 6 rows total
-const CARD_HEIGHT = 6;
+// Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + output line (1) + status row (1) = 7 rows total
+const CARD_HEIGHT = 7;
 const HEADER_ROWS = 4; // column header band + spacing
 
 export function Column({
