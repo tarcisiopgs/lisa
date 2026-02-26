@@ -136,8 +136,8 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 		elapsedDisplay = formatElapsed(card.finishedAt - card.startedAt);
 	}
 
-	// sidebar width (28) + detail border (2) + detail padding (2) = 32
-	const SIDEBAR_TOTAL_WIDTH = 28;
+	// sidebar width (28) + sidebar border (2) = 30
+	const SIDEBAR_TOTAL_WIDTH = 30; // 28 (width) + 2 (borderStyle="single")
 
 	// Decorative separator: ╠═══...═══╣ — memoized, only recomputed on terminal resize
 	const separator = useMemo(() => {
