@@ -12,7 +12,14 @@ interface ColumnProps {
 
 // Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + output line (1) + status row (1) = 7 rows total
 const CARD_HEIGHT = 7;
-const HEADER_ROWS = 4; // column header band + spacing
+// Overhead: outer kanban border (2) + sidebar padding + general header band (8 total).
+// Previously underestimated at 4, which caused visibleCount to exceed the real terminal space,
+// leaving an empty gap at the bottom of each column.
+const HEADER_ROWS = 8; // adjusted to reflect real terminal overhead
+
+export function calcVisibleCount(terminalRows: number): number {
+	return Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
+}
 
 export function Column({
 	label,
@@ -22,7 +29,7 @@ export function Column({
 	paused = false,
 }: ColumnProps) {
 	const terminalRows = process.stdout.rows ?? 24;
-	const visibleCount = Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
+	const visibleCount = calcVisibleCount(terminalRows);
 
 	let scrollOffset = 0;
 	if (activeCardIndex >= visibleCount) {
