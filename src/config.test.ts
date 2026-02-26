@@ -97,7 +97,7 @@ logs:
 		expect(config.source_config.team).toBe("MyTeam");
 		expect(config.source_config.project).toBe("MyProject");
 		expect(config.loop.cooldown).toBe(30);
-		expect(config.models).toEqual(["claude"]);
+		expect(config.provider_options?.claude?.models).toEqual(["claude"]);
 	});
 
 	it("normalizes old Trello field names", () => {

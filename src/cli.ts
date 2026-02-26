@@ -507,7 +507,10 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	if (availableModels && availableModels.length > 0) {
 		const modelSelection = await clack.multiselect({
 			message: "Which models should Lisa use? Select in order — first = primary, rest = fallbacks",
-			initialValues: existing?.models?.filter((m) => availableModels.includes(m)) ?? [],
+			initialValues:
+				existing?.provider_options?.[providerName]?.models?.filter((m: string) =>
+					availableModels.includes(m),
+				) ?? [],
 			options: availableModels.map((m) => ({
 				value: m,
 				label: m,
@@ -753,7 +756,10 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	const cfg: LisaConfig = {
 		provider: providerName,
-		...(selectedModels.length > 0 ? { models: selectedModels } : {}),
+		provider_options: {
+			...(existing?.provider_options || {}),
+			[providerName]: { models: selectedModels },
+		},
 		source: source as SourceName,
 		source_config: {
 			team,

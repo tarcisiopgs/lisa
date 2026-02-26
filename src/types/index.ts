@@ -49,7 +49,7 @@ export interface OverseerConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
-	models?: string[];
+	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
 	source: SourceName;
 	source_config: SourceConfig;
 	github: GitHubMethod;

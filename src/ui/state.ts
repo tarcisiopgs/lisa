@@ -21,6 +21,7 @@ export interface KanbanStateData {
 	cards: KanbanCard[];
 	isEmpty: boolean;
 	workComplete: { total: number; duration: number } | null;
+	modelInUse: string | null;
 }
 
 class KanbanEmitter extends EventEmitter {}
@@ -33,6 +34,7 @@ export function useKanbanState(): KanbanStateData {
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
 		null,
 	);
+	const [modelInUse, setModelInUse] = useState<string | null>(null);
 
 	useEffect(() => {
 		const onQueued = (issue: Issue) => {
@@ -154,6 +156,9 @@ export function useKanbanState(): KanbanStateData {
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:output", onOutput);
 
+		const onModelChanged = (model: string) => setModelInUse(model);
+		kanbanEmitter.on("provider:model-changed", onModelChanged);
+
 		const onEmpty = () => setIsEmpty(true);
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
 		kanbanEmitter.on("work:empty", onEmpty);
@@ -169,10 +174,11 @@ export function useKanbanState(): KanbanStateData {
 			kanbanEmitter.off("provider:paused", onProviderPaused);
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:output", onOutput);
+			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
 		};
 	}, []);
 
-	return { cards, isEmpty, workComplete };
+	return { cards, isEmpty, workComplete, modelInUse };
 }

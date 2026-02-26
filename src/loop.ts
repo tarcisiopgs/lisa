@@ -165,7 +165,9 @@ export interface LoopOptions {
 }
 
 function resolveModels(config: LisaConfig): ModelSpec[] {
-	if (!config.models || config.models.length === 0) {
+	const providerModels = config.provider_options?.[config.provider]?.models;
+
+	if (!providerModels || providerModels.length === 0) {
 		return [{ provider: config.provider }];
 	}
 	const knownProviders = new Set<string>([
@@ -178,7 +180,7 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 		"aider",
 		"codex",
 	]);
-	for (const m of config.models) {
+	for (const m of providerModels) {
 		if (knownProviders.has(m) && m !== config.provider) {
 			logger.warn(
 				`Model "${m}" looks like a provider name but provider is "${config.provider}". ` +
@@ -189,7 +191,7 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	}
 
 	if (config.provider === "cursor") {
-		const hasAuto = config.models.some((m) => m.toLowerCase() === "auto");
+		const hasAuto = providerModels.some((m: string) => m.toLowerCase() === "auto");
 		if (!hasAuto) {
 			logger.warn(
 				"Cursor Free plan detected (or model not set to 'auto'). Forcing 'auto' model. " +
@@ -199,7 +201,7 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 		}
 	}
 
-	return config.models.map((m) => ({
+	return providerModels.map((m: string) => ({
 		provider: config.provider,
 		model: m === config.provider ? undefined : m,
 	}));
