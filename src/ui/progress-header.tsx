@@ -6,7 +6,10 @@ interface ProgressHeaderProps {
 	running: number;
 	workComplete: boolean;
 	paused?: boolean;
+	availableWidth?: number;
 }
+
+const OVERHEAD = 4;
 
 export function ProgressHeader({
 	total,
@@ -14,6 +17,7 @@ export function ProgressHeader({
 	running,
 	workComplete,
 	paused,
+	availableWidth,
 }: ProgressHeaderProps) {
 	const { stdout } = useStdout();
 
@@ -34,8 +38,8 @@ export function ProgressHeader({
 
 	const statsText = `${done}/${total} (${pct}%)${running > 0 ? ` (${running} running)` : ""}`;
 	const statsLength = statsText.length;
-	const terminalWidth = stdout?.columns ?? 80;
-	const barWidth = Math.max(10, terminalWidth - statsLength - 5);
+	const terminalWidth = availableWidth ?? stdout?.columns ?? 80;
+	const barWidth = Math.max(10, terminalWidth - statsLength - OVERHEAD);
 
 	const progressBar = (
 		<Box width={barWidth} overflow="hidden">
