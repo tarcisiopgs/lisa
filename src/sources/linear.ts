@@ -385,6 +385,66 @@ export class LinearSource implements Source {
 		}));
 	}
 
+	async addLabel(issueId: string, labelName: string): Promise<void> {
+		// Get issue with current labels and team labels
+		const issueData = await gql<{
+			issue: {
+				id: string;
+				team: { id: string; labels: { nodes: { id: string; name: string }[] } };
+				labels: { nodes: { id: string; name: string }[] };
+			};
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					team {
+						id
+						labels { nodes { id name } }
+					}
+					labels { nodes { id name } }
+				}
+			}`,
+			{ identifier: issueId },
+		);
+
+		// Find label in team labels
+		const teamLabel = issueData.issue.team.labels.nodes.find(
+			(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+		);
+
+		if (!teamLabel) {
+			throw new Error(`Label "${labelName}" not found in team. Create it in Linear first.`);
+		}
+
+		// Skip if issue already has this label
+		const alreadyHasLabel = issueData.issue.labels.nodes.some(
+			(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+		);
+		if (alreadyHasLabel) return;
+
+		const newLabelIds = [...issueData.issue.labels.nodes.map((l) => l.id), teamLabel.id];
+
+		const mutationResult = await gql<{
+			issueUpdate: { success: boolean };
+		}>(
+			`mutation($issueId: String!, $labelIds: [String!]!) {
+				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
+					success
+				}
+			}`,
+			{
+				issueId: issueData.issue.id,
+				labelIds: newLabelIds,
+			},
+		);
+
+		if (!mutationResult.issueUpdate.success) {
+			throw new Error(
+				`issueUpdate returned success=false when adding label "${labelName}" to ${issueId}`,
+			);
+		}
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		// Get issue with current labels
 		const issueData = await gql<{

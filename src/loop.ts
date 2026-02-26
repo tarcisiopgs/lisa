@@ -40,6 +40,7 @@ import type {
 	Source,
 } from "./types/index.js";
 import { kanbanEmitter } from "./ui/state.js";
+import { validateIssueSpec } from "./validation.js";
 
 // === Per-issue state maps for concurrent execution ===
 const activeCleanups = new Map<string, { previousStatus: string; source: Source }>();
@@ -462,6 +463,35 @@ async function runSequentialLoop(
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
+		// Validate minimum issue spec before accepting
+		const specResult = validateIssueSpec(issue, config.validation);
+		if (!specResult.valid) {
+			logger.warn(`Skipping ${issue.id}: ${specResult.reason}`);
+			const needsSpecLabel = "needs-spec";
+			try {
+				await source.addLabel?.(issue.id, needsSpecLabel);
+				logger.ok(`Added label "${needsSpecLabel}" to ${issue.id}`);
+			} catch (err) {
+				logger.warn(
+					`Failed to add label "${needsSpecLabel}": ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+			const readyLabel = getRemoveLabel(config.source_config);
+			if (readyLabel) {
+				try {
+					await source.removeLabel(issue.id, readyLabel);
+					logger.ok(`Removed label "${readyLabel}" from ${issue.id}`);
+				} catch (err) {
+					logger.warn(
+						`Failed to remove label "${readyLabel}": ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}
+			kanbanEmitter.emit("issue:skipped", issue.id);
+			if (opts.once) break;
+			continue;
+		}
+
 		// Resolve dependency if the issue has completed blockers with open PRs
 		if (issue.completedBlockerIds && issue.completedBlockerIds.length > 0) {
 			const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
@@ -603,6 +633,34 @@ async function runConcurrentLoop(
 		const logFile = resolve(getLogsDir(workspace), `session_${session}_${timestamp}.log`);
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
+
+		// Validate minimum issue spec before accepting
+		const specResult = validateIssueSpec(issue, config.validation);
+		if (!specResult.valid) {
+			logger.warn(`Skipping ${issue.id}: ${specResult.reason}`);
+			const needsSpecLabel = "needs-spec";
+			try {
+				await source.addLabel?.(issue.id, needsSpecLabel);
+				logger.ok(`Added label "${needsSpecLabel}" to ${issue.id}`);
+			} catch (err) {
+				logger.warn(
+					`Failed to add label "${needsSpecLabel}": ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+			const readyLabel = getRemoveLabel(config.source_config);
+			if (readyLabel) {
+				try {
+					await source.removeLabel(issue.id, readyLabel);
+					logger.ok(`Removed label "${readyLabel}" from ${issue.id}`);
+				} catch (err) {
+					logger.warn(
+						`Failed to remove label "${readyLabel}": ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}
+			kanbanEmitter.emit("issue:skipped", issue.id);
+			return;
+		}
 
 		kanbanEmitter.emit("issue:queued", issue);
 
