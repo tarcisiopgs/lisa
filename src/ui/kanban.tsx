@@ -13,13 +13,21 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, workComplete } = useKanbanState();
+	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState();
 
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 	const [paused, setPaused] = useState(false);
 	const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+
+	// Set the initial model based on config
+	useEffect(() => {
+		const initialModel = config.provider_options?.[config.provider]?.model;
+		if (!modelInUse && initialModel) {
+			kanbanEmitter.emit("provider:model-changed", initialModel);
+		}
+	}, [modelInUse, config.provider, config.provider_options]);
 
 	// Listen for clean-exit signal from the loop's SIGINT cleanup
 	useEffect(() => {
@@ -162,10 +170,15 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	const hasPrUrl = selectedCard?.prUrl !== undefined && selectedCard.prUrl.length > 0;
 
+	const providerOptions = config.provider_options?.[config.provider];
+	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);
+
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
 			<Sidebar
 				provider={config.provider}
+				model={modelInUse}
+				models={models}
 				source={config.source}
 				cwd={process.cwd()}
 				activeView={activeView}

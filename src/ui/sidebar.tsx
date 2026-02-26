@@ -4,6 +4,8 @@ import { Box, Text } from "ink";
 
 interface SidebarProps {
 	provider: string;
+	model: string | null;
+	models: string[];
 	source: string;
 	cwd: string;
 	activeView: "board" | "detail";
@@ -14,6 +16,8 @@ interface SidebarProps {
 
 export function Sidebar({
 	provider,
+	model,
+	models,
 	source,
 	cwd,
 	activeView,
@@ -72,9 +76,34 @@ export function Sidebar({
 					<Text color="yellow">{"▸ "}</Text>
 					<Text color="white" bold>
 						{provider.toUpperCase()}
+						{model && models.length === 1 ? ` (${model})` : ""}
 					</Text>
 				</Box>
+				{model && models.length > 1 && (
+					<Box paddingLeft={2}>
+						<Text color="white" dimColor>
+							{model}
+						</Text>
+					</Box>
+				)}
 			</Box>
+
+			{/* Model Queue */}
+			{models.length > 1 && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color="white" dimColor>
+						MODEL QUEUE
+					</Text>
+					{models.map((m, i) => (
+						<Box key={m} paddingLeft={2}>
+							<Text color="white">
+								{`${i + 1}. ${m}`}
+								{m === model ? <Text color="yellow">{" ← current"}</Text> : ""}
+							</Text>
+						</Box>
+					))}
+				</Box>
+			)}
 
 			{/* Source */}
 			<Box flexDirection="column" marginTop={1}>

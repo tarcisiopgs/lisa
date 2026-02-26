@@ -20,6 +20,7 @@ const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {
 	provider: "" as ProviderName,
+	provider_options: {} as Partial<Record<ProviderName, { model?: string; models?: string[] }>>,
 	source: "" as SourceName,
 	source_config: {
 		team: "",
@@ -128,6 +129,12 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			...DEFAULT_OVERSEER_CONFIG,
 			...((parsed.overseer ?? {}) as Partial<OverseerConfig>),
 		},
+		provider_options: {
+			...(DEFAULT_CONFIG.provider_options || {}),
+			...((parsed.provider_options ?? {}) as Partial<
+				Record<ProviderName, { model?: string; models?: string[] }>
+			>),
+		},
 	};
 
 	// Backward compat: fill base_branch if missing
@@ -136,9 +143,28 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		if (!repo.base_branch) repo.base_branch = config.base_branch;
 	}
 
-	// Backward compat: if models is not set, derive from provider
-	if (!config.models && config.provider) {
-		config.models = [config.provider];
+	// Ensure provider_options for the current provider exists
+	if (!config.provider_options) {
+		config.provider_options = {};
+	}
+	if (!config.provider_options[config.provider]) {
+		config.provider_options[config.provider] = {};
+	}
+
+	// Backward compat: if old top-level `models` exists, migrate it
+	if (parsed.models && Array.isArray(parsed.models)) {
+		config.provider_options[config.provider] = {
+			...config.provider_options[config.provider],
+			models: parsed.models as string[],
+		};
+	}
+
+	// If provider has no models configured, default to [provider]
+	if (!config.provider_options[config.provider]?.models?.length && config.provider) {
+		config.provider_options[config.provider] = {
+			...config.provider_options[config.provider],
+			models: [config.provider],
+		};
 	}
 
 	return config;

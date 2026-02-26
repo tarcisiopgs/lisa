@@ -79,6 +79,15 @@ describe("kanbanEmitter execution control events", () => {
 		kanbanEmitter.emit("issue:killed", "TEST-456");
 		expect(receivedId).toBe("TEST-456");
 	});
+
+	it("emits provider:model-changed with the model name", () => {
+		let receivedModel: string | null = null;
+		kanbanEmitter.on("provider:model-changed", (model: string) => {
+			receivedModel = model;
+		});
+		kanbanEmitter.emit("provider:model-changed", "gemini-pro");
+		expect(receivedModel).toBe("gemini-pro");
+	});
 });
 
 describe("KanbanCard interface", () => {
