@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	analyzeProject,
 	detectCodeTools,
+	detectEnvironment,
 	detectQualityScripts,
 	detectTestPattern,
 	formatProjectContext,
@@ -390,6 +391,7 @@ describe("analyzeProject", () => {
 		expect(ctx.testPattern).not.toBeNull();
 		expect(ctx.codeTools).toHaveLength(1);
 		expect(ctx.projectTree).toContain("src/");
+		expect(ctx.environment).toBe("library");
 	});
 
 	it("handles empty project", () => {
@@ -398,6 +400,117 @@ describe("analyzeProject", () => {
 		expect(ctx.testPattern).toBeNull();
 		expect(ctx.codeTools).toEqual([]);
 		expect(ctx.projectTree).toBe("");
+		expect(ctx.environment).toBe("unknown");
+	});
+});
+
+describe("detectEnvironment", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-env-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("returns unknown when no package.json and no recognized files", () => {
+		expect(detectEnvironment(tmpDir)).toBe("unknown");
+	});
+
+	it("detects CLI via bin field in package.json", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ bin: { mytool: "dist/index.js" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("cli");
+	});
+
+	it("detects CLI via ink dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { ink: "^5.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("cli");
+	});
+
+	it("detects CLI via commander dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { commander: "^11.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("cli");
+	});
+
+	it("detects mobile via react-native dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { "react-native": "^0.73.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("mobile");
+	});
+
+	it("detects mobile via ios directory", () => {
+		mkdirSync(join(tmpDir, "ios"));
+		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({}));
+		expect(detectEnvironment(tmpDir)).toBe("mobile");
+	});
+
+	it("detects mobile via Flutter pubspec.yaml", () => {
+		writeFileSync(join(tmpDir, "pubspec.yaml"), "name: myapp\n");
+		expect(detectEnvironment(tmpDir)).toBe("mobile");
+	});
+
+	it("detects web via react-dom dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { "react-dom": "^18.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("web");
+	});
+
+	it("detects web via next dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { next: "^14.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("web");
+	});
+
+	it("detects server via express dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { express: "^4.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("server");
+	});
+
+	it("detects server via fastify dependency", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { fastify: "^4.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("server");
+	});
+
+	it("returns library when package.json has no recognized deps", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ dependencies: { yaml: "^2.0.0" } }),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("library");
+	});
+
+	it("CLI takes priority over web when bin is present", () => {
+		writeFileSync(
+			join(tmpDir, "package.json"),
+			JSON.stringify({
+				bin: { mytool: "dist/index.js" },
+				dependencies: { "react-dom": "^18.0.0" },
+			}),
+		);
+		expect(detectEnvironment(tmpDir)).toBe("cli");
 	});
 });
 
@@ -408,6 +521,7 @@ describe("formatProjectContext", () => {
 			testPattern: null,
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toBe("");
 	});
@@ -421,6 +535,7 @@ describe("formatProjectContext", () => {
 			testPattern: null,
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("## Project Context");
 		expect(result).toContain("### Quality Scripts");
@@ -439,6 +554,7 @@ describe("formatProjectContext", () => {
 			},
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("### Test Patterns");
 		expect(result).toContain("colocated next to source files");
@@ -456,6 +572,7 @@ describe("formatProjectContext", () => {
 				{ name: "ESLint", configFile: ".eslintrc.json" },
 			],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("### Code Tools");
 		expect(result).toContain("**Biome** (config: `biome.json`)");
@@ -468,6 +585,7 @@ describe("formatProjectContext", () => {
 			testPattern: null,
 			codeTools: [],
 			projectTree: "src/\n  index.ts\npackage.json",
+			environment: "unknown",
 		});
 		expect(result).toContain("### Project Structure");
 		expect(result).toContain("src/");
@@ -484,6 +602,7 @@ describe("formatProjectContext", () => {
 			},
 			codeTools: [{ name: "ESLint", configFile: ".eslintrc.json" }],
 			projectTree: "src/\npackage.json",
+			environment: "unknown",
 		});
 		expect(result).toContain("### Quality Scripts");
 		expect(result).toContain("### Test Patterns");
@@ -501,6 +620,7 @@ describe("formatProjectContext", () => {
 			},
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("tests are in a separate directory");
 	});
@@ -515,6 +635,7 @@ describe("formatProjectContext", () => {
 			},
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("top-level test() calls");
 	});
@@ -529,7 +650,46 @@ describe("formatProjectContext", () => {
 			},
 			codeTools: [],
 			projectTree: "",
+			environment: "unknown",
 		});
 		expect(result).toContain("mixed (describe/it and test())");
+	});
+
+	it("includes CLI environment section with forbidden packages note", () => {
+		const result = formatProjectContext({
+			qualityScripts: [],
+			testPattern: null,
+			codeTools: [],
+			projectTree: "",
+			environment: "cli",
+		});
+		expect(result).toContain("### Project Environment");
+		expect(result).toContain("CLI (Node.js)");
+		expect(result).toContain("jsdom");
+	});
+
+	it("includes mobile environment section", () => {
+		const result = formatProjectContext({
+			qualityScripts: [],
+			testPattern: null,
+			codeTools: [],
+			projectTree: "",
+			environment: "mobile",
+		});
+		expect(result).toContain("### Project Environment");
+		expect(result).toContain("Mobile");
+	});
+
+	it("does not include environment section for unknown or library", () => {
+		for (const env of ["unknown", "library"] as const) {
+			const result = formatProjectContext({
+				qualityScripts: [{ name: "lint", command: "eslint ." }],
+				testPattern: null,
+				codeTools: [],
+				projectTree: "",
+				environment: env,
+			});
+			expect(result).not.toContain("### Project Environment");
+		}
 	});
 });

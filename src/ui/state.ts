@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { useEffect, useState } from "react";
+import { notify } from "../output/terminal.js";
 import type { Issue } from "../types/index.js";
 
 export interface KanbanCard {
@@ -28,7 +29,25 @@ class KanbanEmitter extends EventEmitter {}
 
 export const kanbanEmitter = new KanbanEmitter();
 
-export function useKanbanState(): KanbanStateData {
+export function registerBellListeners(bellEnabled: boolean): () => void {
+	if (!bellEnabled) return () => {};
+
+	const onDone = () => notify(1);
+	const onReverted = () => notify(2);
+	const onComplete = () => notify(1);
+
+	kanbanEmitter.on("issue:done", onDone);
+	kanbanEmitter.on("issue:reverted", onReverted);
+	kanbanEmitter.on("work:complete", onComplete);
+
+	return () => {
+		kanbanEmitter.off("issue:done", onDone);
+		kanbanEmitter.off("issue:reverted", onReverted);
+		kanbanEmitter.off("work:complete", onComplete);
+	};
+}
+
+export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
 	const [isEmpty, setIsEmpty] = useState(false);
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
@@ -164,6 +183,8 @@ export function useKanbanState(): KanbanStateData {
 		kanbanEmitter.on("work:empty", onEmpty);
 		kanbanEmitter.on("work:complete", onComplete);
 
+		const cleanupBell = registerBellListeners(bellEnabled);
+
 		return () => {
 			kanbanEmitter.off("issue:queued", onQueued);
 			kanbanEmitter.off("issue:started", onStarted);
@@ -177,8 +198,9 @@ export function useKanbanState(): KanbanStateData {
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
+			cleanupBell();
 		};
-	}, []);
+	}, [bellEnabled]);
 
 	return { cards, isEmpty, workComplete, modelInUse };
 }

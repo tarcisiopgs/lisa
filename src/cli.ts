@@ -43,6 +43,11 @@ const run = defineCommand({
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
+		bell: {
+			type: "boolean",
+			description: "Enable terminal bell on issue completion/failure (use --no-bell to disable)",
+			default: true,
+		},
 		concurrency: {
 			type: "string",
 			alias: "c",
@@ -78,8 +83,8 @@ const run = defineCommand({
 			source: args.source as SourceName | undefined,
 			github: args.github as GitHubMethod | undefined,
 			label: args.label,
+			bell: args.bell,
 		});
-
 		// Validate env vars before running
 		const missingVars = await getMissingEnvVars(merged.source);
 		if (missingVars.length > 0) {

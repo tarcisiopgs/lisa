@@ -619,6 +619,7 @@ function makeProjectContext(overrides?: Partial<ProjectContext>): ProjectContext
 		},
 		codeTools: [{ name: "Biome", configFile: "biome.json" }],
 		projectTree: "src/\n  index.ts\npackage.json",
+		environment: "unknown",
 		...overrides,
 	};
 }

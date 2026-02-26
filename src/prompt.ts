@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { formatProjectContext, type ProjectContext } from "./context.js";
+import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
@@ -95,6 +95,40 @@ This project uses **${testRunner}** as its test runner.
 - Run \`${testCmd}\` and ensure ALL tests pass before committing.
 - Do NOT skip writing tests — the PR will be blocked if tests are missing or failing.
 `;
+}
+
+function buildRulesSection(
+	env?: ProjectEnvironment,
+	variant: "issue" | "scope" = "issue",
+	extraRules = "",
+): string {
+	const envRule = buildEnvironmentDependencyRule(env);
+	const scopeRule =
+		variant === "scope"
+			? "- One scope only. Do not pick up additional work outside your scope."
+			: "- One issue only. Do not pick up additional issues.";
+
+	return `## Rules
+
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
+- The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT install new dependencies unless the issue explicitly requires it.
+${envRule}${extraRules}- If you get stuck or the issue is unclear, STOP and explain why.
+${scopeRule}
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+}
+
+function buildEnvironmentDependencyRule(env?: ProjectEnvironment): string {
+	if (env === "cli") {
+		return "- **Environment**: This is a CLI (Node.js) project. Do NOT install browser/DOM packages (`jsdom`, `happy-dom`, `@testing-library/dom`, `@testing-library/react`). All dependencies and tests must be Node.js-compatible.\n";
+	}
+	if (env === "mobile") {
+		return "- **Environment**: This is a mobile project (React Native/Flutter). Do NOT install browser/DOM packages or web-only libraries. Use only packages compatible with the mobile runtime.\n";
+	}
+	if (env === "server") {
+		return "- **Environment**: This is a server-side (Node.js) project. Do NOT install browser/DOM packages. Use only Node.js-compatible packages.\n";
+	}
+	return "";
 }
 
 function buildPreCommitHookInstructions(): string {
@@ -225,14 +259,7 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment)}`;
 }
 
 function buildBranchPrompt(
@@ -325,15 +352,7 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT modify files outside the target repo.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment, "issue", "- Do NOT modify files outside the target repo.\n")}`;
 }
 
 export function buildNativeWorktreePrompt(
@@ -409,14 +428,7 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment)}`;
 }
 
 export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?: string): string {
@@ -569,12 +581,5 @@ ${trackerStep}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One scope only. Do not pick up additional work outside your scope.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment, "scope")}`;
 }

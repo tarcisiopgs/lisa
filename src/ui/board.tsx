@@ -48,15 +48,15 @@ export function Board({
 					paddingY={1}
 				>
 					<Text color="yellow" bold>
-						{"◈  NO ISSUES FOUND"}
+						{"◈  QUEUE EMPTY"}
 					</Text>
 					<Box height={1} />
 					<Text color="white" dimColor>
-						No issues match the current label and status filters.
+						No issues match the current filters.
 					</Text>
 					<Box height={1} />
 					<Text color="gray" dimColor>
-						Check your source configuration and labels.
+						Check source config · labels · status
 					</Text>
 				</Box>
 			</Box>
@@ -69,13 +69,13 @@ export function Board({
 			{workComplete && (
 				<Box borderStyle="single" borderColor="green" paddingX={2} paddingY={0} marginBottom={0}>
 					<Text color="green" bold>
-						{"✔ ALL SESSIONS COMPLETE"}
+						{"◈ "}
 					</Text>
-					<Text color="white">{" — "}</Text>
 					<Text color="white" bold>
 						{workComplete.total}
 					</Text>
-					<Text color="white">{` issue${workComplete.total !== 1 ? "s" : ""} resolved in `}</Text>
+					<Text color="white">{` issue${workComplete.total !== 1 ? "s" : ""} resolved`}</Text>
+					<Text color="green">{" · "}</Text>
 					<Text color="green" bold>
 						{formatDuration(workComplete.duration)}
 					</Text>

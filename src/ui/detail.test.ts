@@ -2,11 +2,15 @@ import { exec as mockExec } from "node:child_process";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { KanbanCard } from "./state.js";
 
-vi.mock("node:child_process", () => ({
-	exec: vi.fn((_command: string, callback: (error: Error | null) => void) => {
-		callback(null);
-	}),
-}));
+vi.mock("node:child_process", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:child_process")>();
+	return {
+		...actual,
+		exec: vi.fn((_command: string, callback: (error: Error | null) => void) => {
+			callback(null);
+		}),
+	};
+});
 
 describe("openUrl", () => {
 	beforeEach(() => {

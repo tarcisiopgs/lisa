@@ -13,7 +13,7 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState();
+	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState(config.bell ?? true);
 
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);
@@ -23,7 +23,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	// Set the initial model based on config
 	useEffect(() => {
-		const initialModel = config.provider_options?.[config.provider]?.model;
+		const initialModel = config.provider_options?.[config.provider]?.models?.[0];
 		if (!modelInUse && initialModel) {
 			kanbanEmitter.emit("provider:model-changed", initialModel);
 		}

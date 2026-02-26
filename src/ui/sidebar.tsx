@@ -76,29 +76,38 @@ export function Sidebar({
 					<Text color="yellow">{"▸ "}</Text>
 					<Text color="white" bold>
 						{provider.toUpperCase()}
-						{model && models.length === 1 ? ` (${model})` : ""}
 					</Text>
 				</Box>
-				{model && models.length > 1 && (
-					<Box paddingLeft={2}>
-						<Text color="white" dimColor>
+			</Box>
+
+			{/* Model — single model: own dedicated row */}
+			{model && models.length <= 1 && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color="white" dimColor>
+						MODEL
+					</Text>
+					<Box>
+						<Text color="yellow">{"▸ "}</Text>
+						<Text color="white" bold>
 							{model}
 						</Text>
 					</Box>
-				)}
-			</Box>
+				</Box>
+			)}
 
-			{/* Model Queue */}
+			{/* Model Queue — multiple models: bullet marks active */}
 			{models.length > 1 && (
 				<Box flexDirection="column" marginTop={1}>
 					<Text color="white" dimColor>
 						MODEL QUEUE
 					</Text>
 					{models.map((m, i) => (
-						<Box key={m} paddingLeft={2}>
-							<Text color="white">
-								{`${i + 1}. ${m}`}
-								{m === model ? <Text color="yellow">{" ← current"}</Text> : ""}
+						<Box key={m} paddingLeft={1} flexDirection="row">
+							<Text color={m === model ? "yellow" : "gray"}>
+								{m === model ? "● " : `${i + 1}. `}
+							</Text>
+							<Text color={m === model ? "yellow" : "white"} bold={m === model}>
+								{m}
 							</Text>
 						</Box>
 					))}
@@ -138,19 +147,19 @@ export function Sidebar({
 			{/* Dynamic legend */}
 			{activeView === "board" ? (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{"[←→]  columns     "}</Text>
-					<Text dimColor>{"[↑↓]  navigate    "}</Text>
-					<Text dimColor>{"[↵]   view detail "}</Text>
-					<Text dimColor>{paused ? "[p]   resume      " : "[p]   pause       "}</Text>
-					{hasInProgress && <Text dimColor>{"[k]   kill issue  "}</Text>}
-					{hasInProgress && <Text dimColor>{"[s]   skip issue  "}</Text>}
-					<Text dimColor>{"[q]   quit        "}</Text>
+					<Text dimColor>{"[←→] columns"}</Text>
+					<Text dimColor>{"[↑↓] navigate"}</Text>
+					<Text dimColor>{"[↵]  detail"}</Text>
+					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
+					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
+					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
+					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
 			) : (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{"[↑↓]  scroll      "}</Text>
-					{hasPrUrl && <Text dimColor>{"[o]   open PR    "}</Text>}
-					<Text dimColor>{"[Esc] back to board"}</Text>
+					<Text dimColor>{"[↑↓] scroll"}</Text>
+					{hasPrUrl && <Text dimColor>{"[o]  open PR"}</Text>}
+					<Text dimColor>{"[Esc] board"}</Text>
 				</Box>
 			)}
 		</Box>

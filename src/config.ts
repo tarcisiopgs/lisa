@@ -239,6 +239,7 @@ export function mergeWithFlags(
 	if (flags.provider) merged.provider = flags.provider;
 	if (flags.source) merged.source = flags.source;
 	if (flags.github) merged.github = flags.github;
+	if (flags.bell !== undefined) merged.bell = flags.bell;
 	if (flags.label) {
 		const parts = flags.label
 			.split(",")

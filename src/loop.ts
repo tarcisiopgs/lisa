@@ -514,7 +514,7 @@ async function runSequentialLoop(
 				);
 			}
 			activeCleanups.delete(issue.id);
-			notify();
+			if (config.bell !== false) notify(2);
 			if (opts.once) break;
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
 			setTitle("Lisa \u2014 cooling down...");
@@ -635,7 +635,7 @@ async function runConcurrentLoop(
 			}
 			activeCleanups.delete(issue.id);
 			activeProviderPids.delete(issue.id);
-			notify();
+			if (config.bell !== false) notify(2);
 			return;
 		}
 
@@ -763,7 +763,7 @@ async function handleSessionResult(
 			}
 			kanbanEmitter.emit("issue:killed", issue.id);
 			activeCleanups.delete(issue.id);
-			notify();
+			if (config.bell !== false) notify();
 			return false;
 		}
 
@@ -780,7 +780,7 @@ async function handleSessionResult(
 			}
 			kanbanEmitter.emit("issue:skipped", issue.id);
 			activeCleanups.delete(issue.id);
-			notify();
+			if (config.bell !== false) notify();
 			return false;
 		}
 
@@ -795,7 +795,6 @@ async function handleSessionResult(
 			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 		activeCleanups.delete(issue.id);
-		notify();
 		return false;
 	}
 
@@ -814,7 +813,6 @@ async function handleSessionResult(
 			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 		activeCleanups.delete(issue.id);
-		notify();
 		return false;
 	}
 
@@ -846,7 +844,6 @@ async function handleSessionResult(
 
 	activeCleanups.delete(issue.id);
 	stopSpinner(`\u2713 Lisa \u2014 ${issue.id} \u2014 PR created`);
-	notify();
 	return true;
 }
 

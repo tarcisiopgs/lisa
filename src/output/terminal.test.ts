@@ -126,6 +126,16 @@ describe("terminal (TTY)", () => {
 		expect(writeSpy).toHaveBeenCalledWith("\x07");
 	});
 
+	it("notify with count=2 writes two BEL characters", () => {
+		notify(2);
+		expect(writeSpy).toHaveBeenCalledWith("\x07\x07");
+	});
+
+	it("notify with count=3 writes three BEL characters", () => {
+		notify(3);
+		expect(writeSpy).toHaveBeenCalledWith("\x07\x07\x07");
+	});
+
 	it("resetTitle writes empty OSC sequence", () => {
 		resetTitle();
 		expect(writeSpy).toHaveBeenCalledWith("\x1b]0;\x07");

@@ -50,6 +50,7 @@ export interface OverseerConfig {
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
+	bell?: boolean;
 	source: SourceName;
 	source_config: SourceConfig;
 	github: GitHubMethod;

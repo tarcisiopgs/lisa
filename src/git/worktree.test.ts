@@ -5,11 +5,15 @@ vi.mock("execa", () => ({
 	execa: vi.fn(),
 }));
 
-vi.mock("node:fs", () => ({
-	existsSync: vi.fn(),
-	readFileSync: vi.fn(),
-	appendFileSync: vi.fn(),
-}));
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	return {
+		...actual,
+		existsSync: vi.fn(),
+		readFileSync: vi.fn(),
+		appendFileSync: vi.fn(),
+	};
+});
 
 describe("generateBranchName", () => {
 	it("generates a branch name from issue ID and title", () => {
