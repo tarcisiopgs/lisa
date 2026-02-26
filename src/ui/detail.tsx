@@ -1,8 +1,9 @@
 import { exec } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KanbanCard } from "./state.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 export function openUrl(url: string): void {
 	const platform = process.platform;
@@ -111,8 +112,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 		}
 	});
 
-	const terminalCols = process.stdout.columns ?? 80;
-	const terminalRows = process.stdout.rows ?? 24;
+	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
 	// Header: ~6 rows, footer: ~2 rows, border: ~2 rows
 	const bodyRows = Math.max(1, terminalRows - 10);
 
@@ -136,11 +136,14 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 		elapsedDisplay = formatElapsed(card.finishedAt - card.startedAt);
 	}
 
-	// Decorative separator: ╠═══...═══╣
 	// sidebar width (28) + detail border (2) + detail padding (2) = 32
 	const SIDEBAR_TOTAL_WIDTH = 28;
-	const separatorInner = Math.max(0, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
-	const separator = `╠${"═".repeat(Math.max(0, separatorInner - 2))}╣`;
+
+	// Decorative separator: ╠═══...═══╣ — memoized, only recomputed on terminal resize
+	const separator = useMemo(() => {
+		const separatorInner = Math.max(0, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
+		return `╠${"═".repeat(Math.max(0, separatorInner - 2))}╣`;
+	}, [terminalCols]);
 
 	// Scroll position indicator
 	const totalLines = lines.length;
@@ -149,7 +152,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 
 	return (
 		<Box
-			flexGrow={1}
+			width={terminalCols - SIDEBAR_TOTAL_WIDTH}
 			flexDirection="column"
 			borderStyle="single"
 			borderColor="yellow"

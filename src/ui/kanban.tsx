@@ -6,6 +6,7 @@ import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
 import { Sidebar } from "./sidebar.js";
 import { kanbanEmitter, useKanbanState } from "./state.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 interface KanbanAppProps {
 	config: LisaConfig;
@@ -14,6 +15,7 @@ interface KanbanAppProps {
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
 	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState(config.bell ?? true);
+	const { rows } = useTerminalSize();
 
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);
@@ -174,7 +176,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);
 
 	return (
-		<Box flexDirection="row" height={process.stdout.rows}>
+		<Box flexDirection="row" height={rows}>
 			<Sidebar
 				provider={config.provider}
 				model={modelInUse}
