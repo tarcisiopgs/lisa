@@ -242,6 +242,10 @@ overseer:
   enabled: true
   check_interval: 30     # seconds between git status checks
   stuck_threshold: 300   # seconds without git changes before killing
+
+# Optional — validate issue spec before accepting
+validation:
+  require_acceptance_criteria: true  # skip issues without detectable acceptance criteria (default: true)
 ```
 
 ### Source-Specific Fields
@@ -348,6 +352,25 @@ Each issue runs in its own isolated worktree with an independent provider proces
 ### Overseer
 
 When enabled, the overseer periodically checks `git status` in the working directory. If no changes are detected within `stuck_threshold` seconds, the provider process is killed and the error is eligible for fallback to the next model.
+
+### Issue Spec Validation
+
+Before starting work on an issue, Lisa validates that it has a minimum spec. Issues that fail validation are skipped, labelled `needs-spec`, and have their `ready` label removed — so they never block the queue.
+
+An issue passes validation if its description is non-empty and contains at least one of:
+
+- A Markdown checklist item (`- [ ]`)
+- The phrase `acceptance criteria` or `critérios`
+- The words `expected`, `should`, or `deve`
+
+To disable spec validation (e.g. for quick one-off issues):
+
+```yaml
+validation:
+  require_acceptance_criteria: false
+```
+
+> **Note:** The `needs-spec` label must exist in your issue tracker before Lisa can apply it. Create it manually if it does not exist — Lisa will log a warning if the label is missing.
 
 ### Auto-Detection
 

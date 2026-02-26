@@ -47,6 +47,10 @@ export interface OverseerConfig {
 	stuck_threshold: number;
 }
 
+export interface ValidationConfig {
+	require_acceptance_criteria?: boolean;
+}
+
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
@@ -60,6 +64,7 @@ export interface LisaConfig {
 	repos: RepoConfig[];
 	loop: LoopConfig;
 	overseer?: OverseerConfig;
+	validation?: ValidationConfig;
 }
 
 export interface DependencyContext {
@@ -142,6 +147,7 @@ export interface Source {
 	fetchIssueById(id: string): Promise<Issue | null>;
 	updateStatus(issueId: string, status: string): Promise<void>;
 	removeLabel(issueId: string, label: string): Promise<void>;
+	addLabel?(issueId: string, label: string): Promise<void>;
 	attachPullRequest(issueId: string, prUrl: string): Promise<void>;
 	completeIssue(issueId: string, status: string, labelToRemove?: string): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
