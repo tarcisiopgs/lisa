@@ -28,7 +28,9 @@ import {
 	isCompleteProviderExhaustion,
 	runWithFallback,
 } from "./providers/index.js";
+import { discoverInfra } from "./session/discovery.js";
 import { migrateGuardrails } from "./session/guardrails.js";
+import { startResources, stopResources } from "./session/lifecycle.js";
 import { createSource } from "./sources/index.js";
 import type {
 	ExecutionPlan,
@@ -999,6 +1001,31 @@ async function runNativeWorktreeSession(
 
 	const workspace = resolve(config.workspace);
 
+	// Start infrastructure resources if auto-discovered
+	const infra = discoverInfra(repoPath);
+	let lifecycleEnv: Record<string, string> = {};
+	if (infra) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
+		const started = await startResources(infra, repoPath);
+		stopSpinner();
+		if (!started.success) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return {
+				success: false,
+				providerUsed: models[0]?.provider ?? "claude",
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]?.provider ?? "claude",
+					attempts: [],
+				},
+			};
+		}
+		lifecycleEnv = started.env;
+	}
+
 	// Clean stale manifest from previous run (per-issue)
 	cleanupManifest(workspace, issue.id);
 
@@ -1022,12 +1049,14 @@ async function runNativeWorktreeSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		useNativeWorktree: true,
+		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	if (infra) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1116,6 +1145,32 @@ async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
+	// Start infrastructure resources if auto-discovered
+	const infra = discoverInfra(worktreePath);
+	let lifecycleEnv: Record<string, string> = {};
+	if (infra) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
+		const started = await startResources(infra, worktreePath);
+		stopSpinner();
+		if (!started.success) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return {
+				success: false,
+				providerUsed: models[0]?.provider ?? "claude",
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]?.provider ?? "claude",
+					attempts: [],
+				},
+			};
+		}
+		lifecycleEnv = started.env;
+	}
+
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
 	const manifestPath = join(worktreePath, ".lisa-manifest.json");
@@ -1138,12 +1193,14 @@ async function runManualWorktreeSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	if (infra) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1369,6 +1426,21 @@ async function runMultiRepoStep(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
+	// Start infrastructure resources if auto-discovered
+	const infra = discoverInfra(worktreePath);
+	let lifecycleEnv: Record<string, string> = {};
+	if (infra) {
+		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
+		const started = await startResources(infra, worktreePath);
+		stopSpinner();
+		if (!started.success) {
+			logger.error(`Lifecycle startup failed for step ${stepNum}. Aborting.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return failResult(models[0]?.provider ?? "claude");
+		}
+		lifecycleEnv = started.env;
+	}
+
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers can access it
@@ -1393,12 +1465,14 @@ async function runMultiRepoStep(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	if (infra) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1459,6 +1533,31 @@ async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 
+	// Start infrastructure resources if auto-discovered
+	const infra = discoverInfra(workspace);
+	let lifecycleEnv: Record<string, string> = {};
+	if (infra) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
+		const started = await startResources(infra, workspace);
+		stopSpinner();
+		if (!started.success) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return {
+				success: false,
+				providerUsed: models[0]?.provider ?? "claude",
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]?.provider ?? "claude",
+					attempts: [],
+				},
+			};
+		}
+		lifecycleEnv = started.env;
+	}
+
 	const prompt = buildImplementPrompt(
 		issue,
 		config,
@@ -1479,12 +1578,14 @@ async function runBranchSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	if (infra) await stopResources();
 
 	try {
 		appendFileSync(

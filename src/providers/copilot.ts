@@ -31,7 +31,10 @@ export class CopilotProvider implements Provider {
 			// --allow-all: bypass all tool/path/url permission prompts (non-interactive)
 			// -p: run prompt and exit (print mode)
 			const command = `copilot --allow-all -p "$(cat '${promptFile}')"`;
-			const { proc, isPty } = spawnWithPty(command, { cwd: opts.cwd });
+			const { proc, isPty } = spawnWithPty(command, {
+				cwd: opts.cwd,
+				env: { ...process.env, ...opts.env },
+			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;

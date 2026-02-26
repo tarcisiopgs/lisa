@@ -30,7 +30,10 @@ export class AiderProvider implements Provider {
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
 			const command = `aider --message "$(cat '${promptFile}')" --yes-always ${modelFlag}`;
-			const { proc, isPty } = spawnWithPty(command, { cwd: opts.cwd });
+			const { proc, isPty } = spawnWithPty(command, {
+				cwd: opts.cwd,
+				env: { ...process.env, ...opts.env },
+			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;

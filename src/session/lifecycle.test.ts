@@ -1,0 +1,214 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { allocatePort, isPortInUse, waitForPort } from "./lifecycle.js";
+
+// Mock node:net for port checking
+vi.mock("node:net", () => ({
+	createConnection: vi.fn(),
+}));
+
+import type { Socket } from "node:net";
+import { createConnection } from "node:net";
+
+function makeMockSocket(opts: { connect?: boolean; error?: boolean }): Socket {
+	const socket = {
+		destroy: vi.fn(),
+		on: vi.fn(),
+	} as unknown as Socket;
+
+	const errorCb = vi.fn();
+
+	(socket.on as ReturnType<typeof vi.fn>).mockImplementation(
+		(event: string, handler: () => void) => {
+			if (event === "error") errorCb.mockImplementation(handler);
+			return socket;
+		},
+	);
+
+	vi.mocked(createConnection).mockImplementation((_opts: unknown, cb?: () => void) => {
+		if (opts.connect && cb) {
+			setImmediate(cb);
+		} else if (opts.error) {
+			setImmediate(() => errorCb());
+		}
+		return socket;
+	});
+
+	return socket;
+}
+
+describe("isPortInUse", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns true when port is in use (connection succeeds)", async () => {
+		makeMockSocket({ connect: true });
+		const result = await isPortInUse(3000);
+		expect(result).toBe(true);
+	});
+
+	it("returns false when port is not in use (connection fails)", async () => {
+		makeMockSocket({ error: true });
+		const result = await isPortInUse(3000);
+		expect(result).toBe(false);
+	});
+});
+
+describe("waitForPort", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.clearAllMocks();
+	});
+
+	it("resolves true when port becomes available within timeout", async () => {
+		let callCount = 0;
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, cb?: () => void) => {
+			callCount++;
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockReturnThis(),
+			} as unknown as Socket;
+
+			if (callCount >= 2 && cb) {
+				// Second call: port is in use
+				setImmediate(cb);
+			} else {
+				// First call: port not in use, fire error handler
+				(socket.on as ReturnType<typeof vi.fn>).mockImplementation(
+					(event: string, handler: () => void) => {
+						if (event === "error") setImmediate(handler);
+						return socket;
+					},
+				);
+			}
+			return socket;
+		});
+
+		const promise = waitForPort(3000, 5000);
+		// Advance timers to trigger setTimeout checks
+		await vi.runAllTimersAsync();
+		const result = await promise;
+		expect(result).toBe(true);
+	});
+
+	it("resolves false when timeout expires before port is ready", async () => {
+		// Port is never in use: always fire error
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, _cb?: () => void) => {
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockImplementation((event: string, handler: () => void) => {
+					if (event === "error") setImmediate(handler);
+					return socket;
+				}),
+			} as unknown as Socket;
+			return socket;
+		});
+
+		// Use a very short timeout so the deadline expires quickly
+		const promise = waitForPort(3000, 100);
+		// Advance all timers past the deadline
+		await vi.runAllTimersAsync();
+		const result = await promise;
+		expect(result).toBe(false);
+	});
+});
+
+describe("allocatePort", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns basePort when it is free", async () => {
+		// Port free: error is thrown
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, _cb?: () => void) => {
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockImplementation((event: string, handler: () => void) => {
+					if (event === "error") setImmediate(handler);
+					return socket;
+				}),
+			} as unknown as Socket;
+			return socket;
+		});
+
+		const port = await allocatePort(5432, 5);
+		expect(port).toBe(5432);
+	});
+
+	it("skips occupied ports and returns the first free one", async () => {
+		let callCount = 0;
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, cb?: () => void) => {
+			callCount++;
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockReturnThis(),
+			} as unknown as Socket;
+
+			if (callCount <= 2) {
+				// First two ports are in use
+				if (cb) setImmediate(cb);
+			} else {
+				// Third port is free
+				(socket.on as ReturnType<typeof vi.fn>).mockImplementation(
+					(event: string, handler: () => void) => {
+						if (event === "error") setImmediate(handler);
+						return socket;
+					},
+				);
+			}
+			return socket;
+		});
+
+		const port = await allocatePort(5432, 10);
+		expect(port).toBe(5434); // base + 2
+	});
+
+	it("returns null when all ports in range are occupied", async () => {
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, cb?: () => void) => {
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockReturnThis(),
+			} as unknown as Socket;
+			// All ports are in use
+			if (cb) setImmediate(cb);
+			return socket;
+		});
+
+		const port = await allocatePort(5432, 3);
+		expect(port).toBe(null);
+	});
+
+	it("returns basePort when range is 1 and port is free", async () => {
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, _cb?: () => void) => {
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockImplementation((event: string, handler: () => void) => {
+					if (event === "error") setImmediate(handler);
+					return socket;
+				}),
+			} as unknown as Socket;
+			return socket;
+		});
+
+		const port = await allocatePort(8080, 1);
+		expect(port).toBe(8080);
+	});
+
+	it("returns null when range is 1 and port is occupied", async () => {
+		vi.mocked(createConnection).mockImplementation((_opts: unknown, cb?: () => void) => {
+			const socket = {
+				destroy: vi.fn(),
+				on: vi.fn().mockReturnThis(),
+			} as unknown as Socket;
+			if (cb) setImmediate(cb);
+			return socket;
+		});
+
+		const port = await allocatePort(8080, 1);
+		expect(port).toBe(null);
+	});
+});

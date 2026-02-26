@@ -29,7 +29,10 @@ export class OpenCodeProvider implements Provider {
 
 		try {
 			const command = `opencode run "$(cat '${promptFile}')"`;
-			const { proc, isPty } = spawnWithPty(command, { cwd: opts.cwd });
+			const { proc, isPty } = spawnWithPty(command, {
+				cwd: opts.cwd,
+				env: { ...process.env, ...opts.env },
+			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
