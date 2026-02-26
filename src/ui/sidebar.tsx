@@ -9,6 +9,7 @@ interface SidebarProps {
 	activeView: "board" | "detail";
 	paused?: boolean;
 	hasInProgress?: boolean;
+	hasPrUrl?: boolean;
 }
 
 export function Sidebar({
@@ -18,6 +19,7 @@ export function Sidebar({
 	activeView,
 	paused = false,
 	hasInProgress = false,
+	hasPrUrl = false,
 }: SidebarProps) {
 	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
@@ -118,6 +120,7 @@ export function Sidebar({
 			) : (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[↑↓]  scroll      "}</Text>
+					{hasPrUrl && <Text dimColor>{"[o]   open PR    "}</Text>}
 					<Text dimColor>{"[Esc] back to board"}</Text>
 				</Box>
 			)}

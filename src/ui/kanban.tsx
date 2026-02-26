@@ -160,6 +160,8 @@ export function KanbanApp({ config }: KanbanAppProps) {
 			? (cards.find((c) => c.id === selectedCardId) ?? null)
 			: null;
 
+	const hasPrUrl = selectedCard?.prUrl !== undefined && selectedCard.prUrl.length > 0;
+
 	return (
 		<Box flexDirection="row" height={process.stdout.rows}>
 			<Sidebar
@@ -169,6 +171,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 				activeView={activeView}
 				paused={paused}
 				hasInProgress={hasInProgress}
+				hasPrUrl={hasPrUrl}
 			/>
 			{activeView === "board" || !selectedCard ? (
 				<Board
