@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectContext } from "./context.js";
 import {
+	buildDependencyContext,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
@@ -11,7 +12,7 @@ import {
 	detectTestRunner,
 	extractReadmeHeadings,
 } from "./prompt.js";
-import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
 	return {
@@ -670,5 +671,143 @@ describe("project context injection", () => {
 		const instrIndex = prompt.indexOf("## Instructions");
 		expect(descIndex).toBeLessThan(ctxIndex);
 		expect(ctxIndex).toBeLessThan(instrIndex);
+	});
+});
+
+function makeDependency(overrides?: Partial<DependencyContext>): DependencyContext {
+	return {
+		issueId: "INT-99",
+		branch: "feat/int-99-add-base-feature",
+		prUrl: "https://github.com/org/repo/pull/42",
+		changedFiles: ["src/types/index.ts", "src/utils.ts"],
+		...overrides,
+	};
+}
+
+describe("buildDependencyContext", () => {
+	it("includes dependency issue ID and branch", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("INT-99");
+		expect(ctx).toContain("feat/int-99-add-base-feature");
+	});
+
+	it("includes PR URL", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("https://github.com/org/repo/pull/42");
+	});
+
+	it("lists changed files", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("src/types/index.ts");
+		expect(ctx).toContain("src/utils.ts");
+	});
+
+	it("instructs not to reimplement existing code", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("Do NOT reimplement");
+	});
+
+	it("instructs PR base to be dependency branch", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("must target `feat/int-99-add-base-feature` as its base branch");
+	});
+
+	it("handles empty changed files", () => {
+		const ctx = buildDependencyContext(makeDependency({ changedFiles: [] }));
+		expect(ctx).toContain("no files detected");
+	});
+});
+
+describe("dependency context in prompts", () => {
+	const dep = makeDependency();
+
+	it("worktree prompt includes dependency context when issue has dependency", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("INT-99");
+		expect(prompt).toContain("feat/int-99-add-base-feature");
+	});
+
+	it("worktree prompt PR base uses dependency branch", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+		expect(prompt).not.toContain("--base main");
+	});
+
+	it("worktree prompt omits dependency context when no dependency", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("branch prompt includes dependency context when issue has dependency", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("INT-99");
+	});
+
+	it("branch prompt PR base uses dependency branch", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("branch prompt uses dependency branch for branch creation", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("feat/int-99-add-base-feature");
+		expect(prompt).toContain("dependency branch");
+	});
+
+	it("native worktree prompt includes dependency context", () => {
+		const issue = makeIssue({ dependency: dep });
+		const prompt = buildNativeWorktreePrompt(issue, "/repo", "vitest", "npm", "main");
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("native worktree prompt omits dependency context when no dependency", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue(), "/repo", "vitest", "npm", "main");
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("scoped prompt includes dependency context", () => {
+		const issue = makeIssue({ dependency: dep });
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(issue, step, []);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("scoped prompt omits dependency context when no dependency", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("dependency context appears between description and instructions in worktree prompt", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		const descIndex = prompt.indexOf("Implement the feature X as described.");
+		const depIndex = prompt.indexOf("## Dependency Context");
+		const instrIndex = prompt.indexOf("## Instructions");
+		expect(descIndex).toBeLessThan(depIndex);
+		expect(depIndex).toBeLessThan(instrIndex);
 	});
 });

@@ -111,6 +111,169 @@ describe("LinearSource.fetchNextIssue multi-label", () => {
 	});
 });
 
+describe("LinearSource.fetchNextIssue completedBlockerIds", () => {
+	beforeEach(() => {
+		process.env.LINEAR_API_KEY = "test-key";
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("returns completedBlockerIds for unblocked issue with completed blockers", async () => {
+		const response = {
+			data: {
+				issues: {
+					nodes: [
+						{
+							id: "1",
+							identifier: "ENG-2",
+							title: "Dependent issue",
+							description: "",
+							url: "https://linear.app/issue/ENG-2",
+							priority: 1,
+							labels: { nodes: [{ name: "lisa" }] },
+							inverseRelations: {
+								nodes: [
+									{
+										type: "blocks",
+										issue: {
+											identifier: "ENG-1",
+											state: { type: "completed" },
+										},
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+		};
+
+		vi.stubGlobal("fetch", mockFetch(response));
+
+		const source = new LinearSource();
+		const result = await source.fetchNextIssue(config);
+
+		expect(result).not.toBeNull();
+		expect(result?.id).toBe("ENG-2");
+		expect(result?.completedBlockerIds).toEqual(["ENG-1"]);
+	});
+
+	it("does not include completedBlockerIds when no completed blockers", async () => {
+		const response = {
+			data: {
+				issues: {
+					nodes: [
+						{
+							id: "1",
+							identifier: "ENG-1",
+							title: "No blockers",
+							description: "",
+							url: "https://linear.app/issue/ENG-1",
+							priority: 1,
+							labels: { nodes: [{ name: "lisa" }] },
+							inverseRelations: { nodes: [] },
+						},
+					],
+				},
+			},
+		};
+
+		vi.stubGlobal("fetch", mockFetch(response));
+
+		const source = new LinearSource();
+		const result = await source.fetchNextIssue(config);
+
+		expect(result).not.toBeNull();
+		expect(result?.completedBlockerIds).toBeUndefined();
+	});
+
+	it("returns null for issues where all blockers are still active", async () => {
+		const response = {
+			data: {
+				issues: {
+					nodes: [
+						{
+							id: "1",
+							identifier: "ENG-2",
+							title: "Blocked issue",
+							description: "",
+							url: "https://linear.app/issue/ENG-2",
+							priority: 1,
+							labels: { nodes: [{ name: "lisa" }] },
+							inverseRelations: {
+								nodes: [
+									{
+										type: "blocks",
+										issue: {
+											identifier: "ENG-1",
+											state: { type: "started" },
+										},
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+		};
+
+		vi.stubGlobal("fetch", mockFetch(response));
+
+		const source = new LinearSource();
+		const result = await source.fetchNextIssue(config);
+
+		expect(result).toBeNull();
+	});
+
+	it("tracks multiple completed blockers", async () => {
+		const response = {
+			data: {
+				issues: {
+					nodes: [
+						{
+							id: "1",
+							identifier: "ENG-3",
+							title: "Has two completed blockers",
+							description: "",
+							url: "https://linear.app/issue/ENG-3",
+							priority: 1,
+							labels: { nodes: [{ name: "lisa" }] },
+							inverseRelations: {
+								nodes: [
+									{
+										type: "blocks",
+										issue: {
+											identifier: "ENG-1",
+											state: { type: "completed" },
+										},
+									},
+									{
+										type: "blocks",
+										issue: {
+											identifier: "ENG-2",
+											state: { type: "completed" },
+										},
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+		};
+
+		vi.stubGlobal("fetch", mockFetch(response));
+
+		const source = new LinearSource();
+		const result = await source.fetchNextIssue(config);
+
+		expect(result).not.toBeNull();
+		expect(result?.completedBlockerIds).toEqual(["ENG-1", "ENG-2"]);
+	});
+});
+
 describe("LinearSource.listIssues", () => {
 	beforeEach(() => {
 		process.env.LINEAR_API_KEY = "test-key";

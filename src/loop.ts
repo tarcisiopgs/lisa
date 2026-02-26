@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { execa } from "execa";
 import { formatLabels, getRemoveLabel } from "./config.js";
 import { analyzeProject } from "./context.js";
+import { resolveFirstDependency } from "./git/dependency.js";
 import { appendPrAttribution } from "./git/github.js";
 import {
 	createWorktree,
@@ -38,6 +39,7 @@ import { createSource } from "./sources/index.js";
 import type {
 	ExecutionPlan,
 	FallbackResult,
+	Issue,
 	LisaConfig,
 	ModelSpec,
 	PlanStep,
@@ -402,6 +404,21 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
+		// Resolve dependency if the issue has completed blockers with open PRs
+		if (issue.completedBlockerIds && issue.completedBlockerIds.length > 0) {
+			const repoPath = determineRepoPath(config.repos, issue, workspace) ?? workspace;
+			const baseBranch = resolveBaseBranch(config, repoPath);
+			startSpinner(`${issue.id} — resolving dependency...`);
+			const dep = await resolveFirstDependency(repoPath, issue.completedBlockerIds, baseBranch);
+			stopSpinner();
+			if (dep) {
+				issue.dependency = dep;
+				logger.ok(
+					`Dependency resolved: ${dep.issueId} → branch ${dep.branch} (${dep.changedFiles.length} changed files)`,
+				);
+			}
+		}
+
 		// Ensure the issue exists in the kanban (may be missing if added after initial fetch)
 		kanbanEmitter.emit("issue:queued", issue);
 
@@ -649,7 +666,7 @@ async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<
 
 async function runWorktreeSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	issue: Issue,
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
@@ -684,7 +701,7 @@ async function runWorktreeSession(
 
 async function runNativeWorktreeSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	issue: Issue,
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
@@ -769,7 +786,7 @@ async function runNativeWorktreeSession(
 
 async function runManualWorktreeSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	issue: Issue,
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
@@ -778,12 +795,15 @@ async function runManualWorktreeSession(
 ): Promise<SessionResult> {
 	const branchName = generateBranchName(issue.id, issue.title);
 
+	// Use dependency branch as base when available (PR stacking)
+	const baseBranch = issue.dependency?.branch ?? defaultBranch;
+
 	startSpinner(`${issue.id} \u2014 creating worktree...`);
-	logger.log(`Creating worktree for ${branchName} (base: ${defaultBranch})...`);
+	logger.log(`Creating worktree for ${branchName} (base: ${baseBranch})...`);
 
 	let worktreePath: string;
 	try {
-		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
+		worktreePath = await createWorktree(repoPath, branchName, baseBranch);
 	} catch (err) {
 		stopSpinner();
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
@@ -871,7 +891,7 @@ async function runManualWorktreeSession(
 
 async function runWorktreeMultiRepoSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	issue: Issue,
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
@@ -1000,7 +1020,7 @@ interface MultiRepoStepResult {
 
 async function runMultiRepoStep(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string },
+	issue: Issue,
 	step: PlanStep,
 	previousResults: PreviousStepResult[],
 	logFile: string,
@@ -1011,6 +1031,9 @@ async function runMultiRepoStep(
 	const repoPath = step.repoPath;
 	const defaultBranch = resolveBaseBranch(config, repoPath);
 	const branchName = generateBranchName(issue.id, issue.title);
+
+	// Use dependency branch as base when available (PR stacking)
+	const baseBranch = issue.dependency?.branch ?? defaultBranch;
 
 	const failResult = (providerUsed: string, fallback?: FallbackResult): MultiRepoStepResult => ({
 		success: false,
@@ -1023,7 +1046,7 @@ async function runMultiRepoStep(
 	startSpinner(`${issue.id} step ${stepNum} \u2014 creating worktree...`);
 	let worktreePath: string;
 	try {
-		worktreePath = await createWorktree(repoPath, branchName, defaultBranch);
+		worktreePath = await createWorktree(repoPath, branchName, baseBranch);
 	} catch (err) {
 		stopSpinner();
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
@@ -1104,7 +1127,7 @@ async function runMultiRepoStep(
 
 async function runBranchSession(
 	config: LisaConfig,
-	issue: { id: string; title: string; url: string; description: string; repo?: string },
+	issue: Issue,
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
