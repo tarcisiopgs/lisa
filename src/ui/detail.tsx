@@ -1,7 +1,29 @@
+import { exec } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { useEffect, useRef, useState } from "react";
 import type { KanbanCard } from "./state.js";
+
+export function openUrl(url: string): void {
+	const platform = process.platform;
+	let command: string;
+
+	if (platform === "darwin") {
+		command = `open "${url}"`;
+	} else if (platform === "linux") {
+		command = `xdg-open "${url}"`;
+	} else if (platform === "win32") {
+		command = `start "" "${url}"`;
+	} else {
+		return;
+	}
+
+	exec(command, (error) => {
+		if (error) {
+			console.error("Failed to open URL:", error.message);
+		}
+	});
+}
 
 function formatElapsed(ms: number): string {
 	const seconds = Math.floor(ms / 1000);
@@ -70,6 +92,10 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	useInput((_input, key) => {
 		if (key.escape) {
 			onBack();
+			return;
+		}
+		if (_input === "o" && card.prUrl) {
+			openUrl(card.prUrl);
 			return;
 		}
 		if (key.upArrow) {
