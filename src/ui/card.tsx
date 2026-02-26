@@ -40,6 +40,35 @@ function wrapTitle(title: string, maxWidth: number): [string, string] {
 	return [line1, line2];
 }
 
+// Strip ANSI escape codes and extract the last non-empty line from provider output.
+export function getLastOutputLine(outputLog: string, maxWidth: number): string {
+	if (!outputLog) return "";
+
+	// Strip ANSI escape codes (CSI sequences and OSC sequences)
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI escape stripping
+	const ansiPattern = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\].*?(?:\x07|\x1B\\))/g;
+	const stripped = outputLog.replace(ansiPattern, "");
+
+	// Split by newlines, handle carriage returns within lines
+	const lines = stripped
+		.split(/\r?\n/)
+		.map((line) => {
+			const parts = line.split("\r");
+			return (parts[parts.length - 1] ?? "").trim();
+		})
+		.filter((line) => line.length > 0);
+
+	if (lines.length === 0) return "";
+
+	const lastLine = lines[lines.length - 1] ?? "";
+
+	if (lastLine.length > maxWidth) {
+		return `${lastLine.slice(0, maxWidth - 1)}…`;
+	}
+
+	return lastLine;
+}
+
 export function Card({
 	card,
 	isSelected = false,
@@ -140,6 +169,11 @@ export function Card({
 				<Text bold={isSelected} dimColor={!isSelected}>
 					{titleLine2}
 				</Text>
+
+				{/* Last provider output line (in_progress only) */}
+				{card.column === "in_progress" && (
+					<Text dimColor>{getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH)}</Text>
+				)}
 
 				{/* Timer / completion / error row */}
 				{card.column === "in_progress" && elapsedMs !== null && (
