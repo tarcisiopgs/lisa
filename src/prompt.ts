@@ -97,6 +97,11 @@ This project uses **${testRunner}** as its test runner.
 `;
 }
 
+function buildSpecWarningBlock(warning?: string): string {
+	if (!warning) return "";
+	return `\n> **Warning — incomplete spec:** ${warning}\n> Proceed using reasonable assumptions based on the title and description.\n> If the issue is genuinely too ambiguous to implement, STOP and explain what is missing.\n`;
+}
+
 function buildRulesSection(
 	env?: ProjectEnvironment,
 	variant: "issue" | "scope" = "issue",
@@ -200,6 +205,7 @@ function buildWorktreePrompt(
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -220,7 +226,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -295,6 +301,7 @@ function buildBranchPrompt(
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -309,7 +316,7 @@ Do NOT use interactive skills, ask clarifying questions, or wait for user input.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -372,6 +379,7 @@ export function buildNativeWorktreePrompt(
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -392,7 +400,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -517,6 +525,7 @@ export function buildScopedImplementPrompt(
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
 	const previousBlock =
@@ -542,7 +551,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:
