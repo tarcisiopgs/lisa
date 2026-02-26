@@ -40,7 +40,6 @@ import type {
 	ExecutionPlan,
 	FallbackResult,
 	Issue,
-	LifecycleConfig,
 	LisaConfig,
 	ModelSpec,
 	PlanStep,
