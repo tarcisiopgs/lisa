@@ -89,7 +89,10 @@ export function Sidebar({
 					<Box>
 						<Text color="yellow">{"▸ "}</Text>
 						<Text color="white" bold>
-							{model ?? "default"}
+							{(() => {
+								const m = (model ?? "default").toUpperCase();
+								return m.length > 19 ? `${m.slice(0, 18)}…` : m;
+							})()}
 						</Text>
 					</Box>
 				</Box>
@@ -107,7 +110,10 @@ export function Sidebar({
 								{m === model ? "● " : `${i + 1}. `}
 							</Text>
 							<Text color={m === model ? "yellow" : "white"} bold={m === model}>
-								{m}
+								{(() => {
+									const display = m.toUpperCase();
+									return display.length > 19 ? `${display.slice(0, 18)}…` : display;
+								})()}
 							</Text>
 						</Box>
 					))}
