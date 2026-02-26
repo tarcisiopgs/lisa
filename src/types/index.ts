@@ -82,6 +82,7 @@ export interface Issue {
 	repo?: string;
 	dependency?: DependencyContext;
 	completedBlockerIds?: string[];
+	specWarning?: string;
 }
 
 export interface ModelSpec {
