@@ -6,6 +6,8 @@ import * as logger from "../output/logger.js";
 export interface ResourceConfig {
 	name: string;
 	check_port: number;
+	port_range?: number; // number of ports to try starting from check_port
+	port_env_var?: string; // env var name to inject the allocated port (e.g. "DATABASE_PORT")
 	up: string;
 	down: string;
 	startup_timeout: number;

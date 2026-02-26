@@ -33,7 +33,7 @@ export class CodexProvider implements Provider {
 
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				env: { ...process.env, CODEX_QUIET_MODE: "1" },
+				env: { ...process.env, ...opts.env, CODEX_QUIET_MODE: "1" },
 			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);

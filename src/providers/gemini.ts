@@ -33,7 +33,10 @@ export class GeminiProvider implements Provider {
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
 			const command = `gemini --yolo ${modelFlag} -p "$(cat '${promptFile}')"`;
-			const { proc, isPty } = spawnWithPty(command, { cwd: opts.cwd });
+			const { proc, isPty } = spawnWithPty(command, {
+				cwd: opts.cwd,
+				env: { ...process.env, ...opts.env },
+			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;

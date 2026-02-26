@@ -389,6 +389,29 @@ validation:
 
 > **Note:** The `needs-spec` label must exist in your issue tracker before Lisa can apply it. Create it manually if it does not exist — Lisa will log a warning if the label is missing.
 
+### Infrastructure Auto-Discovery
+
+Lisa auto-discovers Docker Compose services in each repository and starts them before handing control to the agent. If a `docker-compose.yml` / `compose.yml` is present, Lisa reads port mappings and starts the services, waiting for each port to become ready.
+
+**Dynamic port allocation** prevents collisions when multiple Lisa instances run in parallel. Add `port_range` and `port_env_var` to any discovered or manually configured resource:
+
+```yaml
+repos:
+  - path: api
+    # lifecycle config is resolved by auto-discovery (docker-compose.yml)
+    # port_range and port_env_var can be set via manual config override
+```
+
+When `port_range` is set, Lisa scans ports `check_port` through `check_port + port_range - 1` and picks the first free one. The chosen port is injected into the resource process via `port_env_var` and is available to `setup` commands and the agent environment.
+
+| Field | Type | Description |
+|---|---|---|
+| `check_port` | `number` | Preferred (base) port |
+| `port_range` | `number` (optional) | How many ports to scan from `check_port` |
+| `port_env_var` | `string` (optional) | Env var name to inject the allocated port (e.g. `DATABASE_PORT`) |
+
+If no free port is found within the range, Lisa logs a clear error and aborts the session.
+
 ### Auto-Detection
 
 Lisa auto-detects `vitest` or `jest` from `package.json` dependencies and injects the correct test command into the agent prompt. It also detects the package manager from lockfiles (`bun.lockb`/`bun.lock` → `bun`, `pnpm-lock.yaml` → `pnpm`, `yarn.lock` → `yarn`, otherwise `npm`).

@@ -97,6 +97,7 @@ export interface RunOptions {
 	overseer?: OverseerConfig;
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
+	env?: Record<string, string>; // additional env vars to inject into the provider process
 	onProcess?: (pid: number) => void; // called when the provider spawns its child process
 	shouldAbort?: () => boolean; // checked between fallback attempts to stop the chain early
 }

@@ -38,7 +38,7 @@ export class ClaudeProvider implements Provider {
 			const command = `claude ${flags.join(" ")} "$(cat '${promptFile}')"`;
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				env: { ...process.env, CLAUDECODE: undefined },
+				env: { ...process.env, ...opts.env, CLAUDECODE: undefined },
 			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
