@@ -206,6 +206,7 @@ function buildWorktreePrompt(
 		: "`.lisa-manifest.json` in the **current directory**";
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are already inside the correct repository worktree on the correct branch.
 Do NOT create a new branch — just work on the current one.
@@ -297,6 +298,7 @@ function buildBranchPrompt(
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 ## Issue
 
@@ -376,6 +378,7 @@ export function buildNativeWorktreePrompt(
 		: "`.lisa-manifest.json` in the **current directory**";
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.

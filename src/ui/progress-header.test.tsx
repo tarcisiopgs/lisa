@@ -9,7 +9,7 @@ function stripAnsiAndExtractContent(output: string | undefined | null): string {
 	}
 
 	// Regex to remove ANSI escape codes (dynamic to prevent biome from converting to a regex literal)
-	const ansiStripRegex = new RegExp(String.fromCharCode(0x1b) + "\\[[0-9;]*m", "g");
+	const ansiStripRegex = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
 	const cleanedOutput = output.replace(ansiStripRegex, "");
 
 	// Split by lines and find the line containing the actual progress text
