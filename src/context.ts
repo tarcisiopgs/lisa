@@ -18,11 +18,14 @@ export interface CodeTool {
 	configFile: string;
 }
 
+export type ProjectEnvironment = "cli" | "mobile" | "web" | "server" | "library" | "unknown";
+
 export interface ProjectContext {
 	qualityScripts: QualityScript[];
 	testPattern: TestPattern | null;
 	codeTools: CodeTool[];
 	projectTree: string;
+	environment: ProjectEnvironment;
 }
 
 const QUALITY_SCRIPT_NAMES = new Set([
@@ -56,7 +59,76 @@ export function analyzeProject(cwd: string): ProjectContext {
 		testPattern: detectTestPattern(cwd),
 		codeTools: detectCodeTools(cwd),
 		projectTree: generateProjectTree(cwd),
+		environment: detectEnvironment(cwd),
 	};
+}
+
+const CLI_DEPS = [
+	"ink",
+	"citty",
+	"commander",
+	"yargs",
+	"oclif",
+	"meow",
+	"cleye",
+	"cac",
+	"minimist",
+	"caporal",
+];
+const MOBILE_DEPS = ["react-native", "expo", "@react-native", "@expo"];
+const WEB_DEPS = [
+	"react-dom",
+	"next",
+	"vue",
+	"nuxt",
+	"@angular/core",
+	"svelte",
+	"gatsby",
+	"remix",
+	"astro",
+	"@remix-run/react",
+];
+const SERVER_DEPS = ["express", "fastify", "koa", "@hapi/hapi", "@nestjs/core", "hono", "elysia"];
+
+export function detectEnvironment(cwd: string): ProjectEnvironment {
+	// Non-JS ecosystems
+	if (existsSync(join(cwd, "pubspec.yaml"))) return "mobile"; // Flutter
+	if (existsSync(join(cwd, "Cargo.toml"))) return "cli"; // Rust
+	if (existsSync(join(cwd, "go.mod"))) return "server"; // Go
+
+	const packageJsonPath = join(cwd, "package.json");
+	if (!existsSync(packageJsonPath)) return "unknown";
+
+	try {
+		const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+			bin?: Record<string, string> | string;
+			dependencies?: Record<string, string>;
+			devDependencies?: Record<string, string>;
+		};
+		const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+		const depNames = Object.keys(deps);
+
+		// CLI: has bin field or uses a known CLI framework
+		if (pkg.bin || CLI_DEPS.some((d) => depNames.includes(d))) return "cli";
+
+		// Mobile: react-native, expo, or native project directories
+		if (
+			MOBILE_DEPS.some((d) => depNames.some((dep) => dep === d || dep.startsWith(`${d}/`))) ||
+			existsSync(join(cwd, "android")) ||
+			existsSync(join(cwd, "ios"))
+		)
+			return "mobile";
+
+		// Web: browser-rendering framework
+		if (WEB_DEPS.some((d) => depNames.includes(d))) return "web";
+
+		// Server: HTTP server framework
+		if (SERVER_DEPS.some((d) => depNames.includes(d))) return "server";
+
+		return "library";
+	} catch {
+		return "unknown";
+	}
 }
 
 export function detectQualityScripts(cwd: string): QualityScript[] {
@@ -213,8 +285,31 @@ export function generateProjectTree(cwd: string): string {
 	return lines.join("\n");
 }
 
+const ENVIRONMENT_LABELS: Record<ProjectEnvironment, string> = {
+	cli: "CLI (Node.js)",
+	mobile: "Mobile (React Native / Flutter / native)",
+	web: "Web (browser)",
+	server: "Server-side (Node.js)",
+	library: "Library",
+	unknown: "",
+};
+
+const ENVIRONMENT_FORBIDDEN: Partial<Record<ProjectEnvironment, string>> = {
+	cli: "Do NOT install browser/DOM packages (`jsdom`, `happy-dom`, `@testing-library/dom`, `@testing-library/react`). All code and tests must run in Node.js only.",
+	mobile:
+		"Do NOT install browser/DOM packages or web-only libraries. Use only packages compatible with the mobile runtime.",
+	server: "Do NOT install browser/DOM packages. Use only Node.js-compatible packages.",
+};
+
 export function formatProjectContext(ctx: ProjectContext): string {
 	const sections: string[] = [];
+
+	if (ctx.environment !== "unknown" && ctx.environment !== "library") {
+		const label = ENVIRONMENT_LABELS[ctx.environment];
+		const forbidden = ENVIRONMENT_FORBIDDEN[ctx.environment];
+		const note = forbidden ? ` — ${forbidden}` : "";
+		sections.push(`### Project Environment\n\n**${label}**${note}`);
+	}
 
 	if (ctx.qualityScripts.length > 0) {
 		const scriptLines = ctx.qualityScripts
