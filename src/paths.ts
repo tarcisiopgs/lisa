@@ -23,11 +23,19 @@ export function getGuardrailsPath(cwd: string): string {
 	return join(getCacheDir(cwd), "guardrails.md");
 }
 
-export function getManifestPath(cwd: string): string {
+export function getManifestPath(cwd: string, issueId?: string): string {
+	if (issueId) {
+		const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		return join(getCacheDir(cwd), `manifest-${safe}.json`);
+	}
 	return join(getCacheDir(cwd), "manifest.json");
 }
 
-export function getPlanPath(cwd: string): string {
+export function getPlanPath(cwd: string, issueId?: string): string {
+	if (issueId) {
+		const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		return join(getCacheDir(cwd), `plan-${safe}.json`);
+	}
 	return join(getCacheDir(cwd), "plan.json");
 }
 

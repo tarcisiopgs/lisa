@@ -47,14 +47,15 @@ import type {
 } from "./types/index.js";
 import { kanbanEmitter } from "./ui/state.js";
 
-// === Module-level state for signal handler cleanup ===
-let activeCleanup: { issueId: string; previousStatus: string; source: Source } | null = null;
-let activeProviderPid: number | null = null;
+// === Per-issue state maps for concurrent execution ===
+const activeCleanups = new Map<string, { previousStatus: string; source: Source }>();
+const activeProviderPids = new Map<string, number>();
+const providerPausedSet = new Set<string>();
+const userKilledSet = new Set<string>();
+const userSkippedSet = new Set<string>();
+
 let shuttingDown = false;
 let loopPaused = false;
-let providerPaused = false;
-let userKilled = false;
-let userSkipped = false;
 
 kanbanEmitter.on("loop:pause", () => {
 	loopPaused = true;
@@ -63,42 +64,64 @@ kanbanEmitter.on("loop:resume", () => {
 	loopPaused = false;
 });
 
-kanbanEmitter.on("loop:pause-provider", () => {
-	if (activeProviderPid) {
-		try {
-			process.kill(activeProviderPid, "SIGSTOP");
-		} catch {
-			// Process may have already exited
+kanbanEmitter.on("loop:pause-provider", (issueId?: string) => {
+	if (issueId) {
+		// Pause a specific issue's provider
+		const pid = activeProviderPids.get(issueId);
+		if (pid) {
+			try {
+				process.kill(pid, "SIGSTOP");
+			} catch {}
+			providerPausedSet.add(issueId);
 		}
-		providerPaused = true;
-		kanbanEmitter.emit("provider:paused");
+	} else {
+		// Pause ALL active providers
+		for (const [id, pid] of activeProviderPids) {
+			try {
+				process.kill(pid, "SIGSTOP");
+			} catch {}
+			providerPausedSet.add(id);
+		}
 	}
+	kanbanEmitter.emit("provider:paused", issueId);
 });
 
-kanbanEmitter.on("loop:resume-provider", () => {
-	if (activeProviderPid && providerPaused) {
-		try {
-			process.kill(activeProviderPid, "SIGCONT");
-		} catch {
-			// Process may have already exited
+kanbanEmitter.on("loop:resume-provider", (issueId?: string) => {
+	if (issueId) {
+		const pid = activeProviderPids.get(issueId);
+		if (pid && providerPausedSet.has(issueId)) {
+			try {
+				process.kill(pid, "SIGCONT");
+			} catch {}
+			providerPausedSet.delete(issueId);
 		}
-		providerPaused = false;
-		kanbanEmitter.emit("provider:resumed");
+	} else {
+		// Resume ALL paused providers
+		for (const id of providerPausedSet) {
+			const pid = activeProviderPids.get(id);
+			if (pid) {
+				try {
+					process.kill(pid, "SIGCONT");
+				} catch {}
+			}
+		}
+		providerPausedSet.clear();
 	}
+	kanbanEmitter.emit("provider:resumed", issueId);
 });
 
-function killActiveProvider(): void {
-	if (!activeProviderPid) return;
-	if (providerPaused) {
+function killProviderForIssue(issueId: string): void {
+	const pid = activeProviderPids.get(issueId);
+	if (!pid) return;
+	if (providerPausedSet.has(issueId)) {
 		try {
-			process.kill(activeProviderPid, "SIGCONT");
+			process.kill(pid, "SIGCONT");
 		} catch {}
-		providerPaused = false;
+		providerPausedSet.delete(issueId);
 	}
 	try {
-		process.kill(activeProviderPid, "SIGTERM");
+		process.kill(pid, "SIGTERM");
 	} catch {}
-	const pid = activeProviderPid;
 	setTimeout(() => {
 		try {
 			process.kill(pid, "SIGKILL");
@@ -106,14 +129,31 @@ function killActiveProvider(): void {
 	}, 5000);
 }
 
-kanbanEmitter.on("loop:kill", () => {
-	userKilled = true;
-	killActiveProvider();
+kanbanEmitter.on("loop:kill", (issueId?: string) => {
+	if (issueId) {
+		userKilledSet.add(issueId);
+		killProviderForIssue(issueId);
+	} else {
+		// Kill first active provider (backward compat for single concurrency)
+		const firstId = activeProviderPids.keys().next().value;
+		if (firstId) {
+			userKilledSet.add(firstId);
+			killProviderForIssue(firstId);
+		}
+	}
 });
 
-kanbanEmitter.on("loop:skip", () => {
-	userSkipped = true;
-	killActiveProvider();
+kanbanEmitter.on("loop:skip", (issueId?: string) => {
+	if (issueId) {
+		userSkippedSet.add(issueId);
+		killProviderForIssue(issueId);
+	} else {
+		const firstId = activeProviderPids.keys().next().value;
+		if (firstId) {
+			userSkippedSet.add(firstId);
+			killProviderForIssue(firstId);
+		}
+	}
 });
 
 export interface LoopOptions {
@@ -121,6 +161,7 @@ export interface LoopOptions {
 	limit: number;
 	dryRun: boolean;
 	issueId?: string;
+	concurrency: number;
 }
 
 function resolveModels(config: LisaConfig): ModelSpec[] {
@@ -164,8 +205,8 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	}));
 }
 
-function readLisaPlan(cwd: string): ExecutionPlan | null {
-	const planPath = getPlanPath(cwd);
+function readLisaPlan(cwd: string, issueId?: string): ExecutionPlan | null {
+	const planPath = getPlanPath(cwd, issueId);
 	if (!existsSync(planPath)) return null;
 	try {
 		return JSON.parse(readFileSync(planPath, "utf-8").trim()) as ExecutionPlan;
@@ -174,9 +215,9 @@ function readLisaPlan(cwd: string): ExecutionPlan | null {
 	}
 }
 
-function cleanupPlan(cwd: string): void {
+function cleanupPlan(cwd: string, issueId?: string): void {
 	try {
-		unlinkSync(getPlanPath(cwd));
+		unlinkSync(getPlanPath(cwd, issueId));
 	} catch {}
 }
 
@@ -186,8 +227,8 @@ interface LisaManifest {
 	prUrl?: string;
 }
 
-function readLisaManifest(cwd: string): LisaManifest | null {
-	const manifestPath = getManifestPath(cwd);
+function readLisaManifest(cwd: string, issueId?: string): LisaManifest | null {
+	const manifestPath = getManifestPath(cwd, issueId);
 	if (!existsSync(manifestPath)) return null;
 	try {
 		return JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
@@ -196,9 +237,9 @@ function readLisaManifest(cwd: string): LisaManifest | null {
 	}
 }
 
-function cleanupManifest(cwd: string): void {
+function cleanupManifest(cwd: string, issueId?: string): void {
 	try {
-		unlinkSync(getManifestPath(cwd));
+		unlinkSync(getManifestPath(cwd, issueId));
 	} catch {}
 }
 
@@ -211,41 +252,41 @@ function installSignalHandlers(): void {
 		shuttingDown = true;
 		stopSpinner();
 		resetTitle();
-		logger.warn(`Received ${signal}. Reverting active issue...`);
+		logger.warn(`Received ${signal}. Reverting active issues...`);
 
-		// Kill the active provider process to prevent orphaned claude/gemini/etc processes
-		if (activeProviderPid) {
+		// Kill all active provider processes
+		for (const [, pid] of activeProviderPids) {
 			try {
-				process.kill(activeProviderPid, "SIGTERM");
-			} catch {
-				// Process may have already exited
-			}
+				process.kill(pid, "SIGTERM");
+			} catch {}
 		}
 
-		if (activeCleanup) {
-			const { issueId, previousStatus, source } = activeCleanup;
-			try {
-				await Promise.race([
-					source.updateStatus(issueId, previousStatus),
-					new Promise<never>((_, reject) =>
-						setTimeout(() => reject(new Error("Revert timed out")), 5000),
-					),
-				]);
-				logger.ok(`Reverted ${issueId} to "${previousStatus}"`);
-			} catch (err) {
-				logger.error(
-					`Failed to revert ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
-			// Update kanban card back to backlog state
-			kanbanEmitter.emit("issue:reverted", issueId);
-		}
+		// Revert all active issues
+		const revertPromises = [...activeCleanups.entries()].map(
+			async ([issueId, { previousStatus, source }]) => {
+				try {
+					await Promise.race([
+						source.updateStatus(issueId, previousStatus),
+						new Promise<never>((_, reject) =>
+							setTimeout(() => reject(new Error("Revert timed out")), 5000),
+						),
+					]);
+					logger.ok(`Reverted ${issueId} to "${previousStatus}"`);
+				} catch (err) {
+					logger.error(
+						`Failed to revert ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+				kanbanEmitter.emit("issue:reverted", issueId);
+			},
+		);
+
+		await Promise.allSettled(revertPromises);
 
 		// Signal the TUI to exit cleanly (if running)
 		const hasTUI = kanbanEmitter.listenerCount("tui:exit") > 0;
 		kanbanEmitter.emit("tui:exit");
 		if (hasTUI) {
-			// Give React time to re-render the reverted card before the process exits
 			await new Promise((resolve) => setTimeout(resolve, 250));
 		}
 		process.exit(0);
@@ -297,6 +338,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	const source = createSource(config.source);
 	const models = resolveModels(config);
 	const workspace = resolve(config.workspace);
+	const concurrency = opts.concurrency;
 
 	installSignalHandlers();
 
@@ -306,7 +348,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	rotateLogFiles(workspace);
 
 	logger.log(
-		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow})`,
+		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow}${concurrency > 1 ? `, concurrency: ${concurrency}` : ""})`,
 	);
 
 	// Recover orphan issues stuck in in_progress from previous interrupted runs
@@ -326,6 +368,24 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 	}
 
+	if (concurrency <= 1) {
+		// Sequential mode — original behavior
+		await runSequentialLoop(config, source, models, workspace, opts);
+	} else {
+		// Concurrent pool mode
+		await runConcurrentLoop(config, source, models, workspace, opts);
+	}
+}
+
+// === Sequential loop (concurrency === 1) — preserves original behavior ===
+
+async function runSequentialLoop(
+	config: LisaConfig,
+	source: Source,
+	models: ModelSpec[],
+	workspace: string,
+	opts: LoopOptions,
+): Promise<void> {
 	let session = 0;
 	const loopStart = Date.now();
 	let completedCount = 0;
@@ -434,7 +494,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		}
 
 		// Register active issue for signal handler cleanup
-		activeCleanup = { issueId: issue.id, previousStatus, source };
+		activeCleanups.set(issue.id, { previousStatus, source });
 
 		let sessionResult: SessionResult;
 		try {
@@ -455,7 +515,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 					`Failed to revert status: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}`,
 				);
 			}
-			activeCleanup = null;
+			activeCleanups.delete(issue.id);
 			notify();
 			if (opts.once) break;
 			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
@@ -464,153 +524,53 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			continue;
 		}
 
-		if (!sessionResult.success) {
-			// Check if this was a user-initiated kill or skip
-			if (userKilled) {
-				userKilled = false;
-				providerPaused = false;
-				logger.warn(`Issue ${issue.id} killed by user.`);
-				try {
-					await source.updateStatus(issue.id, previousStatus);
-					logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
-				} catch (err) {
-					logger.error(
-						`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-					);
-				}
-				kanbanEmitter.emit("issue:killed", issue.id);
-				activeCleanup = null;
-				notify();
-				// Kill pauses the loop — waitIfPaused() at the start of the next iteration
-				// will block until the user resumes (loopPaused is set by the TUI via loop:pause)
-				if (opts.once) break;
-				continue;
-			}
-
-			if (userSkipped) {
-				userSkipped = false;
-				providerPaused = false;
-				logger.warn(`Issue ${issue.id} skipped by user.`);
-				try {
-					await source.updateStatus(issue.id, previousStatus);
-					logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
-				} catch (err) {
-					logger.error(
-						`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-					);
-				}
-				kanbanEmitter.emit("issue:skipped", issue.id);
-				activeCleanup = null;
-				notify();
-				if (opts.once) break;
-				continue;
-			}
-
-			// All models failed — revert issue to previous status
-			logger.error(`All models failed for ${issue.id}. Reverting to "${previousStatus}".`);
-			logAttemptHistory(sessionResult);
-			try {
-				await source.updateStatus(issue.id, previousStatus);
-				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
-				kanbanEmitter.emit("issue:reverted", issue.id);
-			} catch (err) {
-				logger.error(
-					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
-			activeCleanup = null;
-			notify();
-
-			if (opts.once) {
-				logger.log("Single iteration mode. Exiting.");
-				break;
-			}
-
-			// If every provider failed due to infrastructure issues (quota, plan limits,
-			// binary not found) rather than task content, retrying won't help — stop the
-			// loop so the user can fix their provider configuration.
-			if (isCompleteProviderExhaustion(sessionResult.fallback.attempts)) {
-				logger.error(
-					"All providers exhausted due to infrastructure issues (quota, plan limits, or not installed). " +
-						"Fix your provider configuration and restart lisa.",
-				);
-				break;
-			}
-
-			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-			setTitle("Lisa \u2014 cooling down...");
-			await sleep(config.loop.cooldown * 1000);
-			continue;
-		}
-
-		logger.ok(`Completed with provider: ${sessionResult.providerUsed}`);
-
-		// Only move to done if PRs were actually created
-		if (sessionResult.prUrls.length === 0) {
-			logger.warn(
-				`Session succeeded but no PRs created for ${issue.id}. Reverting to "${previousStatus}".`,
-			);
-			try {
-				await source.updateStatus(issue.id, previousStatus);
-				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
-				kanbanEmitter.emit("issue:reverted", issue.id);
-			} catch (err) {
-				logger.error(
-					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
-			activeCleanup = null;
-			notify();
-
-			if (opts.once) {
-				logger.log("Single iteration mode. Exiting.");
-				break;
-			}
-			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-			setTitle("Lisa \u2014 cooling down...");
-			await sleep(config.loop.cooldown * 1000);
-			continue;
-		}
-
-		// Attach PR links to issue card
-		for (const prUrl of sessionResult.prUrls) {
-			try {
-				await source.attachPullRequest(issue.id, prUrl);
-				logger.ok(`Attached PR to ${issue.id}`);
-			} catch (err) {
-				logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
-			}
-		}
-
-		// Update issue status + remove label atomically (single API call for Linear)
-		try {
-			const doneStatus = config.source_config.done;
-			const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
-			await source.completeIssue(issue.id, doneStatus, labelToRemove);
-			logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
-			for (const prUrl of sessionResult.prUrls) {
-				kanbanEmitter.emit("issue:done", issue.id, prUrl);
-			}
-			completedCount++;
-			if (labelToRemove) {
-				logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
-			}
-		} catch (err) {
-			logger.error(`Failed to complete issue: ${err instanceof Error ? err.message : String(err)}`);
-		}
-
-		activeCleanup = null;
-		stopSpinner(`\u2713 Lisa \u2014 ${issue.id} \u2014 PR created`);
-		notify();
+		const completed = await handleSessionResult(
+			sessionResult,
+			issue,
+			previousStatus,
+			source,
+			config,
+			opts,
+		);
+		if (completed) completedCount++;
 
 		if (opts.once) {
 			logger.log("Single iteration mode. Exiting.");
 			break;
 		}
 
-		logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-		setTitle("Lisa \u2014 cooling down...");
-		await sleep(config.loop.cooldown * 1000);
+		// Check for provider exhaustion
+		if (
+			!sessionResult.success &&
+			!userKilledSet.has(issue.id) &&
+			!userSkippedSet.has(issue.id) &&
+			isCompleteProviderExhaustion(sessionResult.fallback.attempts)
+		) {
+			logger.error(
+				"All providers exhausted due to infrastructure issues (quota, plan limits, or not installed). " +
+					"Fix your provider configuration and restart lisa.",
+			);
+			break;
+		}
+
+		// Clean per-issue flags
+		userKilledSet.delete(issue.id);
+		userSkippedSet.delete(issue.id);
+		providerPausedSet.delete(issue.id);
+
+		if (!sessionResult.success) {
+			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
+			await sleep(config.loop.cooldown * 1000);
+		} else if (!completed) {
+			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
+			await sleep(config.loop.cooldown * 1000);
+		} else {
+			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+			setTitle("Lisa \u2014 cooling down...");
+			await sleep(config.loop.cooldown * 1000);
+		}
 	}
 
 	if (completedCount > 0) {
@@ -621,6 +581,275 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	}
 	resetTitle();
 	logger.ok(`lisa finished. ${session} session(s) run.`);
+}
+
+// === Concurrent pool (concurrency > 1) ===
+
+async function runConcurrentLoop(
+	config: LisaConfig,
+	source: Source,
+	models: ModelSpec[],
+	workspace: string,
+	opts: LoopOptions,
+): Promise<void> {
+	const concurrency = opts.concurrency;
+	const loopStart = Date.now();
+	let completedCount = 0;
+	let sessionCounter = 0;
+	let noMoreIssues = false;
+	let exhausted = false;
+	const activeWorkers = new Map<string, Promise<void>>();
+
+	const processIssue = async (issue: Issue, session: number): Promise<void> => {
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
+		const logFile = resolve(getLogsDir(workspace), `session_${session}_${timestamp}.log`);
+
+		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
+
+		kanbanEmitter.emit("issue:queued", issue);
+
+		// Move issue to in-progress
+		const previousStatus = config.source_config.pick_from;
+		try {
+			kanbanEmitter.emit("issue:started", issue.id);
+			await source.updateStatus(issue.id, config.source_config.in_progress);
+			logger.ok(`Moved ${issue.id} to "${config.source_config.in_progress}"`);
+		} catch (err) {
+			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		activeCleanups.set(issue.id, { previousStatus, source });
+
+		let sessionResult: SessionResult;
+		try {
+			sessionResult = await runWorktreeSession(config, issue, logFile, session, models);
+		} catch (err) {
+			logger.error(
+				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			try {
+				await source.updateStatus(issue.id, previousStatus);
+				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			} catch (revertErr) {
+				logger.error(
+					`Failed to revert status: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}`,
+				);
+			}
+			activeCleanups.delete(issue.id);
+			activeProviderPids.delete(issue.id);
+			notify();
+			return;
+		}
+
+		const completed = await handleSessionResult(
+			sessionResult,
+			issue,
+			previousStatus,
+			source,
+			config,
+			opts,
+		);
+		if (completed) completedCount++;
+
+		if (
+			!sessionResult.success &&
+			!userKilledSet.has(issue.id) &&
+			!userSkippedSet.has(issue.id) &&
+			isCompleteProviderExhaustion(sessionResult.fallback.attempts)
+		) {
+			exhausted = true;
+			logger.error(
+				"All providers exhausted due to infrastructure issues. " +
+					"Fix your provider configuration and restart lisa.",
+			);
+		}
+
+		// Cleanup per-issue state
+		userKilledSet.delete(issue.id);
+		userSkippedSet.delete(issue.id);
+		providerPausedSet.delete(issue.id);
+		activeProviderPids.delete(issue.id);
+		activeCleanups.delete(issue.id);
+	};
+
+	while (!noMoreIssues && !exhausted) {
+		await waitIfPaused();
+
+		// Fill available slots
+		while (activeWorkers.size < concurrency && !noMoreIssues && !exhausted) {
+			sessionCounter++;
+
+			if (opts.limit > 0 && sessionCounter > opts.limit) {
+				logger.ok(`Reached limit of ${opts.limit} issues. Stopping.`);
+				noMoreIssues = true;
+				break;
+			}
+
+			// Fetch next issue
+			let issue: Issue | null;
+			try {
+				issue = await source.fetchNextIssue(config.source_config);
+			} catch (err) {
+				logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
+				await sleep(config.loop.cooldown * 1000);
+				sessionCounter--; // Don't count failed fetches
+				break;
+			}
+
+			if (!issue) {
+				if (activeWorkers.size === 0) {
+					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
+					if (sessionCounter === 1) {
+						kanbanEmitter.emit("work:empty");
+					}
+				}
+				noMoreIssues = true;
+				break;
+			}
+
+			const session = sessionCounter;
+			const promise = processIssue(issue, session).finally(() => {
+				activeWorkers.delete(issue.id);
+			});
+			activeWorkers.set(issue.id, promise);
+		}
+
+		if (activeWorkers.size === 0) break;
+
+		// Wait for at least one worker to finish before trying to fill again
+		await Promise.race([...activeWorkers.values()]);
+
+		// Brief cooldown before filling next slot
+		if (!noMoreIssues && !exhausted && activeWorkers.size < concurrency) {
+			await sleep(1000);
+		}
+	}
+
+	// Wait for remaining workers to finish
+	if (activeWorkers.size > 0) {
+		logger.log(`Waiting for ${activeWorkers.size} active worker(s) to finish...`);
+		await Promise.allSettled([...activeWorkers.values()]);
+	}
+
+	if (completedCount > 0) {
+		kanbanEmitter.emit("work:complete", {
+			total: completedCount,
+			duration: Date.now() - loopStart,
+		});
+	}
+	resetTitle();
+	logger.ok(`lisa finished. ${sessionCounter} session(s) run, ${completedCount} completed.`);
+}
+
+// === Shared session result handler ===
+
+async function handleSessionResult(
+	sessionResult: SessionResult,
+	issue: Issue,
+	previousStatus: string,
+	source: Source,
+	config: LisaConfig,
+	opts: LoopOptions,
+): Promise<boolean> {
+	if (!sessionResult.success) {
+		if (userKilledSet.has(issue.id)) {
+			providerPausedSet.delete(issue.id);
+			logger.warn(`Issue ${issue.id} killed by user.`);
+			try {
+				await source.updateStatus(issue.id, previousStatus);
+				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			} catch (err) {
+				logger.error(
+					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+			kanbanEmitter.emit("issue:killed", issue.id);
+			activeCleanups.delete(issue.id);
+			notify();
+			return false;
+		}
+
+		if (userSkippedSet.has(issue.id)) {
+			providerPausedSet.delete(issue.id);
+			logger.warn(`Issue ${issue.id} skipped by user.`);
+			try {
+				await source.updateStatus(issue.id, previousStatus);
+				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			} catch (err) {
+				logger.error(
+					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+			kanbanEmitter.emit("issue:skipped", issue.id);
+			activeCleanups.delete(issue.id);
+			notify();
+			return false;
+		}
+
+		// All models failed
+		logger.error(`All models failed for ${issue.id}. Reverting to "${previousStatus}".`);
+		logAttemptHistory(sessionResult);
+		try {
+			await source.updateStatus(issue.id, previousStatus);
+			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			kanbanEmitter.emit("issue:reverted", issue.id);
+		} catch (err) {
+			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		activeCleanups.delete(issue.id);
+		notify();
+		return false;
+	}
+
+	logger.ok(`Completed with provider: ${sessionResult.providerUsed}`);
+
+	// Only move to done if PRs were actually created
+	if (sessionResult.prUrls.length === 0) {
+		logger.warn(
+			`Session succeeded but no PRs created for ${issue.id}. Reverting to "${previousStatus}".`,
+		);
+		try {
+			await source.updateStatus(issue.id, previousStatus);
+			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+			kanbanEmitter.emit("issue:reverted", issue.id);
+		} catch (err) {
+			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		activeCleanups.delete(issue.id);
+		notify();
+		return false;
+	}
+
+	// Attach PR links
+	for (const prUrl of sessionResult.prUrls) {
+		try {
+			await source.attachPullRequest(issue.id, prUrl);
+			logger.ok(`Attached PR to ${issue.id}`);
+		} catch (err) {
+			logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	// Update issue status + remove label
+	try {
+		const doneStatus = config.source_config.done;
+		const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
+		await source.completeIssue(issue.id, doneStatus, labelToRemove);
+		logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
+		for (const prUrl of sessionResult.prUrls) {
+			kanbanEmitter.emit("issue:done", issue.id, prUrl);
+		}
+		if (labelToRemove) {
+			logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
+		}
+	} catch (err) {
+		logger.error(`Failed to complete issue: ${err instanceof Error ? err.message : String(err)}`);
+	}
+
+	activeCleanups.delete(issue.id);
+	stopSpinner(`\u2713 Lisa \u2014 ${issue.id} \u2014 PR created`);
+	notify();
+	return true;
 }
 
 interface SessionResult {
@@ -715,8 +944,8 @@ async function runNativeWorktreeSession(
 
 	const workspace = resolve(config.workspace);
 
-	// Clean stale manifest from previous run
-	cleanupManifest(workspace);
+	// Clean stale manifest from previous run (per-issue)
+	cleanupManifest(workspace, issue.id);
 
 	const prompt = buildNativeWorktreePrompt(
 		issue,
@@ -725,7 +954,7 @@ async function runNativeWorktreeSession(
 		pm,
 		_defaultBranch,
 		projectContext,
-		getManifestPath(workspace),
+		getManifestPath(workspace, issue.id),
 	);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
@@ -739,9 +968,9 @@ async function runNativeWorktreeSession(
 		overseer: config.overseer,
 		useNativeWorktree: true,
 		onProcess: (pid) => {
-			activeProviderPid = pid;
+			activeProviderPids.set(issue.id, pid);
 		},
-		shouldAbort: () => userKilled || userSkipped,
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
 
@@ -754,12 +983,12 @@ async function runNativeWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		cleanupManifest(workspace);
+		cleanupManifest(workspace, issue.id);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	const manifest = readLisaManifest(workspace);
-	cleanupManifest(workspace);
+	const manifest = readLisaManifest(workspace, issue.id);
+	cleanupManifest(workspace, issue.id);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
@@ -845,9 +1074,9 @@ async function runManualWorktreeSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
-			activeProviderPid = pid;
+			activeProviderPids.set(issue.id, pid);
 		},
-		shouldAbort: () => userKilled || userSkipped,
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
 
@@ -866,9 +1095,9 @@ async function runManualWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Read manifest from cache
-	const manifest = readLisaManifest(workspace);
-	cleanupManifest(workspace);
+	// Read manifest from cache (per-issue)
+	const manifest = readLisaManifest(workspace, issue.id);
+	cleanupManifest(workspace, issue.id);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
@@ -898,9 +1127,9 @@ async function runWorktreeMultiRepoSession(
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 
-	// Clean stale artifacts from previous interrupted runs
-	cleanupManifest(workspace);
-	cleanupPlan(workspace);
+	// Clean stale artifacts from previous interrupted runs (per-issue)
+	cleanupManifest(workspace, issue.id);
+	cleanupPlan(workspace, issue.id);
 
 	// Phase 1: Planning — agent analyzes issue and produces execution plan
 	logger.initLogFile(logFile);
@@ -915,9 +1144,9 @@ async function runWorktreeMultiRepoSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
-			activeProviderPid = pid;
+			activeProviderPids.set(issue.id, pid);
 		},
-		shouldAbort: () => userKilled || userSkipped,
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
 
@@ -930,7 +1159,8 @@ async function runWorktreeMultiRepoSession(
 
 	if (!planResult.success) {
 		logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
-		cleanupPlan(workspace);
+		cleanupPlan(workspace, issue.id);
+		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
 			providerUsed: planResult.providerUsed,
@@ -939,11 +1169,12 @@ async function runWorktreeMultiRepoSession(
 		};
 	}
 
-	// Read execution plan
-	const plan = readLisaPlan(workspace);
+	// Read execution plan (per-issue)
+	const plan = readLisaPlan(workspace, issue.id);
 	if (!plan?.steps || plan.steps.length === 0) {
 		logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
-		cleanupPlan(workspace);
+		cleanupPlan(workspace, issue.id);
+		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
 			providerUsed: planResult.providerUsed,
@@ -957,7 +1188,7 @@ async function runWorktreeMultiRepoSession(
 	logger.ok(
 		`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
 	);
-	cleanupPlan(workspace);
+	cleanupPlan(workspace, issue.id);
 
 	// Phase 2: Sequential implementation — one session per repo step
 	const prUrls: string[] = [];
@@ -987,6 +1218,7 @@ async function runWorktreeMultiRepoSession(
 
 		if (!stepResult.success) {
 			logger.error(`Step ${stepNum} failed for ${step.repoPath}. Aborting remaining steps.`);
+			activeProviderPids.delete(issue.id);
 			return {
 				success: false,
 				providerUsed: lastProvider,
@@ -1006,6 +1238,7 @@ async function runWorktreeMultiRepoSession(
 		});
 	}
 
+	activeProviderPids.delete(issue.id);
 	logger.ok(`Session ${session} complete for ${issue.id} — ${prUrls.length} PR(s) created`);
 	return { success: true, providerUsed: lastProvider, prUrls, fallback: lastFallback };
 }
@@ -1072,7 +1305,7 @@ async function runMultiRepoStep(
 		isLastStep,
 		defaultBranch,
 		projectContext,
-		getManifestPath(workspace),
+		getManifestPath(workspace, issue.id),
 		worktreePath,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
@@ -1084,9 +1317,9 @@ async function runMultiRepoStep(
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
-			activeProviderPid = pid;
+			activeProviderPids.set(issue.id, pid);
 		},
-		shouldAbort: () => userKilled || userSkipped,
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
 
@@ -1103,8 +1336,8 @@ async function runMultiRepoStep(
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
 
-	const manifest = readLisaManifest(workspace);
-	cleanupManifest(workspace);
+	const manifest = readLisaManifest(workspace, issue.id);
+	cleanupManifest(workspace, issue.id);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
@@ -1135,7 +1368,7 @@ async function runBranchSession(
 	const workspace = resolve(config.workspace);
 
 	// Clean any stale manifest from a previous interrupted run
-	cleanupManifest(workspace);
+	cleanupManifest(workspace, issue.id);
 
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(workspace);
@@ -1158,9 +1391,9 @@ async function runBranchSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		onProcess: (pid) => {
-			activeProviderPid = pid;
+			activeProviderPids.set(issue.id, pid);
 		},
-		shouldAbort: () => userKilled || userSkipped,
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
 
@@ -1178,8 +1411,8 @@ async function runBranchSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	const manifest = readLisaManifest(workspace);
-	cleanupManifest(workspace);
+	const manifest = readLisaManifest(workspace, issue.id);
+	cleanupManifest(workspace, issue.id);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);

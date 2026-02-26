@@ -43,6 +43,12 @@ const run = defineCommand({
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
+		concurrency: {
+			type: "string",
+			alias: "c",
+			description: "Number of issues to process in parallel (default: 1)",
+			default: "1",
+		},
 		"dry-run": {
 			type: "boolean",
 			description: "Preview config without executing — recommended first step to verify setup",
@@ -87,6 +93,13 @@ const run = defineCommand({
 			process.exit(1);
 		}
 
+		const concurrency = Math.max(1, Number.parseInt(args.concurrency, 10) || 1);
+
+		// Force worktree mode when concurrency > 1 (parallel issues need isolation)
+		if (concurrency > 1 && merged.workflow !== "worktree") {
+			merged.workflow = "worktree";
+		}
+
 		if (isTTY) {
 			const { render } = await import("ink");
 			const { createElement } = await import("react");
@@ -99,6 +112,7 @@ const run = defineCommand({
 			limit: Number.parseInt(args.limit, 10),
 			dryRun: args["dry-run"],
 			issueId: args.issue,
+			concurrency,
 		});
 	},
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getGuardrailsPath } from "../paths.js";
 import {
-	appendEntry,
+	appendEntrySync as appendEntry,
 	buildGuardrailsSection,
 	extractContext,
 	extractErrorType,

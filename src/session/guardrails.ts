@@ -6,6 +6,10 @@ const LEGACY_GUARDRAILS_FILE = ".lisa/guardrails.md";
 const MAX_ENTRIES = 20;
 const CONTEXT_LINES = 20;
 
+// Simple mutex for thread-safe guardrails writes. Concurrent async operations
+// that call appendEntry in the same event loop tick are serialized via this chain.
+let writeLock: Promise<void> = Promise.resolve();
+
 export interface GuardrailEntry {
 	issueId: string;
 	date: string;
@@ -68,6 +72,16 @@ export function extractErrorType(output: string): string {
 }
 
 export function appendEntry(dir: string, entry: GuardrailEntry): void {
+	// Serialize writes: when multiple issues run in parallel, each call
+	// chains on the previous write to prevent read-stale-then-overwrite races.
+	writeLock = writeLock.then(() => appendEntrySync(dir, entry)).catch(() => {});
+}
+
+/**
+ * Synchronous variant for tests and single-threaded callers.
+ * @internal exported for testing only
+ */
+export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
 	const path = guardrailsPath(dir);
 	const guardrailsDir = dirname(path);
 
