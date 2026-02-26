@@ -171,8 +171,11 @@ export function Card({
 				</Text>
 
 				{/* Last provider output line (in_progress only) */}
+				{/* padEnd ensures the row is always CARD_TITLE_WIDTH wide, preventing border from shifting */}
 				{card.column === "in_progress" && (
-					<Text dimColor>{getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH)}</Text>
+					<Text dimColor>
+						{getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH).padEnd(CARD_TITLE_WIDTH)}
+					</Text>
 				)}
 
 				{/* Timer / completion / error row */}
