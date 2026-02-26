@@ -32,12 +32,28 @@ export function detectTestRunner(cwd: string): TestRunner {
 	}
 }
 
+export function extractReadmeHeadings(cwd: string): string[] {
+	const readmePath = join(cwd, "README.md");
+	if (!existsSync(readmePath)) return [];
+
+	try {
+		const content = readFileSync(readmePath, "utf-8");
+		return content
+			.split("\n")
+			.filter((line) => /^#{1,6}\s/.test(line))
+			.map((line) => line.trim());
+	} catch {
+		return [];
+	}
+}
+
 export function buildImplementPrompt(
 	issue: Issue,
 	config: LisaConfig,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	projectContext?: ProjectContext,
+	cwd?: string,
 ): string {
 	const workspace = resolve(config.workspace);
 	const manifestPath = getManifestPath(workspace);
@@ -50,10 +66,11 @@ export function buildImplementPrompt(
 			config.base_branch,
 			projectContext,
 			manifestPath,
+			cwd,
 		);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner, pm, projectContext, manifestPath);
+	return buildBranchPrompt(issue, config, testRunner, pm, projectContext, manifestPath, cwd);
 }
 
 function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
@@ -82,27 +99,26 @@ Do NOT skip or bypass hooks (no \`--no-verify\`). Fix the root cause and retry.
 `;
 }
 
-function buildReadmeInstructions(): string {
+function buildReadmeInstructions(headings: string[]): string {
+	if (headings.length === 0) return "";
+
+	const headingList = headings.map((h) => `   - ${h}`).join("\n");
+
 	return `
-**README.md Evaluation:**
-After implementing, review the diff of all changed files and check if README.md needs updating.
+**README.md Validation:**
+The current README.md documents these sections:
+${headingList}
 
-Update README.md if the changes include:
-- New or removed CLI commands or flags
-- New or removed providers or sources
-- Configuration schema changes (new fields, renamed fields, removed fields)
-- Pipeline or workflow stage changes
-- New or removed environment variables
-- Architectural changes
+Review your implementation diff against these sections. Update README.md if your changes affect any documented behavior:
+- CLI commands, flags, or usage examples
+- Providers, sources, or integrations
+- Configuration fields or schema
+- Pipeline stages, workflow modes, or architecture
+- Environment variables
 
-Do NOT update README.md for:
-- Internal refactors that don't change documented behavior
-- Bug fixes that don't change documented behavior
-- Test-only changes
-- Logging or formatting changes
-- Dependency updates
+Do NOT update README.md for internal refactors, bug fixes, test-only changes, logging, or dependency updates.
 
-If an update is needed, keep the existing README style and structure. Include the README change in the same commit as the implementation.
+If an update is needed, modify only the affected sections. Keep the existing style and structure. Include the README change in the same commit.
 `;
 }
 
@@ -113,9 +129,11 @@ function buildWorktreePrompt(
 	baseBranch?: string,
 	projectContext?: ProjectContext,
 	manifestPath?: string,
+	cwd?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const manifestLocation = manifestPath
@@ -145,12 +163,12 @@ ${contextBlock ? `\n${contextBlock}\n` : ""}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it before committing using the single-argument form:
@@ -194,6 +212,7 @@ function buildBranchPrompt(
 	pm?: PackageManager,
 	projectContext?: ProjectContext,
 	manifestPath?: string,
+	cwd?: string,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -211,7 +230,8 @@ function buildBranchPrompt(
 			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
@@ -244,12 +264,12 @@ ${repoEntries}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${hookBlock}
 4. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 5. **Commit & Push**: Make atomic commits with conventional commit messages.
    Push the branch to origin:
    \`git push -u origin <branch-name>\`
@@ -285,7 +305,7 @@ ${testBlock}${readmeBlock}${hookBlock}
 
 export function buildNativeWorktreePrompt(
 	issue: Issue,
-	_repoPath?: string,
+	repoPath?: string,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
@@ -293,7 +313,8 @@ export function buildNativeWorktreePrompt(
 	manifestPath?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const manifestLocation = manifestPath
@@ -323,12 +344,12 @@ ${contextBlock ? `\n${contextBlock}\n` : ""}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
@@ -439,9 +460,11 @@ export function buildScopedImplementPrompt(
 	baseBranch?: string,
 	projectContext?: ProjectContext,
 	manifestPath?: string,
+	cwd?: string,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 
@@ -483,12 +506,12 @@ ${previousBlock}
    - Read all relevant files first
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria relevant to your scope
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`

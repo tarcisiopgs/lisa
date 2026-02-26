@@ -889,7 +889,7 @@ async function runManualWorktreeSession(
 	const projectContext = analyzeProject(worktreePath);
 
 	const workspace = resolve(config.workspace);
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext, worktreePath);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
@@ -1146,6 +1146,7 @@ async function runMultiRepoStep(
 		defaultBranch,
 		projectContext,
 		getManifestPath(workspace),
+		worktreePath,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
@@ -1220,7 +1221,7 @@ async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext);
+	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext, workspace);
 
 	// Start lifecycle resources before implementation
 	const repo = findRepoConfig(config, issue);
