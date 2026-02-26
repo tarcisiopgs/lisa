@@ -3,7 +3,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		passWithNoTests: true,
-		environment: "jsdom",
 		coverage: {
 			provider: "v8",
 			thresholds: {

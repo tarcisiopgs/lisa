@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { useEffect, useState } from "react";
+import { notify } from "../output/terminal.js";
 import type { Issue } from "../types/index.js";
 
 export interface KanbanCard {
@@ -27,6 +28,24 @@ export interface KanbanStateData {
 class KanbanEmitter extends EventEmitter {}
 
 export const kanbanEmitter = new KanbanEmitter();
+
+export function registerBellListeners(bellEnabled: boolean): () => void {
+	if (!bellEnabled) return () => {};
+
+	const onDone = () => notify(1);
+	const onReverted = () => notify(2);
+	const onComplete = () => notify(1);
+
+	kanbanEmitter.on("issue:done", onDone);
+	kanbanEmitter.on("issue:reverted", onReverted);
+	kanbanEmitter.on("work:complete", onComplete);
+
+	return () => {
+		kanbanEmitter.off("issue:done", onDone);
+		kanbanEmitter.off("issue:reverted", onReverted);
+		kanbanEmitter.off("work:complete", onComplete);
+	};
+}
 
 export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
@@ -64,7 +83,6 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		};
 
 		const onDone = (issueId: string, prUrl: string) => {
-			if (bellEnabled) process.stdout.write("\x07");
 			setCards((prev) =>
 				prev.map((c) =>
 					c.id === issueId ? { ...c, column: "done" as const, prUrl, finishedAt: Date.now() } : c,
@@ -73,7 +91,6 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		};
 
 		const onReverted = (issueId: string) => {
-			if (bellEnabled) process.stdout.write("\x07\x07");
 			setCards((prev) =>
 				prev.map((c) =>
 					c.id === issueId
@@ -162,12 +179,11 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		kanbanEmitter.on("provider:model-changed", onModelChanged);
 
 		const onEmpty = () => setIsEmpty(true);
-		const onComplete = (data: { total: number; duration: number }) => {
-			if (bellEnabled) process.stdout.write("\x07");
-			setWorkComplete(data);
-		};
+		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
 		kanbanEmitter.on("work:empty", onEmpty);
 		kanbanEmitter.on("work:complete", onComplete);
+
+		const cleanupBell = registerBellListeners(bellEnabled);
 
 		return () => {
 			kanbanEmitter.off("issue:queued", onQueued);
@@ -182,6 +198,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
+			cleanupBell();
 		};
 	}, [bellEnabled]);
 

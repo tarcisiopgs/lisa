@@ -23,7 +23,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 
 	// Set the initial model based on config
 	useEffect(() => {
-		const initialModel = config.provider_options?.[config.provider]?.model;
+		const initialModel = config.provider_options?.[config.provider]?.models?.[0];
 		if (!modelInUse && initialModel) {
 			kanbanEmitter.emit("provider:model-changed", initialModel);
 		}

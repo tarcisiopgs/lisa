@@ -1,72 +1,58 @@
-import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Issue } from "../types/index.js";
-import { kanbanEmitter, useKanbanState } from "./state.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { notify } from "../output/terminal.js";
+import { kanbanEmitter, registerBellListeners } from "./state.js";
 
-// Mock process.stdout.write
-const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+vi.mock("../output/terminal.js", () => ({
+	notify: vi.fn(),
+}));
 
-describe("useKanbanState bell notifications", () => {
-	beforeEach(() => {
-		writeSpy.mockClear();
-	});
+const notifyMock = notify as ReturnType<typeof vi.fn>;
 
+describe("registerBellListeners", () => {
 	afterEach(() => {
-		// Ensure all listeners are cleaned up after each test
 		kanbanEmitter.removeAllListeners();
+		notifyMock.mockClear();
 	});
 
-	it("should emit a single bell when an issue is done and bell is enabled", () => {
-		renderHook(() => useKanbanState(true));
-
-		const mockIssue: Issue = { id: "INT-123", title: "Test Issue", description: "", url: "" };
-		act(() => {
-			kanbanEmitter.emit("issue:queued", mockIssue);
-			kanbanEmitter.emit("issue:started", mockIssue.id);
-			kanbanEmitter.emit("issue:done", mockIssue.id, "http://pr.url");
-		});
-
-		expect(writeSpy).toHaveBeenCalledTimes(1);
-		expect(writeSpy).toHaveBeenCalledWith("\x07");
+	it("calls notify(1) when issue:done fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(1);
+		cleanup();
 	});
 
-	it("should emit two bells when an issue is reverted (failed) and bell is enabled", () => {
-		renderHook(() => useKanbanState(true));
-
-		const mockIssue: Issue = { id: "INT-123", title: "Test Issue", description: "", url: "" };
-		act(() => {
-			kanbanEmitter.emit("issue:queued", mockIssue);
-			kanbanEmitter.emit("issue:started", mockIssue.id);
-			kanbanEmitter.emit("issue:reverted", mockIssue.id);
-		});
-
-		expect(writeSpy).toHaveBeenCalledTimes(1);
-		expect(writeSpy).toHaveBeenCalledWith("\x07\x07");
+	it("calls notify(2) when issue:reverted fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(2);
+		cleanup();
 	});
 
-	it("should emit a single bell when work is complete and bell is enabled", () => {
-		renderHook(() => useKanbanState(true));
-
-		act(() => {
-			kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
-		});
-
-		expect(writeSpy).toHaveBeenCalledTimes(1);
-		expect(writeSpy).toHaveBeenCalledWith("\x07");
+	it("calls notify(1) when work:complete fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(1);
+		cleanup();
 	});
 
-	it("should not emit bells when bell is disabled", () => {
-		renderHook(() => useKanbanState(false));
+	it("does not call notify when bell is disabled", () => {
+		const cleanup = registerBellListeners(false);
+		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).not.toHaveBeenCalled();
+		cleanup();
+	});
 
-		const mockIssue: Issue = { id: "INT-123", title: "Test Issue", description: "", url: "" };
-		act(() => {
-			kanbanEmitter.emit("issue:queued", mockIssue);
-			kanbanEmitter.emit("issue:started", mockIssue.id);
-			kanbanEmitter.emit("issue:done", mockIssue.id, "http://pr.url");
-			kanbanEmitter.emit("issue:reverted", mockIssue.id);
-			kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
-		});
-
-		expect(writeSpy).not.toHaveBeenCalled();
+	it("cleanup removes all bell listeners", () => {
+		const cleanup = registerBellListeners(true);
+		cleanup();
+		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).not.toHaveBeenCalled();
 	});
 });
