@@ -54,9 +54,10 @@ export function buildImplementPrompt(
 	pm?: PackageManager,
 	projectContext?: ProjectContext,
 	cwd?: string,
+	manifestPath?: string,
 ): string {
 	const workspace = resolve(config.workspace);
-	const manifestPath = getManifestPath(workspace);
+	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	if (config.workflow === "worktree") {
 		return buildWorktreePrompt(
@@ -65,12 +66,20 @@ export function buildImplementPrompt(
 			pm,
 			config.base_branch,
 			projectContext,
-			manifestPath,
+			resolvedManifestPath,
 			cwd,
 		);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner, pm, projectContext, manifestPath, cwd);
+	return buildBranchPrompt(
+		issue,
+		config,
+		testRunner,
+		pm,
+		projectContext,
+		resolvedManifestPath,
+		cwd,
+	);
 }
 
 function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
@@ -410,7 +419,7 @@ ${readmeBlock}
 - If the repo has a CLAUDE.md, read it first and follow its conventions.`;
 }
 
-export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
+export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?: string): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
@@ -420,7 +429,7 @@ export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
 		})
 		.join("\n");
 
-	const planPath = getPlanPath(workspace);
+	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
 
 	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
 
@@ -450,7 +459,7 @@ ${repoBlock}
 
 2. **Determine execution order**: If multiple repos are affected, decide the order. Repos that produce APIs, schemas, or shared libraries should come first. Repos that consume them should come later.
 
-3. **Write the plan**: Create \`${planPath}\` with JSON:
+3. **Write the plan**: Create \`${resolvedPlanPath}\` with JSON:
    \`\`\`json
    {
      "steps": [
