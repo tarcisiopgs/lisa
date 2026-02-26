@@ -24,13 +24,7 @@ export function ProgressHeader({
 	const progress = (done / total) * 100;
 	const pct = Math.round(progress);
 
-	// Calculate bar length to fill available terminal width.
-	// Sidebar: 28 cols (content+border+padding). Header box: borderStyle="single" (+2) + paddingX={1} (+2) + space (1).
-	// Total non-bar columns: 28 (sidebar) + 2 (header border) + 2 (header paddingX) + 1 (space) + stats.
-	const statsText = `${done}/${total} (${pct}%)${running > 0 ? ` (${running} running)` : ""}`;
-	const SIDEBAR_WIDTH = 28;
-	const boardWidth = (stdout?.columns ?? 80) - SIDEBAR_WIDTH - 2; // subtract header border
-	const progressBarLength = Math.max(10, boardWidth - 2 - 1 - statsText.length); // paddingX(2) + space(1)
+	const progressBarLength = 100;
 
 	const completedBars = Math.round((progress / 100) * progressBarLength);
 	const remainingBars = progressBarLength - completedBars;
@@ -38,17 +32,23 @@ export function ProgressHeader({
 	const barColor = workComplete ? "green" : paused ? "yellow" : "cyan";
 	const borderColor = workComplete ? "green" : paused ? "yellow" : "gray";
 
+	const statsText = `${done}/${total} (${pct}%)${running > 0 ? ` (${running} running)` : ""}`;
+	const statsLength = statsText.length;
+	const terminalWidth = stdout?.columns ?? 80;
+	const barWidth = Math.max(10, terminalWidth - statsLength - 5);
+
 	const progressBar = (
-		<Text color={barColor}>
-			{"█".repeat(completedBars)}
-			{"░".repeat(remainingBars)}
-		</Text>
+		<Box width={barWidth} overflow="hidden">
+			<Text color={barColor}>
+				{"█".repeat(completedBars)}
+				{"░".repeat(remainingBars)}
+			</Text>
+		</Box>
 	);
 
 	return (
 		<Box
 			flexDirection="row"
-			justifyContent="space-between"
 			alignItems="center"
 			paddingX={1}
 			paddingY={0}
@@ -56,16 +56,13 @@ export function ProgressHeader({
 			borderColor={borderColor}
 			marginBottom={1}
 		>
-			<Text>
-				{progressBar}
-				<Text> </Text>
-				<Text bold>{done}</Text>
-				<Text>/</Text>
-				<Text>{total}</Text>
-				<Text> </Text>
-				<Text dimColor>{`(${pct}%)`}</Text>
-				{running > 0 && <Text dimColor>{` (${running} running)`}</Text>}
-			</Text>
+			{progressBar}
+			<Text bold>{done}</Text>
+			<Text>/</Text>
+			<Text>{total}</Text>
+			<Text> </Text>
+			<Text dimColor>{`(${pct}%)`}</Text>
+			{running > 0 && <Text dimColor>{` (${running} running)`}</Text>}
 		</Box>
 	);
 }
