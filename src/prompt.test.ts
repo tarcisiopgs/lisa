@@ -9,6 +9,7 @@ import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
 	detectTestRunner,
+	extractReadmeHeadings,
 } from "./prompt.js";
 import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
 
@@ -105,6 +106,61 @@ describe("detectTestRunner", () => {
 	});
 });
 
+describe("extractReadmeHeadings", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("extracts headings from README.md", () => {
+		writeFileSync(
+			join(tmpDir, "README.md"),
+			"# Lisa\n\n## Getting Started\n\nSome text.\n\n### Installation\n\n### Configuration\n\n## Usage\n",
+		);
+		expect(extractReadmeHeadings(tmpDir)).toEqual([
+			"# Lisa",
+			"## Getting Started",
+			"### Installation",
+			"### Configuration",
+			"## Usage",
+		]);
+	});
+
+	it("returns empty array when no README exists", () => {
+		expect(extractReadmeHeadings(tmpDir)).toEqual([]);
+	});
+
+	it("returns empty array when README has no headings", () => {
+		writeFileSync(join(tmpDir, "README.md"), "Just some text without headings.\n");
+		expect(extractReadmeHeadings(tmpDir)).toEqual([]);
+	});
+
+	it("handles all heading levels (h1-h6)", () => {
+		writeFileSync(join(tmpDir, "README.md"), "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n");
+		expect(extractReadmeHeadings(tmpDir)).toEqual([
+			"# H1",
+			"## H2",
+			"### H3",
+			"#### H4",
+			"##### H5",
+			"###### H6",
+		]);
+	});
+
+	it("ignores lines that look like headings but are not", () => {
+		writeFileSync(
+			join(tmpDir, "README.md"),
+			"# Real Heading\n#not a heading\n##also not\nSome #inline hash\n",
+		);
+		expect(extractReadmeHeadings(tmpDir)).toEqual(["# Real Heading"]);
+	});
+});
+
 describe("buildImplementPrompt", () => {
 	describe("worktree mode", () => {
 		it("includes issue details in the prompt", () => {
@@ -156,15 +212,66 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("jest");
 		});
 
-		it("includes README evaluation instructions", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		it("includes README validation instructions when cwd has README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# Project\n## Installation\n## Usage\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
 
-			expect(prompt).toContain("README.md Evaluation");
-			expect(prompt).toContain("New or removed CLI commands or flags");
-			expect(prompt).toContain("New or removed providers or sources");
-			expect(prompt).toContain("Configuration schema changes");
-			expect(prompt).toContain("Do NOT update README.md for");
-			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+			expect(prompt).toContain("README.md Validation");
+			expect(prompt).toContain("# Project");
+			expect(prompt).toContain("## Installation");
+			expect(prompt).toContain("## Usage");
+			expect(prompt).toContain("CLI commands, flags, or usage examples");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("omits README instructions when no cwd provided", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+			expect(prompt).not.toContain("README.md Validation");
+		});
+
+		it("omits README instructions when cwd has no README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-no-readme-"));
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
+			expect(prompt).not.toContain("README.md Validation");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("places README block in Validate step, not Implement step", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# Project\n## Usage\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
+
+			const implementIndex = prompt.indexOf("1. **Implement**");
+			const validateIndex = prompt.indexOf("2. **Validate**");
+			const readmeIndex = prompt.indexOf("README.md Validation");
+			const commitIndex = prompt.indexOf("3. **Commit**");
+
+			expect(readmeIndex).toBeGreaterThan(validateIndex);
+			expect(readmeIndex).toBeLessThan(commitIndex);
+			expect(readmeIndex).toBeGreaterThan(implementIndex);
+			rmSync(tmpDir, { recursive: true, force: true });
 		});
 	});
 
@@ -208,15 +315,27 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("vitest");
 		});
 
-		it("includes README evaluation instructions", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+		it("includes README validation instructions when cwd has README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# App\n## API Reference\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "branch" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
 
-			expect(prompt).toContain("README.md Evaluation");
-			expect(prompt).toContain("New or removed CLI commands or flags");
-			expect(prompt).toContain("New or removed providers or sources");
-			expect(prompt).toContain("Configuration schema changes");
-			expect(prompt).toContain("Do NOT update README.md for");
-			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+			expect(prompt).toContain("README.md Validation");
+			expect(prompt).toContain("# App");
+			expect(prompt).toContain("## API Reference");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("omits README instructions when no cwd provided in branch mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+			expect(prompt).not.toContain("README.md Validation");
 		});
 	});
 });
@@ -269,9 +388,19 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).not.toContain("MANDATORY — Unit Tests");
 	});
 
-	it("includes README evaluation instructions", () => {
+	it("includes README validation instructions when repoPath has README", () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+		writeFileSync(join(tmpDir, "README.md"), "# Native Project\n## Docs\n");
+		const prompt = buildNativeWorktreePrompt(makeIssue(), tmpDir);
+		expect(prompt).toContain("README.md Validation");
+		expect(prompt).toContain("# Native Project");
+		expect(prompt).toContain("## Docs");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("omits README instructions when no repoPath provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).toContain("README.md Evaluation");
+		expect(prompt).not.toContain("README.md Validation");
 	});
 
 	it("includes English-only rules", () => {
