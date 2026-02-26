@@ -65,8 +65,8 @@ export function Column({
 					</Text>
 				</Box>
 				<Box flexDirection="row">
-					{errorCount > 0 && <Text color="red" bold>{`!${errorCount} `}</Text>}
-					{runningCount > 0 && <Text color="yellow">{`~${runningCount} `}</Text>}
+					{errorCount > 0 && <Text color="red" bold>{`✖${errorCount} `}</Text>}
+					{runningCount > 0 && <Text color="yellow">{`●${runningCount} `}</Text>}
 					<Text color={headerColor}>{`[${cards.length}]`}</Text>
 				</Box>
 			</Box>
@@ -74,7 +74,7 @@ export function Column({
 			{/* Scroll hint above */}
 			{hiddenAbove > 0 && (
 				<Box justifyContent="center">
-					<Text color="yellow" dimColor>{`↑ ${hiddenAbove} more`}</Text>
+					<Text color="yellow" dimColor>{`↑ ${hiddenAbove}`}</Text>
 				</Box>
 			)}
 
@@ -97,7 +97,7 @@ export function Column({
 			{/* Scroll hint below */}
 			{hiddenBelow > 0 && (
 				<Box justifyContent="center">
-					<Text color="yellow" dimColor>{`↓ ${hiddenBelow} more`}</Text>
+					<Text color="yellow" dimColor>{`↓ ${hiddenBelow}`}</Text>
 				</Box>
 			)}
 		</Box>

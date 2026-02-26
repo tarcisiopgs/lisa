@@ -221,9 +221,12 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 
 			{/* Log header */}
 			<Box flexDirection="row" justifyContent="space-between">
-				<Text color="gray" dimColor>
-					{"PROVIDER OUTPUT"}
-				</Text>
+				<Box flexDirection="row">
+					<Text color="gray" dimColor>
+						{"OUTPUT"}
+					</Text>
+					{totalLines > 0 && <Text color="gray" dimColor>{` · ${totalLines}L`}</Text>}
+				</Box>
 				{userScrolled && (
 					<Text color="yellow" dimColor>
 						{scrollBar(scrollPctNum)}
@@ -231,7 +234,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				)}
 				{!userScrolled && totalLines > bodyRows && (
 					<Text color="gray" dimColor>
-						{"auto-scroll"}
+						{"live"}
 					</Text>
 				)}
 			</Box>
