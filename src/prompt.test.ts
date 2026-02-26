@@ -339,6 +339,46 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).not.toContain("README.md Validation");
 		});
 	});
+
+	describe("manifest path override", () => {
+		it("uses explicit manifestPath in worktree mode when provided", () => {
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"/path/to/worktree/.lisa-manifest.json",
+			);
+			expect(prompt).toContain("/path/to/worktree/.lisa-manifest.json");
+		});
+
+		it("falls back to cache-dir manifest when no manifestPath provided in worktree mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
+			expect(prompt).toContain("manifest.json");
+		});
+
+		it("uses explicit manifestPath in branch mode when provided", () => {
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "branch" }),
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"/workspace/.lisa-manifest.json",
+			);
+			expect(prompt).toContain("/workspace/.lisa-manifest.json");
+		});
+
+		it("falls back to cache-dir manifest when no manifestPath provided in branch mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
+			expect(prompt).toContain("manifest.json");
+		});
+	});
 });
 
 describe("buildNativeWorktreePrompt", () => {
@@ -450,6 +490,20 @@ describe("buildPlanningPrompt", () => {
 		expect(prompt).toContain('"repoPath"');
 		expect(prompt).toContain('"scope"');
 		expect(prompt).toContain('"order"');
+	});
+
+	it("uses explicit planPath when provided", () => {
+		const prompt = buildPlanningPrompt(
+			makeIssue(),
+			multiRepoConfig,
+			"/workspace/.lisa-plan-INT_100.json",
+		);
+		expect(prompt).toContain("/workspace/.lisa-plan-INT_100.json");
+	});
+
+	it("falls back to cache-dir plan path when no planPath provided", () => {
+		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
+		expect(prompt).toContain("plan.json");
 	});
 });
 

@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { execa } from "execa";
 import { formatLabels, getRemoveLabel } from "./config.js";
 import { analyzeProject } from "./context.js";
@@ -13,13 +13,7 @@ import {
 } from "./git/worktree.js";
 import * as logger from "./output/logger.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "./output/terminal.js";
-import {
-	ensureCacheDir,
-	getLogsDir,
-	getManifestPath,
-	getPlanPath,
-	rotateLogFiles,
-} from "./paths.js";
+import { ensureCacheDir, getLogsDir, getManifestPath, rotateLogFiles } from "./paths.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -205,22 +199,6 @@ function resolveModels(config: LisaConfig): ModelSpec[] {
 	}));
 }
 
-function readLisaPlan(cwd: string, issueId?: string): ExecutionPlan | null {
-	const planPath = getPlanPath(cwd, issueId);
-	if (!existsSync(planPath)) return null;
-	try {
-		return JSON.parse(readFileSync(planPath, "utf-8").trim()) as ExecutionPlan;
-	} catch {
-		return null;
-	}
-}
-
-function cleanupPlan(cwd: string, issueId?: string): void {
-	try {
-		unlinkSync(getPlanPath(cwd, issueId));
-	} catch {}
-}
-
 interface LisaManifest {
 	repoPath?: string;
 	branch?: string;
@@ -241,6 +219,24 @@ function cleanupManifest(cwd: string, issueId?: string): void {
 	try {
 		unlinkSync(getManifestPath(cwd, issueId));
 	} catch {}
+}
+
+function readManifestFile(filePath: string): LisaManifest | null {
+	if (!existsSync(filePath)) return null;
+	try {
+		return JSON.parse(readFileSync(filePath, "utf-8").trim()) as LisaManifest;
+	} catch {
+		return null;
+	}
+}
+
+function readPlanFile(filePath: string): ExecutionPlan | null {
+	if (!existsSync(filePath)) return null;
+	try {
+		return JSON.parse(readFileSync(filePath, "utf-8").trim()) as ExecutionPlan;
+	} catch {
+		return null;
+	}
 }
 
 function installSignalHandlers(): void {
@@ -1062,7 +1058,17 @@ async function runManualWorktreeSession(
 	const projectContext = analyzeProject(worktreePath);
 
 	const workspace = resolve(config.workspace);
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext, worktreePath);
+	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
+	const manifestPath = join(worktreePath, ".lisa-manifest.json");
+	const prompt = buildImplementPrompt(
+		issue,
+		config,
+		testRunner,
+		pm,
+		projectContext,
+		worktreePath,
+		manifestPath,
+	);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
@@ -1095,9 +1101,8 @@ async function runManualWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	// Read manifest from cache (per-issue)
-	const manifest = readLisaManifest(workspace, issue.id);
-	cleanupManifest(workspace, issue.id);
+	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
+	const manifest = readManifestFile(manifestPath);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
@@ -1126,17 +1131,22 @@ async function runWorktreeMultiRepoSession(
 	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
+	// Plan written within the workspace so all providers can access it; per-issue name avoids
+	// collisions when multiple issues run concurrently in worktree mode
+	const safeId = issue.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+	const planPath = join(workspace, `.lisa-plan-${safeId}.json`);
 
-	// Clean stale artifacts from previous interrupted runs (per-issue)
-	cleanupManifest(workspace, issue.id);
-	cleanupPlan(workspace, issue.id);
+	// Clean stale plan from a previous interrupted run
+	try {
+		unlinkSync(planPath);
+	} catch {}
 
 	// Phase 1: Planning — agent analyzes issue and produces execution plan
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	const planPrompt = buildPlanningPrompt(issue, config);
+	const planPrompt = buildPlanningPrompt(issue, config, planPath);
 	const planResult = await runWithFallback(models, planPrompt, {
 		logFile,
 		cwd: workspace,
@@ -1159,7 +1169,9 @@ async function runWorktreeMultiRepoSession(
 
 	if (!planResult.success) {
 		logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
-		cleanupPlan(workspace, issue.id);
+		try {
+			unlinkSync(planPath);
+		} catch {}
 		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
@@ -1169,11 +1181,13 @@ async function runWorktreeMultiRepoSession(
 		};
 	}
 
-	// Read execution plan (per-issue)
-	const plan = readLisaPlan(workspace, issue.id);
+	// Read execution plan from within the workspace (accessible to all providers)
+	const plan = readPlanFile(planPath);
 	if (!plan?.steps || plan.steps.length === 0) {
 		logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
-		cleanupPlan(workspace, issue.id);
+		try {
+			unlinkSync(planPath);
+		} catch {}
 		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
@@ -1188,7 +1202,9 @@ async function runWorktreeMultiRepoSession(
 	logger.ok(
 		`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
 	);
-	cleanupPlan(workspace, issue.id);
+	try {
+		unlinkSync(planPath);
+	} catch {}
 
 	// Phase 2: Sequential implementation — one session per repo step
 	const prUrls: string[] = [];
@@ -1296,6 +1312,8 @@ async function runMultiRepoStep(
 
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
+	// Manifest written within the worktree so all providers can access it
+	const manifestPath = join(worktreePath, ".lisa-manifest.json");
 	const prompt = buildScopedImplementPrompt(
 		issue,
 		step,
@@ -1305,7 +1323,7 @@ async function runMultiRepoStep(
 		isLastStep,
 		defaultBranch,
 		projectContext,
-		getManifestPath(workspace, issue.id),
+		manifestPath,
 		worktreePath,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
@@ -1336,8 +1354,8 @@ async function runMultiRepoStep(
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
 
-	const manifest = readLisaManifest(workspace, issue.id);
-	cleanupManifest(workspace, issue.id);
+	// Read manifest from worktree (accessible to all providers; worktree cleanup removes it)
+	const manifest = readManifestFile(manifestPath);
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
@@ -1366,9 +1384,13 @@ async function runBranchSession(
 	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
+	// Manifest written within the workspace so all providers can access it (branch mode is sequential)
+	const manifestPath = join(workspace, ".lisa-manifest.json");
 
 	// Clean any stale manifest from a previous interrupted run
-	cleanupManifest(workspace, issue.id);
+	try {
+		unlinkSync(manifestPath);
+	} catch {}
 
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(workspace);
@@ -1378,7 +1400,15 @@ async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 
-	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext, workspace);
+	const prompt = buildImplementPrompt(
+		issue,
+		config,
+		testRunner,
+		pm,
+		projectContext,
+		workspace,
+		manifestPath,
+	);
 
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
@@ -1411,8 +1441,10 @@ async function runBranchSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
-	const manifest = readLisaManifest(workspace, issue.id);
-	cleanupManifest(workspace, issue.id);
+	const manifest = readManifestFile(manifestPath);
+	try {
+		unlinkSync(manifestPath);
+	} catch {}
 
 	if (!manifest?.prUrl) {
 		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
