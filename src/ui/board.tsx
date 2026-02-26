@@ -94,6 +94,7 @@ export function Board({
 					done={doneCards}
 					running={runningCards}
 					workComplete={!!workComplete}
+					paused={paused}
 				/>
 			)}
 
