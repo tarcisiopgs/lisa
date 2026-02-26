@@ -93,8 +93,10 @@ export function KanbanApp({ config }: KanbanAppProps) {
 		}
 
 		if (input === "k" && hasInProgress) {
-			kanbanEmitter.emit("loop:kill");
-			if (!paused) {
+			// Target the selected card in the In Progress column, or the first one
+			const targetCard = activeColIndex === 1 ? inProgress[activeCardIndex] : inProgress[0];
+			kanbanEmitter.emit("loop:kill", targetCard?.id);
+			if (!paused && inProgress.length <= 1) {
 				setPaused(true);
 				kanbanEmitter.emit("loop:pause");
 			}
@@ -102,8 +104,9 @@ export function KanbanApp({ config }: KanbanAppProps) {
 		}
 
 		if (input === "s" && hasInProgress) {
-			kanbanEmitter.emit("loop:skip");
-			if (paused) {
+			const targetCard = activeColIndex === 1 ? inProgress[activeCardIndex] : inProgress[0];
+			kanbanEmitter.emit("loop:skip", targetCard?.id);
+			if (paused && inProgress.length <= 1) {
 				setPaused(false);
 				kanbanEmitter.emit("loop:resume");
 			}

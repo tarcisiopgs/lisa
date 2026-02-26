@@ -38,6 +38,7 @@ export interface SourceConfig {
 export interface LoopConfig {
 	cooldown: number;
 	max_sessions: number;
+	concurrency?: number;
 }
 
 export interface OverseerConfig {

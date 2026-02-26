@@ -151,6 +151,7 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --once --dry-run` | **Recommended first step** — preview config without executing |
 | `lisa run --issue ID` | Process a specific issue by identifier or URL |
 | `lisa run --limit N` | Process up to N issues |
+| `lisa run --concurrency N` / `-c N` | Process up to N issues in parallel (default: 1) |
 | `lisa run --dry-run` | Preview without executing |
 | `lisa run --provider NAME` | Override AI provider |
 | `lisa run --source NAME` | Override issue source |
@@ -191,7 +192,9 @@ In-progress cards show a live elapsed timer. When the loop is paused, the active
 | `↑` / `↓` | Navigate cards / scroll output |
 | `Enter` | Open issue detail view (streams provider output) |
 | `Esc` | Close detail view, return to board |
-| `p` | Pause / resume — loop finishes the current issue then waits |
+| `k` | Kill the selected in-progress issue |
+| `s` | Skip the selected in-progress issue |
+| `p` | Pause / resume all active providers |
 | `q` | Quit |
 
 The sidebar legend updates contextually: board shortcuts when browsing the Kanban, scroll and back hints when viewing issue detail. The terminal tab title also updates in real time: it shows a spinner with the active issue ID while work is in progress, and a checkmark when done.
@@ -316,6 +319,23 @@ source_config:
 **Worktree** — Lisa creates an isolated [git worktree](https://git-scm.com/docs/git-worktree) for each issue under `.worktrees/`. The agent works in the worktree without touching your main checkout. After the PR is created, the worktree is cleaned up automatically. Ideal when you want to keep working in the repo while Lisa resolves issues in the background.
 
 **Multi-repo worktree** — When multiple repos are configured, Lisa runs a two-phase flow: a planning agent produces a `.lisa-plan.json` with ordered steps, then Lisa executes each step sequentially — one worktree and one PR per repo. Cross-repo context (branch names, PR URLs) is passed to each subsequent step.
+
+### Concurrent Execution
+
+Process multiple issues in parallel with `--concurrency`:
+
+```bash
+lisa run --concurrency 3   # or -c 3
+```
+
+Each issue runs in its own isolated worktree with an independent provider process. When `--concurrency` is greater than 1, worktree mode is enforced automatically. The default is 1 (sequential, backward-compatible).
+
+- **Isolation** — Each issue gets its own worktree, log file, and manifest. No shared state between concurrent sessions.
+- **Shared infrastructure** — Docker containers and lifecycle resources are started once and shared across worktrees.
+- **Guardrails** — Writes to the guardrails file are serialized to prevent concurrent corruption.
+- **TUI** — Multiple cards appear in the In Progress column simultaneously. `[k]` and `[s]` target the selected card; `[p]` pauses all active providers.
+- **Fallback** — Each issue has its own independent fallback chain.
+- **Slot filling** — When an issue completes, the freed slot is immediately filled with the next available issue.
 
 ### Recovery Mechanisms
 

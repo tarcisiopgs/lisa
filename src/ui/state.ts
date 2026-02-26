@@ -113,16 +113,21 @@ export function useKanbanState(): KanbanStateData {
 			);
 		};
 
-		const onProviderPaused = () => {
+		const onProviderPaused = (issueId?: string) => {
 			setCards((prev) =>
-				prev.map((c) => (c.column === "in_progress" ? { ...c, pausedAt: Date.now() } : c)),
+				prev.map((c) => {
+					if (c.column !== "in_progress") return c;
+					if (issueId && c.id !== issueId) return c;
+					return { ...c, pausedAt: Date.now() };
+				}),
 			);
 		};
 
-		const onProviderResumed = () => {
+		const onProviderResumed = (issueId?: string) => {
 			setCards((prev) =>
 				prev.map((c) => {
 					if (c.column !== "in_progress" || !c.pausedAt) return c;
+					if (issueId && c.id !== issueId) return c;
 					const pauseDuration = Date.now() - c.pausedAt;
 					return {
 						...c,

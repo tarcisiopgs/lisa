@@ -46,7 +46,7 @@ assets/
 src/
 ├── index.ts          # Entry point → delegates to cli.ts
 ├── cli.ts            # citty commands: run, init, config, status + interactive wizard
-├── loop.ts           # Main agent loop orchestration + session management
+├── loop.ts           # Main agent loop orchestration + session management + concurrent pool
 ├── config.ts         # YAML config loading/saving with backward compat
 ├── prompt.ts         # Prompt templates + detectTestRunner() + detectPackageManager()
 ├── types/

@@ -72,16 +72,36 @@ describe("getGuardrailsPath", () => {
 });
 
 describe("getManifestPath", () => {
-	it("returns manifest.json under cache dir", () => {
+	it("returns manifest.json under cache dir when no issueId", () => {
 		const path = getManifestPath("/my/project");
 		expect(path).toBe(join(getCacheDir("/my/project"), "manifest.json"));
+	});
+
+	it("returns per-issue manifest path when issueId is provided", () => {
+		const path = getManifestPath("/my/project", "INT-123");
+		expect(path).toBe(join(getCacheDir("/my/project"), "manifest-INT-123.json"));
+	});
+
+	it("sanitizes special characters in issueId", () => {
+		const path = getManifestPath("/my/project", "ORG/PROJ#42");
+		expect(path).toBe(join(getCacheDir("/my/project"), "manifest-ORG_PROJ_42.json"));
 	});
 });
 
 describe("getPlanPath", () => {
-	it("returns plan.json under cache dir", () => {
+	it("returns plan.json under cache dir when no issueId", () => {
 		const path = getPlanPath("/my/project");
 		expect(path).toBe(join(getCacheDir("/my/project"), "plan.json"));
+	});
+
+	it("returns per-issue plan path when issueId is provided", () => {
+		const path = getPlanPath("/my/project", "INT-456");
+		expect(path).toBe(join(getCacheDir("/my/project"), "plan-INT-456.json"));
+	});
+
+	it("sanitizes special characters in issueId", () => {
+		const path = getPlanPath("/my/project", "ORG/PROJ#99");
+		expect(path).toBe(join(getCacheDir("/my/project"), "plan-ORG_PROJ_99.json"));
 	});
 });
 
