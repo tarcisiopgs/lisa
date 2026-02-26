@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getLastOutputLine } from "./card.js";
+import { formatElapsed, getLastOutputLine, wrapTitle } from "./card.js";
 
 describe("getLastOutputLine", () => {
 	const maxWidth = 28;
@@ -71,5 +71,71 @@ describe("getLastOutputLine", () => {
 	it("trims whitespace from the last line", () => {
 		const log = "first\n  padded line  \n";
 		expect(getLastOutputLine(log, maxWidth)).toBe("padded line");
+	});
+});
+
+describe("formatElapsed", () => {
+	it("formats sub-minute durations as seconds", () => {
+		expect(formatElapsed(0)).toBe("0s");
+		expect(formatElapsed(999)).toBe("0s");
+		expect(formatElapsed(1000)).toBe("1s");
+		expect(formatElapsed(59000)).toBe("59s");
+	});
+
+	it("formats durations >= 1 minute as Xm Ys", () => {
+		expect(formatElapsed(60000)).toBe("1m 0s");
+		expect(formatElapsed(61000)).toBe("1m 1s");
+		expect(formatElapsed(90000)).toBe("1m 30s");
+		expect(formatElapsed(3661000)).toBe("61m 1s");
+	});
+
+	it("rounds down partial seconds", () => {
+		expect(formatElapsed(1500)).toBe("1s");
+		expect(formatElapsed(119999)).toBe("1m 59s");
+	});
+});
+
+describe("wrapTitle", () => {
+	const maxWidth = 28;
+
+	it("returns title as-is when it fits in one line", () => {
+		expect(wrapTitle("short title", maxWidth)).toEqual(["short title", ""]);
+	});
+
+	it("returns title exactly at maxWidth with empty second line", () => {
+		const title = "a".repeat(28);
+		expect(wrapTitle(title, maxWidth)).toEqual([title, ""]);
+	});
+
+	it("wraps at word boundary when title exceeds maxWidth", () => {
+		const title = "fix the kanban card height during initialization";
+		const [line1, line2] = wrapTitle(title, maxWidth);
+		expect(line1.length).toBeLessThanOrEqual(maxWidth);
+		expect(line2.length).toBeLessThanOrEqual(maxWidth);
+		expect(`${line1} ${line2}`.trim()).toBe(title);
+	});
+
+	it("truncates second line with ellipsis when remaining text is too long", () => {
+		const title = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11";
+		const [line1, line2] = wrapTitle(title, maxWidth);
+		expect(line1.length).toBeLessThanOrEqual(maxWidth);
+		expect(line2.length).toBeLessThanOrEqual(maxWidth);
+		expect(line2.endsWith("…")).toBe(true);
+	});
+
+	it("hard-cuts a single word longer than maxWidth", () => {
+		const longWord = "a".repeat(40);
+		const [line1, line2] = wrapTitle(longWord, maxWidth);
+		expect(line1).toBe("a".repeat(28));
+		// rest is 12 chars (40 - 28), which fits within maxWidth — no ellipsis
+		expect(line2).toBe("a".repeat(12));
+	});
+
+	it("hard-cuts with ellipsis when remainder also exceeds maxWidth", () => {
+		const longWord = "a".repeat(80);
+		const [line1, line2] = wrapTitle(longWord, maxWidth);
+		expect(line1.length).toBe(maxWidth);
+		expect(line2.length).toBe(maxWidth);
+		expect(line2.endsWith("…")).toBe(true);
 	});
 });

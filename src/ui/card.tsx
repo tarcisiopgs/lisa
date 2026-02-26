@@ -3,7 +3,7 @@ import Spinner from "ink-spinner";
 import { useEffect, useState } from "react";
 import type { KanbanCard } from "./state.js";
 
-function formatElapsed(ms: number): string {
+export function formatElapsed(ms: number): string {
 	const seconds = Math.floor(ms / 1000);
 	const minutes = Math.floor(seconds / 60);
 	const remainingSeconds = seconds % 60;
@@ -13,7 +13,7 @@ function formatElapsed(ms: number): string {
 
 // Wraps a title into at most two lines of `maxWidth` chars each.
 // Prefers word boundaries; falls back to hard-cutting if a single word exceeds maxWidth.
-function wrapTitle(title: string, maxWidth: number): [string, string] {
+export function wrapTitle(title: string, maxWidth: number): [string, string] {
 	if (title.length <= maxWidth) return [title, ""];
 
 	const words = title.split(" ");
@@ -171,16 +171,18 @@ export function Card({
 					{titleLine2.padEnd(CARD_TITLE_WIDTH)}
 				</Text>
 
-				{/* Last provider output line (in_progress only) */}
+				{/* Last provider output line — always rendered to keep CARD_HEIGHT stable */}
 				{/* padEnd ensures the row is always CARD_TITLE_WIDTH wide, preventing border from shifting */}
-				{card.column === "in_progress" && (
-					<Text dimColor>
-						{getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH).padEnd(CARD_TITLE_WIDTH)}
-					</Text>
-				)}
+				<Text dimColor>
+					{(card.column === "in_progress"
+						? getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH)
+						: ""
+					).padEnd(CARD_TITLE_WIDTH)}
+				</Text>
 
-				{/* Timer / completion / error row */}
-				{card.column === "in_progress" && elapsedMs !== null && (
+				{/* Status row — always rendered exactly once for stable CARD_HEIGHT */}
+				{card.column === "in_progress" ? (
+					// Spinner appears immediately; elapsed time only once startedAt is available
 					<Box flexDirection="row" marginTop={0}>
 						{isPausedInProgress ? (
 							<Text color="gray">{"⏸"}</Text>
@@ -189,23 +191,30 @@ export function Card({
 								<Spinner type="dots" />
 							</Text>
 						)}
-						<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
-							{" "}
-							{formatElapsed(elapsedMs)}
-						</Text>
+						{elapsedMs !== null && (
+							<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
+								{" "}
+								{formatElapsed(elapsedMs)}
+							</Text>
+						)}
 					</Box>
-				)}
-				{card.column === "done" &&
+				) : card.column === "done" &&
 					card.startedAt !== undefined &&
-					card.finishedAt !== undefined && (
-						<Text color="green">
-							{"✔ "}
-							{formatElapsed(card.finishedAt - card.startedAt)}
-						</Text>
-					)}
-				{card.killed && <Text color="red">KILLED</Text>}
-				{card.skipped && <Text color="gray">SKIPPED</Text>}
-				{card.hasError && !card.killed && !card.skipped && <Text color="red">FAILED</Text>}
+					card.finishedAt !== undefined ? (
+					<Text color="green">
+						{"✔ "}
+						{formatElapsed(card.finishedAt - card.startedAt)}
+					</Text>
+				) : card.killed ? (
+					<Text color="red">KILLED</Text>
+				) : card.skipped ? (
+					<Text color="gray">SKIPPED</Text>
+				) : card.hasError && !card.killed && !card.skipped ? (
+					<Text color="red">FAILED</Text>
+				) : (
+					// Empty row for backlog and done-without-timing — maintains CARD_HEIGHT
+					<Text>{" ".repeat(CARD_TITLE_WIDTH)}</Text>
+				)}
 			</Box>
 		</Box>
 	);
