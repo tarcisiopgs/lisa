@@ -87,4 +87,20 @@ describe("ProgressHeader", () => {
 		rerender(<ProgressHeader total={10} done={10} running={0} workComplete={true} />);
 		expect(stripAnsiAndExtractContent(lastFrame())).toContain("10/10 (100%)");
 	});
+
+	it("uses availableWidth prop for bar calculation", () => {
+		const { lastFrame } = render(
+			<ProgressHeader total={10} done={5} running={0} workComplete={false} availableWidth={80} />,
+		);
+		const content = stripAnsiAndExtractContent(lastFrame());
+		expect(content).toContain("5/10 (50%)");
+	});
+
+	it("defaults to stdout.columns when availableWidth is not provided", () => {
+		const { lastFrame } = render(
+			<ProgressHeader total={10} done={5} running={0} workComplete={false} />,
+		);
+		const content = stripAnsiAndExtractContent(lastFrame());
+		expect(content).toContain("5/10 (50%)");
+	});
 });
