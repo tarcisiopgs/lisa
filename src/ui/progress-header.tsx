@@ -25,10 +25,12 @@ export function ProgressHeader({
 	const pct = Math.round(progress);
 
 	// Calculate bar length to fill available terminal width.
-	// Terminal width - 2 (borders) - 2 (paddingX) - 1 (space between bar and stats) - stats text length.
+	// Sidebar occupies 28 columns (fixed width), so board width = terminal - 28.
+	// Board width - 2 (borders) - 2 (paddingX) - 1 (space between bar and stats) - stats text length.
 	const statsText = `${done}/${total} (${pct}%)${running > 0 ? ` (${running} running)` : ""}`;
-	const terminalWidth = stdout?.columns ?? 80;
-	const progressBarLength = Math.max(10, terminalWidth - 5 - statsText.length);
+	const SIDEBAR_WIDTH = 28;
+	const boardWidth = (stdout?.columns ?? 80) - SIDEBAR_WIDTH;
+	const progressBarLength = Math.max(10, boardWidth - 5 - statsText.length);
 
 	const completedBars = Math.round((progress / 100) * progressBarLength);
 	const remainingBars = progressBarLength - completedBars;

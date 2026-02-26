@@ -826,15 +826,17 @@ async function handleSessionResult(
 		}
 	}
 
+	// Move kanban card as soon as the PR exists — status update is best-effort bookkeeping
+	for (const prUrl of sessionResult.prUrls) {
+		kanbanEmitter.emit("issue:done", issue.id, prUrl);
+	}
+
 	// Update issue status + remove label
 	try {
 		const doneStatus = config.source_config.done;
 		const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
 		await source.completeIssue(issue.id, doneStatus, labelToRemove);
 		logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
-		for (const prUrl of sessionResult.prUrls) {
-			kanbanEmitter.emit("issue:done", issue.id, prUrl);
-		}
 		if (labelToRemove) {
 			logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
 		}
