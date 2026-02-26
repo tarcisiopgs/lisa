@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { Column } from "./column.js";
+import { ProgressHeader } from "./progress-header.js";
 import type { KanbanCard } from "./state.js";
 
 function formatDuration(ms: number): string {
@@ -36,6 +37,10 @@ export function Board({
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
 	const done = cards.filter((c) => c.column === "done");
+
+	const totalCards = cards.length;
+	const doneCards = done.length;
+	const runningCards = inProgress.length;
 
 	if (isEmpty) {
 		return (
@@ -80,6 +85,16 @@ export function Board({
 						{formatDuration(workComplete.duration)}
 					</Text>
 				</Box>
+			)}
+
+			{/* Progress Header */}
+			{!isEmpty && (
+				<ProgressHeader
+					total={totalCards}
+					done={doneCards}
+					running={runningCards}
+					workComplete={!!workComplete}
+				/>
 			)}
 
 			{/* Columns */}
