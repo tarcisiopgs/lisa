@@ -2,6 +2,18 @@
 	"name": "@tarcisiopgs/lisa",
 	"version": "1.10.0",
 	"description": "Autonomous issue resolver",
+	"keywords": [
+		"ralph",
+		"loop",
+		"ralph-loop",
+		"ai-agent",
+		"autonomous",
+		"issue-resolver",
+		"cli",
+		"github",
+		"linear",
+		"coding-agent"
+	],
 	"license": "MIT",
 	"type": "module",
 	"bin": {
