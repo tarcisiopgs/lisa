@@ -81,7 +81,7 @@ export function Sidebar({
 			</Box>
 
 			{/* Model — single model: own dedicated row */}
-			{model && models.length <= 1 && (
+			{models.length <= 1 && (
 				<Box flexDirection="column" marginTop={1}>
 					<Text color="white" dimColor>
 						MODEL
@@ -89,7 +89,7 @@ export function Sidebar({
 					<Box>
 						<Text color="yellow">{"▸ "}</Text>
 						<Text color="white" bold>
-							{model}
+							{model ?? "default"}
 						</Text>
 					</Box>
 				</Box>

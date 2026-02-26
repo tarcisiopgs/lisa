@@ -2,7 +2,12 @@ import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverseerConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { getGitSnapshot, STUCK_MESSAGE, startOverseer } from "./overseer.js";
+import {
+	createErrorLoopDetector,
+	getGitSnapshot,
+	STUCK_MESSAGE,
+	startOverseer,
+} from "./overseer.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -303,5 +308,108 @@ describe("startOverseer (pause/resume)", () => {
 
 		expect(kanbanEmitter.listenerCount("loop:pause-provider")).toBe(beforePause);
 		expect(kanbanEmitter.listenerCount("loop:resume-provider")).toBe(beforeResume);
+	});
+});
+
+// ── createErrorLoopDetector ────────────────────────────────────────────────
+
+describe("createErrorLoopDetector", () => {
+	it("does not kill before threshold is reached", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 5);
+
+		detector.check("Error line one\nError line two\nError line three\n");
+
+		expect(detector.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
+	});
+
+	it("kills the process when consecutive error lines reach the threshold", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 3);
+
+		detector.check("Error one\nError two\nError three\n");
+
+		expect(detector.wasKilled()).toBe(true);
+		expect(proc.killCalls).toContain("SIGTERM");
+	});
+
+	it("resets the counter when a non-error line appears", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 3);
+
+		detector.check("Error one\nError two\nDoing something useful\nError one\n");
+
+		expect(detector.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
+	});
+
+	it("accumulates count across multiple check() calls", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 3);
+
+		detector.check("Error one\n");
+		detector.check("Error two\n");
+		detector.check("Error three\n");
+
+		expect(detector.wasKilled()).toBe(true);
+		expect(proc.killCalls).toContain("SIGTERM");
+	});
+
+	it("ignores blank lines when counting consecutive errors", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 3);
+
+		detector.check("Error one\n\nError two\n\n\nError three\n");
+
+		expect(detector.wasKilled()).toBe(true);
+	});
+
+	it("does not kill again after already killed", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 2);
+
+		detector.check("Error one\nError two\n");
+		expect(detector.wasKilled()).toBe(true);
+		const killsBefore = proc.killCalls.length;
+
+		// Further calls should be no-ops
+		detector.check("Error three\nError four\n");
+		expect(proc.killCalls.length).toBe(killsBefore);
+	});
+
+	it("uses default threshold of 25 when not specified", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /);
+
+		// 24 errors — should not kill
+		detector.check(Array.from({ length: 24 }, (_, i) => `Error line ${i}`).join("\n"));
+		expect(detector.wasKilled()).toBe(false);
+
+		// 25th error — should kill
+		detector.check("Error line 25\n");
+		expect(detector.wasKilled()).toBe(true);
+	});
+
+	it("works with Gemini-specific pattern", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error (executing tool|generating content)/, 3);
+
+		// These should count
+		detector.check(
+			"Error executing tool replace: not found\nError executing tool write_file: missing param\nError generating content via API\n",
+		);
+
+		expect(detector.wasKilled()).toBe(true);
+	});
+
+	it("does not count lines that do not match the pattern", () => {
+		const proc = makeMockProc();
+		const detector = createErrorLoopDetector(proc, /^Error /, 3);
+
+		// "error" lowercase, "WARNING:", "FAIL" — none start with "Error "
+		detector.check("error: lowercase\nWARNING: something\nFAIL: build\n");
+
+		expect(detector.wasKilled()).toBe(false);
 	});
 });

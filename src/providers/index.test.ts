@@ -106,6 +106,7 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("ENOTFOUND")).toBe(true);
 		expect(isEligibleForFallback("connection timed out")).toBe(true);
 		expect(isEligibleForFallback("network error occurred")).toBe(true);
+		expect(isEligibleForFallback("TypeError: fetch failed sending request")).toBe(true);
 	});
 
 	it("returns true for model not found errors", () => {

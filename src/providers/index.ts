@@ -70,6 +70,7 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/ECONNREFUSED/,
 	/ECONNRESET/,
 	/ENOTFOUND/,
+	/fetch failed/i,
 	/timeout/i,
 	/timed?\s*out/i,
 	/network.?error/i,
