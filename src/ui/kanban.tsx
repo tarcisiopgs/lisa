@@ -13,7 +13,7 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState();
+	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState(config.bell ?? true);
 
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);

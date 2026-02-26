@@ -28,7 +28,7 @@ class KanbanEmitter extends EventEmitter {}
 
 export const kanbanEmitter = new KanbanEmitter();
 
-export function useKanbanState(): KanbanStateData {
+export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
 	const [isEmpty, setIsEmpty] = useState(false);
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
@@ -64,6 +64,7 @@ export function useKanbanState(): KanbanStateData {
 		};
 
 		const onDone = (issueId: string, prUrl: string) => {
+			if (bellEnabled) process.stdout.write("\x07");
 			setCards((prev) =>
 				prev.map((c) =>
 					c.id === issueId ? { ...c, column: "done" as const, prUrl, finishedAt: Date.now() } : c,
@@ -72,6 +73,7 @@ export function useKanbanState(): KanbanStateData {
 		};
 
 		const onReverted = (issueId: string) => {
+			if (bellEnabled) process.stdout.write("\x07\x07");
 			setCards((prev) =>
 				prev.map((c) =>
 					c.id === issueId
@@ -160,7 +162,10 @@ export function useKanbanState(): KanbanStateData {
 		kanbanEmitter.on("provider:model-changed", onModelChanged);
 
 		const onEmpty = () => setIsEmpty(true);
-		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
+		const onComplete = (data: { total: number; duration: number }) => {
+			if (bellEnabled) process.stdout.write("\x07");
+			setWorkComplete(data);
+		};
 		kanbanEmitter.on("work:empty", onEmpty);
 		kanbanEmitter.on("work:complete", onComplete);
 
@@ -178,7 +183,7 @@ export function useKanbanState(): KanbanStateData {
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
 		};
-	}, []);
+	}, [bellEnabled]);
 
 	return { cards, isEmpty, workComplete, modelInUse };
 }

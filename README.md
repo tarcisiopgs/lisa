@@ -157,6 +157,7 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run --source NAME` | Override issue source |
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override GitHub method (`cli` or `token`) |
+| `lisa run --no-bell` | Disable terminal bell on issue completion/failure |
 | `lisa init` | Create `.lisa/config.yaml` interactively |
 | `lisa config` | Edit config interactively |
 | `lisa config --show` | Print current config as JSON |

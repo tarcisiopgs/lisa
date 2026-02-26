@@ -39,9 +39,9 @@ export function stopSpinner(message?: string): void {
 	}
 }
 
-export function notify(): void {
+export function notify(count = 1): void {
 	if (!isTTY()) return;
-	process.stdout.write("\x07");
+	process.stdout.write("\x07".repeat(count));
 }
 
 export function resetTitle(): void {
