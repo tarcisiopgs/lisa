@@ -2,7 +2,20 @@ import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import * as logger from "../output/logger.js";
-import type { LifecycleConfig, ResourceConfig } from "../types/index.js";
+
+export interface ResourceConfig {
+	name: string;
+	check_port: number;
+	up: string;
+	down: string;
+	startup_timeout: number;
+	cwd?: string;
+}
+
+export interface InfraConfig {
+	resources: ResourceConfig[];
+	setup: string[];
+}
 
 const DOCKER_COMPOSE_FILES = [
 	"docker-compose.yml",
@@ -159,9 +172,9 @@ export function discoverEnvFile(cwd: string): void {
 
 /**
  * Auto-discover infrastructure requirements for a repository.
- * Returns a LifecycleConfig if any infrastructure was detected, or null otherwise.
+ * Returns an InfraConfig if any infrastructure was detected, or null otherwise.
  */
-export function discoverLifecycle(cwd: string): LifecycleConfig | null {
+export function discoverInfra(cwd: string): InfraConfig | null {
 	discoverEnvFile(cwd);
 
 	const resources = discoverDockerCompose(cwd);

@@ -18,26 +18,11 @@ export type ProviderName =
 	| "codex";
 export type WorkflowMode = "worktree" | "branch";
 
-export interface ResourceConfig {
-	name: string;
-	check_port: number;
-	up: string;
-	down: string;
-	startup_timeout: number;
-	cwd?: string;
-}
-
-export interface LifecycleConfig {
-	resources: ResourceConfig[];
-	setup: string[];
-}
-
 export interface RepoConfig {
 	name: string;
 	path: string;
 	match: string;
 	base_branch: string;
-	lifecycle?: LifecycleConfig;
 }
 
 export interface SourceConfig {
