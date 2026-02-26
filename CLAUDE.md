@@ -55,8 +55,8 @@ src/
 │   ├── github.ts     # PR creation (gh CLI or GitHub API)
 │   ├── worktree.ts   # Git worktree management + feature branch detection
 │   └── pr-body.ts    # PR body sanitization (strip HTML, normalize bullets)
-├── session/          # Session lifecycle management
-│   ├── lifecycle.ts  # Resource lifecycle (port checks, startup/shutdown)
+├── session/          # Session management
+│   ├── lifecycle.ts  # Port utilities (isPortInUse, waitForPort)
 │   ├── overseer.ts   # Stuck-provider detection via periodic git status checks
 │   └── guardrails.ts # Failed-session log: reads/writes .lisa/guardrails.md
 ├── output/           # Logging and terminal output
@@ -90,7 +90,7 @@ Fetches issues from source, runs provider with fallback chain, creates PRs, upda
 
 - **Worktree** (`runWorktreeSession`): creates isolated `.worktrees/<branch>` per issue, auto-cleanup after PR.
   - Single-repo: uses native worktree (Claude Code `--worktree` flag) if the primary provider supports it (`supportsNativeWorktree = true`), otherwise manages the worktree manually.
-  - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo. Lifecycle resources are started and stopped per repo step.
+  - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo.
 - **Branch** (`runBranchSession`): agent creates a branch in the current checkout. After implementation, reads `.lisa-manifest.json` for the branch name; falls back to `detectFeatureBranches()` heuristic.
 
 ### Provider model resolution (`loop.ts` `resolveModels`)
@@ -126,7 +126,7 @@ If `git push` fails due to pre-push hooks (husky, lint, typecheck), Lisa re-invo
 
 All providers use `child_process.spawn` with `sh -c` — NOT execa (stdout pipe issues in v9). Prompts are written to a temp file and passed via `$(cat 'file')` to avoid argument length limits. Critical settings: `stdin: 'ignore'` (open stdin blocks Claude Code) and unset `CLAUDECODE` env var (allows nested execution).
 
-Only `ClaudeProvider` sets `supportsNativeWorktree = true`, which enables the `--worktree` flag and delegates worktree lifecycle to Claude Code itself.
+Only `ClaudeProvider` sets `supportsNativeWorktree = true`, which enables the `--worktree` flag and delegates worktree management to Claude Code itself.
 
 ## Linear GraphQL Type Rules
 
@@ -154,7 +154,7 @@ Key config fields:
 - `provider` + `models[]`: provider name + optional list of model names within that provider (v1.4.0+). First model = primary, rest = fallbacks.
 - `workflow`: `"worktree"` or `"branch"`
 - `overseer`: optional stuck-provider detection (`enabled`, `check_interval`, `stuck_threshold`)
-- `repos[]`: multi-repo config; each repo can have `match` (issue title prefix routing) and `lifecycle` (resources + setup commands)
+- `repos[]`: multi-repo config; each repo can have `match` (issue title prefix routing)
 
 ## Versioning
 

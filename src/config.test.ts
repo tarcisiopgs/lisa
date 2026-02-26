@@ -148,6 +148,41 @@ repos:
 		expect(config.base_branch).toBe("main");
 		expect(config.repos[0]?.base_branch).toBe("main");
 	});
+
+	it("ignores legacy lifecycle field in repos without error", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+source: linear
+source_config:
+  team: T
+  project: P
+  label: l
+  pick_from: Todo
+  in_progress: IP
+  done: D
+repos:
+  - name: api
+    path: ./api
+    match: "[API]"
+    lifecycle:
+      resources:
+        - name: postgres
+          check_port: 5432
+          up: "docker compose up -d"
+          down: "docker compose down"
+          startup_timeout: 30
+      setup:
+        - "npx prisma generate"
+`,
+		);
+
+		const config = loadConfig(tmpDir);
+		expect(config.repos).toHaveLength(1);
+		expect(config.repos[0]?.name).toBe("api");
+	});
 });
 
 describe("saveConfig", () => {

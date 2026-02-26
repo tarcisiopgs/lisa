@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	discoverDockerCompose,
 	discoverEnvFile,
-	discoverLifecycle,
+	discoverInfra,
 	discoverSetupCommands,
 } from "./discovery.js";
 
@@ -360,12 +360,12 @@ describe("discoverEnvFile", () => {
 	});
 });
 
-describe("discoverLifecycle", () => {
+describe("discoverInfra", () => {
 	it("returns null when no infrastructure detected", () => {
-		expect(discoverLifecycle(tmpDir)).toBeNull();
+		expect(discoverInfra(tmpDir)).toBeNull();
 	});
 
-	it("returns lifecycle with docker-compose resources", () => {
+	it("returns infra with docker-compose resources", () => {
 		writeFileSync(
 			join(tmpDir, "docker-compose.yml"),
 			`
@@ -377,24 +377,24 @@ services:
 `,
 		);
 
-		const lifecycle = discoverLifecycle(tmpDir);
-		expect(lifecycle).not.toBeNull();
-		expect(lifecycle?.resources).toHaveLength(1);
-		expect(lifecycle?.resources[0]?.name).toBe("db");
-		expect(lifecycle?.setup).toEqual([]);
+		const infra = discoverInfra(tmpDir);
+		expect(infra).not.toBeNull();
+		expect(infra?.resources).toHaveLength(1);
+		expect(infra?.resources[0]?.name).toBe("db");
+		expect(infra?.setup).toEqual([]);
 	});
 
-	it("returns lifecycle with setup commands only", () => {
+	it("returns infra with setup commands only", () => {
 		mkdirSync(join(tmpDir, "prisma"), { recursive: true });
 		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "generator client {}");
 
-		const lifecycle = discoverLifecycle(tmpDir);
-		expect(lifecycle).not.toBeNull();
-		expect(lifecycle?.resources).toEqual([]);
-		expect(lifecycle?.setup).toEqual(["npx prisma generate", "npx prisma db push"]);
+		const infra = discoverInfra(tmpDir);
+		expect(infra).not.toBeNull();
+		expect(infra?.resources).toEqual([]);
+		expect(infra?.setup).toEqual(["npx prisma generate", "npx prisma db push"]);
 	});
 
-	it("returns lifecycle with both resources and setup", () => {
+	it("returns infra with both resources and setup", () => {
 		writeFileSync(
 			join(tmpDir, "docker-compose.yml"),
 			`
@@ -408,17 +408,17 @@ services:
 		mkdirSync(join(tmpDir, "prisma"), { recursive: true });
 		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "generator client {}");
 
-		const lifecycle = discoverLifecycle(tmpDir);
-		expect(lifecycle).not.toBeNull();
-		expect(lifecycle?.resources).toHaveLength(1);
-		expect(lifecycle?.setup).toEqual(["npx prisma generate", "npx prisma db push"]);
+		const infra = discoverInfra(tmpDir);
+		expect(infra).not.toBeNull();
+		expect(infra?.resources).toHaveLength(1);
+		expect(infra?.setup).toEqual(["npx prisma generate", "npx prisma db push"]);
 	});
 
 	it("copies .env.example even when returning null", () => {
 		writeFileSync(join(tmpDir, ".env.example"), "SECRET=value");
 
-		const lifecycle = discoverLifecycle(tmpDir);
-		expect(lifecycle).toBeNull();
+		const infra = discoverInfra(tmpDir);
+		expect(infra).toBeNull();
 		// But .env should have been copied
 		expect(existsSync(join(tmpDir, ".env"))).toBe(true);
 	});

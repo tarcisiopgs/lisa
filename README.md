@@ -317,29 +317,6 @@ source_config:
 
 **Multi-repo worktree** — When multiple repos are configured, Lisa runs a two-phase flow: a planning agent produces a `.lisa-plan.json` with ordered steps, then Lisa executes each step sequentially — one worktree and one PR per repo. Cross-repo context (branch names, PR URLs) is passed to each subsequent step.
 
-### Lifecycle Resources
-
-For repos that need services running during implementation (databases, dev servers):
-
-```yaml
-repos:
-  - name: my-api
-    path: ./api
-    base_branch: main
-    lifecycle:
-      resources:
-        - name: postgres
-          check_port: 5432
-          up: "docker compose up -d postgres"
-          down: "docker compose down"
-          startup_timeout: 30
-      setup:
-        - "npx prisma generate"
-        - "npx prisma db push"
-```
-
-Lisa starts resources before the agent runs, waits for the port to be ready, runs setup commands, then stops everything after the session.
-
 ### Recovery Mechanisms
 
 - **Orphan recovery** — On startup, Lisa scans for issues stuck in `in_progress` from interrupted runs and reverts them to `pick_from`.

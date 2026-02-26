@@ -33,18 +33,14 @@ import {
 	isCompleteProviderExhaustion,
 	runWithFallback,
 } from "./providers/index.js";
-import { discoverLifecycle } from "./session/discovery.js";
 import { migrateGuardrails } from "./session/guardrails.js";
-import { startResources, stopResources } from "./session/lifecycle.js";
 import { createSource } from "./sources/index.js";
 import type {
 	ExecutionPlan,
 	FallbackResult,
-	LifecycleConfig,
 	LisaConfig,
 	ModelSpec,
 	PlanStep,
-	RepoConfig,
 	Source,
 } from "./types/index.js";
 import { kanbanEmitter } from "./ui/state.js";
@@ -632,29 +628,6 @@ function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
 	return repo?.base_branch ?? config.base_branch;
 }
 
-function findRepoConfig(
-	config: LisaConfig,
-	issue: { repo?: string; title: string },
-): RepoConfig | undefined {
-	if (config.repos.length === 0) return undefined;
-
-	if (issue.repo) {
-		const match = config.repos.find((r) => r.name === issue.repo);
-		if (match) return match;
-	}
-
-	for (const r of config.repos) {
-		if (r.match && issue.title.startsWith(r.match)) return r;
-	}
-
-	return config.repos[0];
-}
-
-function resolveLifecycle(repo: RepoConfig | undefined, cwd: string): LifecycleConfig | null {
-	if (repo?.lifecycle) return repo.lifecycle;
-	return discoverLifecycle(cwd);
-}
-
 async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<string | null> {
 	try {
 		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
@@ -718,27 +691,6 @@ async function runNativeWorktreeSession(
 	repoPath: string,
 	_defaultBranch: string,
 ): Promise<SessionResult> {
-	const failResult = (providerUsed: string, fallback?: FallbackResult): SessionResult => ({
-		success: false,
-		providerUsed,
-		prUrls: [],
-		fallback: fallback ?? { success: false, output: "", duration: 0, providerUsed, attempts: [] },
-	});
-
-	// Start lifecycle resources before implementation
-	const repo = findRepoConfig(config, issue);
-	const lifecycle = resolveLifecycle(repo, repoPath);
-	if (lifecycle) {
-		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
-		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(effectiveRepo, repoPath);
-		stopSpinner();
-		if (!started) {
-			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
-			return failResult(models[0]?.provider ?? "claude");
-		}
-	}
-
 	const testRunner = detectTestRunner(repoPath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(repoPath);
@@ -782,8 +734,6 @@ async function runNativeWorktreeSession(
 			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
 		);
 	} catch {}
-
-	if (lifecycle) await stopResources();
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
@@ -854,32 +804,6 @@ async function runManualWorktreeSession(
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
 
-	// Start lifecycle resources before implementation
-	const repo = findRepoConfig(config, issue);
-	const lifecycle = resolveLifecycle(repo, worktreePath);
-	if (lifecycle) {
-		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
-		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(effectiveRepo, worktreePath);
-		stopSpinner();
-		if (!started) {
-			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
-			await cleanupWorktree(repoPath, worktreePath);
-			return {
-				success: false,
-				providerUsed: models[0]?.provider ?? "claude",
-				prUrls: [],
-				fallback: {
-					success: false,
-					output: "",
-					duration: 0,
-					providerUsed: models[0]?.provider ?? "claude",
-					attempts: [],
-				},
-			};
-		}
-	}
-
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(worktreePath);
 	if (testRunner) {
@@ -914,11 +838,6 @@ async function runManualWorktreeSession(
 		);
 	} catch {
 		// Ignore log write errors
-	}
-
-	// Stop lifecycle resources after implementation
-	if (lifecycle) {
-		await stopResources();
 	}
 
 	if (!result.success) {
@@ -1119,21 +1038,6 @@ async function runMultiRepoStep(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
-	// Start lifecycle resources for this repo step
-	const repoConfig = config.repos.find((r) => resolve(config.workspace, r.path) === step.repoPath);
-	const lifecycle = resolveLifecycle(repoConfig, worktreePath);
-	if (lifecycle) {
-		const effectiveRepo = { ...repoConfig, lifecycle } as RepoConfig;
-		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
-		const started = await startResources(effectiveRepo, worktreePath);
-		stopSpinner();
-		if (!started) {
-			logger.error(`Lifecycle startup failed for step ${stepNum}. Aborting.`);
-			await cleanupWorktree(repoPath, worktreePath);
-			return failResult(models[0]?.provider ?? "claude");
-		}
-	}
-
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
 	const prompt = buildScopedImplementPrompt(
@@ -1162,9 +1066,6 @@ async function runMultiRepoStep(
 		shouldAbort: () => userKilled || userSkipped,
 	});
 	stopSpinner();
-
-	// Stop lifecycle resources after implementation
-	if (lifecycle) await stopResources();
 
 	try {
 		appendFileSync(
@@ -1223,32 +1124,6 @@ async function runBranchSession(
 
 	const prompt = buildImplementPrompt(issue, config, testRunner, pm, projectContext, workspace);
 
-	// Start lifecycle resources before implementation
-	const repo = findRepoConfig(config, issue);
-	const lifecycleCwd = repo ? resolve(workspace, repo.path) : workspace;
-	const lifecycle = resolveLifecycle(repo, lifecycleCwd);
-	if (lifecycle) {
-		const effectiveRepo = { ...repo, lifecycle } as RepoConfig;
-		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(effectiveRepo, lifecycleCwd);
-		stopSpinner();
-		if (!started) {
-			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
-			return {
-				success: false,
-				providerUsed: models[0]?.provider ?? "claude",
-				prUrls: [],
-				fallback: {
-					success: false,
-					output: "",
-					duration: 0,
-					providerUsed: models[0]?.provider ?? "claude",
-					attempts: [],
-				},
-			};
-		}
-	}
-
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
@@ -1273,11 +1148,6 @@ async function runBranchSession(
 		);
 	} catch {
 		// Ignore log write errors
-	}
-
-	// Stop lifecycle resources after implementation
-	if (lifecycle) {
-		await stopResources();
 	}
 
 	if (!result.success) {
