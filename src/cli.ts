@@ -395,7 +395,12 @@ function fetchOpenCodeModels(): string[] {
 				if (/^opencode\//.test(m)) return true;
 				// Provider-gated: only show if credentials are present
 				if (/^anthropic\/claude-(opus|sonnet|haiku)-4-\d+$/.test(m)) return hasAnthropic;
-				if (/^google\/gemini-2\.5-(pro|flash|flash-lite)$/.test(m)) return hasGoogle;
+				if (
+					/^google\/gemini-(3\.1-pro-preview|3-pro-preview|3-flash-preview|2\.5-(pro|flash|flash-lite))$/.test(
+						m,
+					)
+				)
+					return hasGoogle;
 				if (/^openai\//.test(m)) return hasOpenAI;
 				if (/^github-copilot\//.test(m)) return hasCopilot;
 				if (/^groq\//.test(m)) return hasGroq;
@@ -436,7 +441,14 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
 		claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
-		gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+		gemini: [
+			"gemini-3.1-pro-preview",
+			"gemini-3-pro-preview",
+			"gemini-3-flash-preview",
+			"gemini-2.5-pro",
+			"gemini-2.5-flash",
+			"gemini-2.5-flash-lite",
+		],
 		// opencode: populated dynamically below (fetchOpenCodeModels)
 		copilot: ["claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2"],
 		goose: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
@@ -504,6 +516,8 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 						"anthropic/claude-opus-4-6",
 						"anthropic/claude-sonnet-4-6",
 						"anthropic/claude-haiku-4-5",
+						"google/gemini-3.1-pro-preview",
+						"google/gemini-3-pro-preview",
 						"google/gemini-2.5-pro",
 						"google/gemini-2.5-flash",
 					];

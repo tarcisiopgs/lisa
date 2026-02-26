@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getOutputMode } from "../output/logger.js";
-import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
+import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
@@ -34,12 +34,14 @@ export class AiderProvider implements Provider {
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 
 			const chunks: string[] = [];
 
 			proc.stdout?.on("data", (chunk: Buffer) => {
 				const raw = chunk.toString();
 				const text = isPty ? stripAnsi(raw) : raw;
+				errorLoopDetector.check(text);
 				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
 					kanbanEmitter.emit("issue:output", opts.issueId, raw);
@@ -66,12 +68,12 @@ export class AiderProvider implements Provider {
 				});
 			});
 
-			if (overseer?.wasKilled()) {
+			if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
 
 			return {
-				success: exitCode === 0 && !overseer?.wasKilled(),
+				success: exitCode === 0 && !overseer?.wasKilled() && !errorLoopDetector.wasKilled(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
