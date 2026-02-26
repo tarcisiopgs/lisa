@@ -163,11 +163,12 @@ export function Card({
 				</Box>
 
 				{/* Title: always two rows to keep card height stable */}
+				{/* padEnd ensures each title row is always CARD_TITLE_WIDTH wide, preventing border from shifting */}
 				<Text bold={isSelected} dimColor={!isSelected}>
-					{titleLine1}
+					{titleLine1.padEnd(CARD_TITLE_WIDTH)}
 				</Text>
 				<Text bold={isSelected} dimColor={!isSelected}>
-					{titleLine2}
+					{titleLine2.padEnd(CARD_TITLE_WIDTH)}
 				</Text>
 
 				{/* Last provider output line (in_progress only) */}
