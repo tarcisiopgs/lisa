@@ -182,7 +182,7 @@ When running in an interactive terminal, `lisa run` renders a real-time Kanban b
 └──────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
 ```
 
-In-progress cards show a live elapsed timer. When the loop is paused, the active card displays a visual pause indicator. The detail view includes a scroll bar when output overflows.
+In-progress cards show a live elapsed timer and the last action taken by the provider. A global progress bar in the header tracks overall session progress. When the loop is paused, active cards display a visual pause indicator. The detail view includes a scroll bar when output overflows and shows the active model name in the sidebar.
 
 ### Keyboard shortcuts
 
@@ -192,6 +192,7 @@ In-progress cards show a live elapsed timer. When the loop is paused, the active
 | `Tab` / `Shift+Tab` | Move between columns (alternative) |
 | `↑` / `↓` | Navigate cards / scroll output |
 | `Enter` | Open issue detail view (streams provider output) |
+| `o` | Open PR in browser (when viewing a completed card with a PR) |
 | `Esc` | Close detail view, return to board |
 | `k` | Kill the selected in-progress issue |
 | `s` | Skip the selected in-progress issue |
@@ -233,6 +234,7 @@ repos:
 loop:
   cooldown: 10       # seconds between issues
   max_sessions: 0    # 0 = unlimited
+  concurrency: 1     # issues processed in parallel (default: 1; >1 forces worktree mode)
 
 logs:
   dir: .lisa/logs
@@ -256,8 +258,17 @@ validation:
 | `project` | Project name | — | Project identifier or UUID | — | — | — | — |
 | `pick_from` | Status to pick issues from | List to pick cards from | State name to pick issues from | Workflow state to pick stories from | — | — | Status to pick issues from |
 | `label` | Label to filter issues | Label to filter cards | Label to filter issues | Label to filter stories | Label to filter issues | Label to filter issues | Label to filter issues |
+| `remove_label` | Label removed after pickup (optional; defaults to `label`) | Same | Same | Same | Same | Same | Same |
 | `in_progress` | In-progress status | In-progress column | In-progress state name | In-progress workflow state | Label to apply on activate | Label to apply on activate | In-progress status name |
 | `done` | Destination status after PR | Destination column after PR | Done state name | Done workflow state | Closes the issue | Closes the issue | Destination status after PR |
+
+`label` can also be a list — Lisa picks any issue that has **all** of the specified labels. `remove_label` controls which label is removed after pickup, useful when you want to keep some labels intact. Example:
+
+```yaml
+source_config:
+  label: [ready, api]   # pick issues labelled both "ready" and "api"
+  remove_label: ready   # only remove "ready" after pickup; "api" is preserved
+```
 
 Plane example:
 
@@ -341,6 +352,12 @@ Each issue runs in its own isolated worktree with an independent provider proces
 - **TUI** — Multiple cards appear in the In Progress column simultaneously. `[k]` and `[s]` target the selected card; `[p]` pauses all active providers.
 - **Fallback** — Each issue has its own independent fallback chain.
 - **Slot filling** — When an issue completes, the freed slot is immediately filled with the next available issue.
+
+### PR Stacking
+
+When an issue depends on another issue that is still in progress, Lisa passes the dependency context to the agent automatically. The agent receives the parent issue ID, the branch name, the open PR URL, and the list of changed files — so it can build on top of the parent branch cleanly rather than branching from `main`.
+
+Lisa detects blocked issues using the `completedBlockerIds` from your issue tracker (Linear blockers, GitHub milestone links, etc.) and skips issues whose blockers are not yet completed. Once a blocker is resolved, the dependent issue becomes eligible and will be picked up in a future loop.
 
 ### Recovery Mechanisms
 

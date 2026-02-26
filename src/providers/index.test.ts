@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ClaudeProvider } from "./claude.js";
 import {
 	createProvider,
 	isCompleteProviderExhaustion,
@@ -206,6 +207,10 @@ describe("isCompleteProviderExhaustion", () => {
 });
 
 describe("runWithFallback — shouldAbort", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it("stops the fallback chain when shouldAbort returns true", async () => {
 		// Use models that won't actually be available — the key test is that it
 		// skips all of them without even checking availability.
@@ -228,6 +233,13 @@ describe("runWithFallback — shouldAbort", () => {
 	});
 
 	it("does not short-circuit when shouldAbort returns false", async () => {
+		vi.spyOn(ClaudeProvider.prototype, "isAvailable").mockResolvedValue(true);
+		vi.spyOn(ClaudeProvider.prototype, "run").mockResolvedValue({
+			success: false,
+			output: "rate limit exceeded",
+			duration: 10,
+		});
+
 		let aborted = false;
 		const result = await runWithFallback(
 			[
@@ -250,5 +262,5 @@ describe("runWithFallback — shouldAbort", () => {
 		// First model should be attempted, second should be aborted
 		expect(result.success).toBe(false);
 		expect(result.attempts.length).toBe(1);
-	}, 15_000);
+	});
 });
