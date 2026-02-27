@@ -21,6 +21,7 @@ export interface KanbanCard {
 export interface KanbanStateData {
 	cards: KanbanCard[];
 	isEmpty: boolean;
+	isWatching: boolean;
 	workComplete: { total: number; duration: number } | null;
 	modelInUse: string | null;
 }
@@ -50,6 +51,7 @@ export function registerBellListeners(bellEnabled: boolean): () => void {
 export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
 	const [isEmpty, setIsEmpty] = useState(false);
+	const [isWatching, setIsWatching] = useState(false);
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
 		null,
 	);
@@ -180,8 +182,12 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 
 		const onEmpty = () => setIsEmpty(true);
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
+		const onWatching = () => setIsWatching(true);
+		const onWatchResume = () => setIsWatching(false);
 		kanbanEmitter.on("work:empty", onEmpty);
 		kanbanEmitter.on("work:complete", onComplete);
+		kanbanEmitter.on("work:watching", onWatching);
+		kanbanEmitter.on("work:watch-resume", onWatchResume);
 
 		const cleanupBell = registerBellListeners(bellEnabled);
 
@@ -198,9 +204,11 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
+			kanbanEmitter.off("work:watching", onWatching);
+			kanbanEmitter.off("work:watch-resume", onWatchResume);
 			cleanupBell();
 		};
 	}, [bellEnabled]);
 
-	return { cards, isEmpty, workComplete, modelInUse };
+	return { cards, isEmpty, isWatching, workComplete, modelInUse };
 }

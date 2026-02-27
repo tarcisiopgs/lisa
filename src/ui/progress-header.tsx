@@ -6,6 +6,7 @@ interface ProgressHeaderProps {
 	running: number;
 	workComplete: boolean;
 	paused?: boolean;
+	watching?: boolean;
 	availableWidth?: number;
 }
 
@@ -17,6 +18,7 @@ export function ProgressHeader({
 	running,
 	workComplete,
 	paused,
+	watching,
 	availableWidth,
 }: ProgressHeaderProps) {
 	const { stdout } = useStdout();
@@ -33,8 +35,8 @@ export function ProgressHeader({
 	const completedBars = Math.round((progress / 100) * progressBarLength);
 	const remainingBars = progressBarLength - completedBars;
 
-	const barColor = workComplete ? "green" : paused ? "yellow" : "cyan";
-	const borderColor = workComplete ? "green" : paused ? "yellow" : "gray";
+	const barColor = workComplete ? "green" : watching ? "cyan" : paused ? "yellow" : "cyan";
+	const borderColor = workComplete ? "green" : watching ? "cyan" : paused ? "yellow" : "gray";
 
 	const statsText = `${done}/${total} (${pct}%)${running > 0 ? ` (${running} running)` : ""}`;
 	const statsLength = statsText.length;
@@ -67,6 +69,7 @@ export function ProgressHeader({
 			<Text> </Text>
 			<Text dimColor>{`(${pct}%)`}</Text>
 			{running > 0 && <Text dimColor>{` (${running} running)`}</Text>}
+			{watching && <Text color="cyan">{" watching..."}</Text>}
 		</Box>
 	);
 }

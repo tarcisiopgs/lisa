@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { LoopOptions } from "./loop.js";
+import { WATCH_POLL_INTERVAL_MS } from "./loop.js";
 
 describe("LoopOptions", () => {
 	it("accepts concurrency field", () => {
 		const opts: LoopOptions = {
 			once: false,
+			watch: false,
 			limit: 0,
 			dryRun: false,
 			concurrency: 3,
@@ -15,6 +17,7 @@ describe("LoopOptions", () => {
 	it("defaults concurrency to 1 for backward compatibility", () => {
 		const opts: LoopOptions = {
 			once: false,
+			watch: false,
 			limit: 0,
 			dryRun: false,
 			concurrency: 1,
@@ -25,6 +28,7 @@ describe("LoopOptions", () => {
 	it("accepts optional issueId with concurrency", () => {
 		const opts: LoopOptions = {
 			once: true,
+			watch: false,
 			limit: 1,
 			dryRun: false,
 			issueId: "INT-123",
@@ -32,6 +36,34 @@ describe("LoopOptions", () => {
 		};
 		expect(opts.issueId).toBe("INT-123");
 		expect(opts.concurrency).toBe(1);
+	});
+
+	it("accepts watch flag", () => {
+		const opts: LoopOptions = {
+			once: false,
+			watch: true,
+			limit: 0,
+			dryRun: false,
+			concurrency: 1,
+		};
+		expect(opts.watch).toBe(true);
+	});
+
+	it("watch defaults to false for backward compatibility", () => {
+		const opts: LoopOptions = {
+			once: false,
+			watch: false,
+			limit: 0,
+			dryRun: false,
+			concurrency: 1,
+		};
+		expect(opts.watch).toBe(false);
+	});
+});
+
+describe("WATCH_POLL_INTERVAL_MS", () => {
+	it("is 60 seconds", () => {
+		expect(WATCH_POLL_INTERVAL_MS).toBe(60_000);
 	});
 });
 

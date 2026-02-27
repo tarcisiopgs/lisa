@@ -14,7 +14,9 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, workComplete, modelInUse } = useKanbanState(config.bell ?? true);
+	const { cards, isEmpty, isWatching, workComplete, modelInUse } = useKanbanState(
+		config.bell ?? true,
+	);
 	const { rows } = useTerminalSize();
 
 	const [activeView, setActiveView] = useState<"board" | "detail">("board");
@@ -193,6 +195,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 					cards={cards}
 					labels={labels}
 					isEmpty={isEmpty}
+					isWatching={isWatching}
 					workComplete={workComplete}
 					activeColIndex={activeColIndex}
 					activeCardIndex={activeCardIndex}

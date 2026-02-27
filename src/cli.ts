@@ -42,6 +42,12 @@ const run = defineCommand({
 	meta: { name: "run", description: "Run the agent loop" },
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
+		watch: {
+			type: "boolean",
+			alias: "w",
+			description: "Keep running after queue empties — poll for new issues every 60s",
+			default: false,
+		},
 		limit: { type: "string", description: "Max number of issues to process", default: "0" },
 		bell: {
 			type: "boolean",
@@ -114,6 +120,7 @@ const run = defineCommand({
 
 		await runLoop(merged, {
 			once: args.once || !!args.issue,
+			watch: args.watch,
 			limit: Number.parseInt(args.limit, 10),
 			dryRun: args["dry-run"],
 			issueId: args.issue,

@@ -103,4 +103,28 @@ describe("ProgressHeader", () => {
 		const content = stripAnsiAndExtractContent(lastFrame());
 		expect(content).toContain("5/10 (50%)");
 	});
+
+	it("renders watching indicator when watching is true", () => {
+		const { lastFrame } = render(
+			<ProgressHeader
+				total={5}
+				done={5}
+				running={0}
+				workComplete={false}
+				watching={true}
+				availableWidth={80}
+			/>,
+		);
+		const ansiStripRegex = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
+		const frame = (lastFrame() ?? "").replace(ansiStripRegex, "");
+		expect(frame).toContain("watching...");
+	});
+
+	it("does not render watching indicator when watching is false", () => {
+		const { lastFrame } = render(
+			<ProgressHeader total={5} done={5} running={0} workComplete={false} watching={false} />,
+		);
+		const content = stripAnsiAndExtractContent(lastFrame());
+		expect(content).not.toContain("watching...");
+	});
 });
