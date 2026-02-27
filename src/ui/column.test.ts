@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcVisibleCount } from "./column.js";
+import { calcCardWidth, calcVisibleCount } from "./column.js";
 
 describe("calcVisibleCount", () => {
 	it("returns 1 for very small terminals (below threshold)", () => {
@@ -35,5 +35,49 @@ describe("calcVisibleCount", () => {
 		const result = calcVisibleCount(40);
 		// Ensure we are not over-counting compared to the old (buggy) behaviour
 		expect(result).toBeLessThan(Math.floor((40 - 4) / 7));
+	});
+});
+
+describe("calcCardWidth", () => {
+	it("returns minimum of 20 for very narrow terminals", () => {
+		// (40 - 28) / 3 - 9 = 4 - 9 < 0, clamp to 20
+		expect(calcCardWidth(40)).toBe(20);
+		expect(calcCardWidth(1)).toBe(20);
+	});
+
+	it("returns minimum of 20 for 80-col terminals", () => {
+		// (80 - 28) / 3 - 9 = floor(17.33) - 9 = 17 - 9 = 8 → clamped to 20
+		expect(calcCardWidth(80)).toBe(20);
+	});
+
+	it("returns minimum of 20 for 100-col terminals", () => {
+		// (100 - 28) / 3 - 9 = floor(24) - 9 = 24 - 9 = 15 → clamped to 20
+		expect(calcCardWidth(100)).toBe(20);
+	});
+
+	it("calculates correctly for 120-col terminal", () => {
+		// (120 - 28) / 3 - 9 = floor(30.67) - 9 = 30 - 9 = 21
+		expect(calcCardWidth(120)).toBe(21);
+	});
+
+	it("calculates correctly for 140-col terminal", () => {
+		// (140 - 28) / 3 - 9 = floor(37.33) - 9 = 37 - 9 = 28
+		expect(calcCardWidth(140)).toBe(28);
+	});
+
+	it("calculates correctly for 160-col terminal", () => {
+		// (160 - 28) / 3 - 9 = floor(44) - 9 = 44 - 9 = 35
+		expect(calcCardWidth(160)).toBe(35);
+	});
+
+	it("never returns less than 20", () => {
+		for (const cols of [40, 60, 80, 100]) {
+			expect(calcCardWidth(cols)).toBeGreaterThanOrEqual(20);
+		}
+	});
+
+	it("increases with terminal width beyond the minimum threshold", () => {
+		expect(calcCardWidth(160)).toBeGreaterThan(calcCardWidth(140));
+		expect(calcCardWidth(140)).toBeGreaterThan(calcCardWidth(120));
 	});
 });

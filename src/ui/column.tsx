@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { Card } from "./card.js";
 import type { KanbanCard } from "./state.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 interface ColumnProps {
 	label: string;
@@ -17,8 +18,30 @@ const CARD_HEIGHT = 7;
 // leaving an empty gap at the bottom of each column.
 const HEADER_ROWS = 8; // adjusted to reflect real terminal overhead
 
+// Layout constants for dynamic card width calculation.
+// Sidebar has a fixed width of 28 cols (see sidebar.tsx: width={28}).
+const SIDEBAR_WIDTH = 28;
+// Per-column overhead: border (2) + paddingX (2).
+const COLUMN_OVERHEAD = 4;
+// Per-card overhead: card border (2) + selection bar (1) + card paddingX (2).
+const CARD_OVERHEAD = 5;
+// Minimum card content width regardless of terminal size.
+const MIN_CARD_WIDTH = 20;
+
 export function calcVisibleCount(terminalRows: number): number {
 	return Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
+}
+
+/**
+ * Calculate the available content width for card titles based on the terminal column count.
+ * Each of the 3 kanban columns gets (terminalCols - SIDEBAR_WIDTH) / 3 total width.
+ * Card content width = column width - COLUMN_OVERHEAD - CARD_OVERHEAD, clamped to MIN_CARD_WIDTH.
+ */
+export function calcCardWidth(terminalCols: number): number {
+	return Math.max(
+		MIN_CARD_WIDTH,
+		Math.floor((terminalCols - SIDEBAR_WIDTH) / 3) - COLUMN_OVERHEAD - CARD_OVERHEAD,
+	);
 }
 
 export function Column({
@@ -28,8 +51,9 @@ export function Column({
 	activeCardIndex = 0,
 	paused = false,
 }: ColumnProps) {
-	const terminalRows = process.stdout.rows ?? 24;
+	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
 	const visibleCount = calcVisibleCount(terminalRows);
+	const cardWidth = calcCardWidth(terminalCols);
 
 	// Sort merged cards to the bottom (only affects done column in practice)
 	const sortedCards = [...cards].sort((a, b) => {
@@ -99,7 +123,15 @@ export function Column({
 			{visibleCards.map((card, idx) => {
 				const absoluteIdx = scrollOffset + idx;
 				const isSelected = isFocused && absoluteIdx === activeCardIndex;
-				return <Card key={card.id} card={card} isSelected={isSelected} paused={paused} />;
+				return (
+					<Card
+						key={card.id}
+						card={card}
+						isSelected={isSelected}
+						paused={paused}
+						cardWidth={cardWidth}
+					/>
+				);
 			})}
 
 			{/* Empty state */}
