@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { arch, platform, release } from "node:os";
 import { resolve } from "node:path";
 
-const TELEMETRY_ENDPOINT = "https://telemetry.lisa.sh/crash";
+const TELEMETRY_ENDPOINT = "https://telemetry.tarcisiopgs.dev/lisa/crash";
 
 export interface CrashReport {
 	lisaVersion: string;
