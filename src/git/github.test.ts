@@ -14,7 +14,10 @@ describe("appendPrAttribution", () => {
 
 	it("deletes provider attribution comments before updating PR body", async () => {
 		const comments = [
-			{ id: 101, body: "🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>" },
+			{
+				id: 101,
+				body: "🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+			},
 			{ id: 102, body: "LGTM! Great work." },
 		];
 
@@ -117,9 +120,7 @@ describe("appendPrAttribution", () => {
 	});
 
 	it("is non-fatal when individual comment deletion fails", async () => {
-		const comments = [
-			{ id: 300, body: "🤖 Generated with Gemini CLI" },
-		];
+		const comments = [{ id: 300, body: "🤖 Generated with Gemini CLI" }];
 
 		mockExeca.mockImplementation((_cmd: string, args: string[]) => {
 			if (args[0] === "api" && args[1]?.includes("/issues/") && args[1]?.endsWith("/comments")) {
