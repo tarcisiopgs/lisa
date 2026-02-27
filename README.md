@@ -140,6 +140,10 @@ export GITHUB_TOKEN=""     # same token used for PR creation
 export JIRA_BASE_URL=""        # e.g. https://yourcompany.atlassian.net
 export JIRA_EMAIL=""           # Atlassian account email
 export JIRA_API_TOKEN=""       # Atlassian API token
+
+# Optional — anonymous crash reporting (disabled by default)
+export LISA_TELEMETRY=1        # enable anonymous crash/error reporting
+export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and config)
 ```
 
 ## Commands
@@ -249,6 +253,10 @@ overseer:
 # Optional — validate issue spec before accepting
 validation:
   require_acceptance_criteria: true  # skip issues without detectable acceptance criteria (default: true)
+
+# Optional — anonymous crash/error reporting (disabled by default)
+telemetry:
+  enabled: true  # set via `lisa init` prompt or LISA_TELEMETRY=1; override with LISA_NO_TELEMETRY=1
 ```
 
 ### Source-Specific Fields

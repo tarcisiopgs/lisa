@@ -51,6 +51,10 @@ export interface ValidationConfig {
 	require_acceptance_criteria?: boolean;
 }
 
+export interface TelemetryConfig {
+	enabled: boolean;
+}
+
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
@@ -65,6 +69,7 @@ export interface LisaConfig {
 	loop: LoopConfig;
 	overseer?: OverseerConfig;
 	validation?: ValidationConfig;
+	telemetry?: TelemetryConfig;
 }
 
 export interface DependencyContext {
