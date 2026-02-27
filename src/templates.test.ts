@@ -59,6 +59,7 @@ describe("getTemplateById", () => {
 
 describe("templateToPartialConfig", () => {
 	it("converts github-claude template to a LisaConfig", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("github-claude")!;
 		const config = templateToPartialConfig(template);
 		expect(config.provider).toBe("claude");
@@ -71,6 +72,7 @@ describe("templateToPartialConfig", () => {
 	});
 
 	it("sets empty team and project", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("linear-claude")!;
 		const config = templateToPartialConfig(template);
 		expect(config.source_config.team).toBe("");
@@ -78,6 +80,7 @@ describe("templateToPartialConfig", () => {
 	});
 
 	it("sets sensible loop and workspace defaults", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("linear-claude")!;
 		const config = templateToPartialConfig(template);
 		expect(config.workspace).toBe(".");
@@ -87,12 +90,14 @@ describe("templateToPartialConfig", () => {
 	});
 
 	it("sets empty provider_options", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("github-claude")!;
 		const config = templateToPartialConfig(template);
 		expect(config.provider_options).toEqual({});
 	});
 
 	it("converts jira-claude template correctly", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("jira-claude")!;
 		const config = templateToPartialConfig(template);
 		expect(config.provider).toBe("claude");
@@ -103,6 +108,7 @@ describe("templateToPartialConfig", () => {
 	});
 
 	it("converts linear-gemini template correctly", () => {
+		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("linear-gemini")!;
 		const config = templateToPartialConfig(template);
 		expect(config.provider).toBe("gemini");

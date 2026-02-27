@@ -17,13 +17,13 @@ import {
 } from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
 import { ensureWorktreeGitignore } from "./git/worktree.js";
-import { getTemplateById, getTemplates, templateToPartialConfig } from "./templates.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
 import { getLogsDir } from "./paths.js";
 import { getAllProvidersWithAvailability } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
 import { isTelemetryEnabled } from "./telemetry.js";
+import { getTemplateById, getTemplates, templateToPartialConfig } from "./templates.js";
 import type {
 	GitHubMethod,
 	Issue,
