@@ -1,5 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { formatElapsed, getLastOutputLine, wrapTitle } from "./card.js";
+import { formatElapsed, getLastOutputLine, stripDoubleWidth, wrapTitle } from "./card.js";
+
+describe("stripDoubleWidth", () => {
+	it("returns ASCII strings unchanged", () => {
+		expect(stripDoubleWidth("hello world")).toBe("hello world");
+	});
+
+	it("returns empty string unchanged", () => {
+		expect(stripDoubleWidth("")).toBe("");
+	});
+
+	it("replaces CJK unified ideograph characters with ?", () => {
+		expect(stripDoubleWidth("你好")).toBe("??");
+	});
+
+	it("replaces Hangul syllables with ?", () => {
+		expect(stripDoubleWidth("안녕하세요")).toBe("?????");
+	});
+
+	it("replaces full-width ASCII variants with ?", () => {
+		// Full-width letters: Ａ = U+FF21
+		expect(stripDoubleWidth("ＡＢＣ")).toBe("???");
+	});
+
+	it("replaces astral-plane emoji with ?", () => {
+		expect(stripDoubleWidth("hello 🎉 world")).toBe("hello ? world");
+	});
+
+	it("handles mixed ASCII and wide chars correctly", () => {
+		expect(stripDoubleWidth("hi 你好 world")).toBe("hi ?? world");
+	});
+
+	it("ensures padEnd produces correct length after stripping", () => {
+		// "你好" = 2 CJK chars → stripped to "??" (2 chars), padEnd(10) → 10 chars
+		const stripped = stripDoubleWidth("你好");
+		const padded = stripped.padEnd(10);
+		expect(padded.length).toBe(10);
+	});
+
+	it("replaces Hiragana characters with ?", () => {
+		// U+3041–U+3096 Hiragana
+		expect(stripDoubleWidth("あいう")).toBe("???");
+	});
+});
 
 describe("getLastOutputLine", () => {
 	const maxWidth = 28;
@@ -137,5 +180,12 @@ describe("wrapTitle", () => {
 		expect(line1.length).toBe(maxWidth);
 		expect(line2.length).toBe(maxWidth);
 		expect(line2.endsWith("…")).toBe(true);
+	});
+
+	it("works with a smaller maxWidth (e.g. 20)", () => {
+		const title = "fix the kanban layout issue quickly";
+		const [line1, line2] = wrapTitle(title, 20);
+		expect(line1.length).toBeLessThanOrEqual(20);
+		expect(line2.length).toBeLessThanOrEqual(20);
 	});
 });

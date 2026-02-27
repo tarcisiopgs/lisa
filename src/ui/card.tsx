@@ -3,6 +3,20 @@ import Spinner from "ink-spinner";
 import { useEffect, useState } from "react";
 import type { KanbanCard } from "./state.js";
 
+// Wide character regex: covers CJK, Hangul, full-width, and astral-plane emoji.
+// These characters occupy 2 terminal columns but JS counts them as 1 codepoint,
+// which would make padEnd() produce strings that are too short for the border.
+const WIDE_CHAR_RE =
+	/[\u1100-\u115F\u2E80-\u303E\u3041-\u33BF\u3400-\u4DBF\u4E00-\uA4CF\uAC00-\uD7FF\uF900-\uFAFF\uFE10-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]|[\u{1F000}-\u{1FFFF}]|[\u{20000}-\u{2FA20}]/gu;
+
+/**
+ * Replace double-width characters (CJK, Hangul, full-width, emoji) with a single-width
+ * placeholder ("?") so that String.padEnd() counts terminal columns correctly.
+ */
+export function stripDoubleWidth(str: string): string {
+	return str.replace(WIDE_CHAR_RE, "?");
+}
+
 export function formatElapsed(ms: number): string {
 	const seconds = Math.floor(ms / 1000);
 	const minutes = Math.floor(seconds / 60);
@@ -73,10 +87,13 @@ export function Card({
 	card,
 	isSelected = false,
 	paused = false,
+	cardWidth = 28,
 }: {
 	card: KanbanCard;
 	isSelected?: boolean;
 	paused?: boolean;
+	/** Width (in terminal columns) available for card content. Passed from Column. */
+	cardWidth?: number;
 }) {
 	const [now, setNow] = useState(Date.now());
 
@@ -119,13 +136,7 @@ export function Card({
 	const selectionBar = isSelected ? "▐" : " ";
 	const selectionColor = isSelected ? "yellow" : "white";
 
-	// CARD_TITLE_WIDTH must stay in sync with CARD_INNER_WIDTH in column.tsx.
-	// Derivation: column border (2) + column paddingX (2) + card border (2) +
-	// selection bar (1) + card paddingX (2) + status glyph + space (2) = 11 overhead
-	// subtracted from terminal width / 3. Using a safe fixed width of 28 chars keeps
-	// titles readable at any terminal width >= ~100 cols.
-	const CARD_TITLE_WIDTH = 28;
-	const [titleLine1, titleLine2] = wrapTitle(card.title, CARD_TITLE_WIDTH);
+	const [titleLine1, titleLine2] = wrapTitle(card.title, cardWidth);
 
 	// Compute elapsed time accounting for pause duration
 	let elapsedMs: number | null = null;
@@ -168,29 +179,28 @@ export function Card({
 				</Box>
 
 				{/* Title: always two rows to keep card height stable */}
-				{/* padEnd ensures each title row is always CARD_TITLE_WIDTH wide, preventing border from shifting */}
+				{/* stripDoubleWidth + padEnd ensures each row is always cardWidth terminal columns wide */}
 				<Text bold={isSelected} dimColor={!isSelected}>
-					{titleLine1.padEnd(CARD_TITLE_WIDTH)}
+					{stripDoubleWidth(titleLine1).padEnd(cardWidth)}
 				</Text>
 				<Text bold={isSelected} dimColor={!isSelected}>
-					{titleLine2.padEnd(CARD_TITLE_WIDTH)}
+					{stripDoubleWidth(titleLine2).padEnd(cardWidth)}
 				</Text>
 
 				{/* Last provider output line — always rendered to keep CARD_HEIGHT stable */}
-				{/* padEnd ensures the row is always CARD_TITLE_WIDTH wide, preventing border from shifting */}
+				{/* padEnd ensures the row is always cardWidth wide, preventing border from shifting */}
 				<Text dimColor>
-					{(card.column === "in_progress"
-						? getLastOutputLine(card.outputLog, CARD_TITLE_WIDTH)
-						: ""
-					).padEnd(CARD_TITLE_WIDTH)}
+					{stripDoubleWidth(
+						card.column === "in_progress" ? getLastOutputLine(card.outputLog, cardWidth) : "",
+					).padEnd(cardWidth)}
 				</Text>
 
 				{/* Status row — always rendered exactly once for stable CARD_HEIGHT */}
 				{card.column === "in_progress" ? (
 					// Spinner appears immediately; elapsed time only once startedAt is available
-					// minWidth guarantees the row stays as wide as other rows (CARD_TITLE_WIDTH + 2)
+					// minWidth guarantees the row stays as wide as other rows (cardWidth + 2)
 					// even before startedAt is set, preventing the card border from shrinking.
-					<Box flexDirection="row" marginTop={0} minWidth={CARD_TITLE_WIDTH + 2}>
+					<Box flexDirection="row" marginTop={0} minWidth={cardWidth + 2}>
 						{isPausedInProgress ? (
 							<Text color="gray">{"⏸"}</Text>
 						) : (
@@ -217,7 +227,7 @@ export function Card({
 					<Text color="red">FAILED</Text>
 				) : (
 					// Empty row for backlog and done-without-timing — maintains CARD_HEIGHT
-					<Text>{" ".repeat(CARD_TITLE_WIDTH)}</Text>
+					<Text>{" ".repeat(cardWidth)}</Text>
 				)}
 			</Box>
 		</Box>
