@@ -1,4 +1,4 @@
-const PROVIDER_ATTRIBUTION_RE =
+export const PROVIDER_ATTRIBUTION_RE =
 	/claude\.ai|claude\s+code|gemini\s+cli|openai\s+codex|\bgoose\b|\baider\b|github\s+copilot|cursor\s+agent|\bopencode\b/i;
 
 const AI_COAUTHOR_RE =
