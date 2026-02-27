@@ -17,6 +17,7 @@ import {
 } from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
 import { ensureWorktreeGitignore } from "./git/worktree.js";
+import { getTemplateById, getTemplates, templateToPartialConfig } from "./templates.js";
 import { runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
 import { getLogsDir } from "./paths.js";
@@ -483,15 +484,46 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		return process.exit(1);
 	}
 
+	// Template selection: offer pre-defined configs for common source+provider combos
+	let templateDefaults: LisaConfig | undefined;
+	if (!existing) {
+		const applicableTemplates = getTemplates().filter((t) =>
+			available.some((p) => p.name === t.provider),
+		);
+		if (applicableTemplates.length > 0) {
+			const templateChoice = await clack.select({
+				message: "Start with a template or configure manually?",
+				options: [
+					...applicableTemplates.map((t) => ({
+						value: t.id,
+						label: t.label,
+						hint: t.hint,
+					})),
+					{ value: "custom", label: "Configure manually", hint: "full wizard" },
+				],
+			});
+			if (clack.isCancel(templateChoice)) return process.exit(0);
+			if (templateChoice !== "custom") {
+				const template = getTemplateById(templateChoice as string);
+				if (template) {
+					templateDefaults = templateToPartialConfig(template);
+					clack.log.info(`Template applied: ${pc.bold(template.label)}`);
+				}
+			}
+		}
+	}
+
+	const initial = existing ?? templateDefaults;
+
 	let providerName: ProviderName;
 
-	if (available.length === 1 && available[0] && !existing) {
+	if (available.length === 1 && available[0] && !initial) {
 		providerName = available[0].name;
 		clack.log.info(`Auto-detected ${pc.bold(providerLabels[providerName])} as your AI provider.`);
 	} else {
 		const selected = await clack.select({
 			message: "Which AI provider should resolve your issues?",
-			initialValue: existing?.provider,
+			initialValue: initial?.provider,
 			options: allProviders.map(({ provider, available: isAvailable }) => ({
 				value: provider.name,
 				label: providerLabels[provider.name],
@@ -535,7 +567,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		const modelSelection = await clack.multiselect({
 			message: "Which models should Lisa use? Select in order — first = primary, rest = fallbacks",
 			initialValues:
-				existing?.provider_options?.[providerName]?.models?.filter((m: string) =>
+				initial?.provider_options?.[providerName]?.models?.filter((m: string) =>
 					availableModels.includes(m),
 				) ?? [],
 			options: availableModels.map((m) => ({
@@ -550,7 +582,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	const source = await clack.select({
 		message: "Where do your issues come from?",
-		initialValue: existing?.source,
+		initialValue: initial?.source,
 		options: [
 			{ value: "linear", label: "Linear", apiHint: "GraphQL API", envVars: ["LINEAR_API_KEY"] },
 			{
@@ -623,20 +655,20 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 					: source === "jira"
 						? "What is your Jira project key?"
 						: "What is your team or project name?",
-		initialValue: existing?.source_config.team ?? "",
+		initialValue: initial?.source_config.team ?? "",
 		placeholder: source === "linear" ? "e.g. Engineering" : undefined,
 	});
 	if (clack.isCancel(teamAnswer)) return process.exit(0);
 	const team = teamAnswer as string;
 
-	const existingLabelStr = existing
-		? Array.isArray(existing.source_config.label)
-			? existing.source_config.label.join(", ")
-			: existing.source_config.label
+	const initialLabelStr = initial
+		? Array.isArray(initial.source_config.label)
+			? initial.source_config.label.join(", ")
+			: initial.source_config.label
 		: "";
 	const labelAnswer = await clack.text({
 		message: "Which label(s) mark issues as ready? (comma-separated for multiple, e.g. ready,api)",
-		initialValue: existingLabelStr || "ready",
+		initialValue: initialLabelStr || "ready",
 		placeholder: "e.g. ready  or  ready, api",
 	});
 	if (clack.isCancel(labelAnswer)) return process.exit(0);
@@ -651,7 +683,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		const removeLabelAnswer = await clack.text({
 			message:
 				"Which label should be removed when an issue is completed? (required for multi-label)",
-			initialValue: existing?.source_config.remove_label ?? label[0] ?? "",
+			initialValue: initial?.source_config.remove_label ?? label[0] ?? "",
 			placeholder: `e.g. ${label[0]}`,
 		});
 		if (clack.isCancel(removeLabelAnswer)) return process.exit(0);
@@ -666,7 +698,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	if (source === "trello") {
 		const pickFromAnswer = await clack.text({
 			message: "Pick up cards from which list?",
-			initialValue: existing?.source_config.pick_from ?? "Backlog",
+			initialValue: initial?.source_config.pick_from ?? "Backlog",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
 		pickFrom = pickFromAnswer as string;
@@ -674,14 +706,14 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 		const inProgressAnswer = await clack.text({
 			message: "Move the card to which list while the agent is working?",
-			initialValue: existing?.source_config.in_progress ?? "In Progress",
+			initialValue: initial?.source_config.in_progress ?? "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
 			message: "Move the card to which list after the PR is created?",
-			initialValue: existing?.source_config.done ?? "Code Review",
+			initialValue: initial?.source_config.done ?? "Code Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		done = doneAnswer as string;
@@ -691,7 +723,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 				source === "linear"
 					? "Which Linear project should Lisa work on? (leave empty for all team issues)"
 					: "Which project should Lisa work on?",
-			initialValue: existing?.source_config.project ?? "",
+			initialValue: initial?.source_config.project ?? "",
 			placeholder: source === "linear" ? "e.g. Q1 Roadmap  (optional)" : undefined,
 		});
 		if (clack.isCancel(projectAnswer)) return process.exit(0);
@@ -699,7 +731,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 		const pickFromAnswer = await clack.text({
 			message: "Pick up issues in which status?",
-			initialValue: existing?.source_config.pick_from ?? "Backlog",
+			initialValue: initial?.source_config.pick_from ?? "Backlog",
 			placeholder: "e.g. Backlog, Todo",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
@@ -707,14 +739,14 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 		const inProgressAnswer = await clack.text({
 			message: "Move to which status while the agent is working?",
-			initialValue: existing?.source_config.in_progress ?? "In Progress",
+			initialValue: initial?.source_config.in_progress ?? "In Progress",
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
 		const doneAnswer = await clack.text({
 			message: "Move to which status after the PR is created?",
-			initialValue: existing?.source_config.done ?? "In Review",
+			initialValue: initial?.source_config.done ?? "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);
 		done = doneAnswer as string;
@@ -724,7 +756,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	const workflowAnswer = await clack.select({
 		message: "How should Lisa check out code for each issue?",
-		initialValue: existing?.workflow,
+		initialValue: initial?.workflow,
 		options: [
 			{
 				value: "worktree",
@@ -749,7 +781,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	const cwd = process.cwd();
 
 	if (repos.length === 0) {
-		const detected = existing?.base_branch ?? detectDefaultBranch(cwd);
+		const detected = initial?.base_branch ?? detectDefaultBranch(cwd);
 		const branchAnswer = await clack.text({
 			message: "What is the base branch to branch off from?",
 			initialValue: detected,
@@ -799,7 +831,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	const cfg: LisaConfig = {
 		provider: providerName,
 		provider_options: {
-			...(existing?.provider_options || {}),
+			...(initial?.provider_options || {}),
 			[providerName]: { models: selectedModels },
 		},
 		source: source as SourceName,
