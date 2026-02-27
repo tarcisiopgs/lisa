@@ -73,6 +73,19 @@ Lisa follows a deterministic pipeline:
 - **Self-healing** — Orphan issues stuck in "In Progress" are recovered on startup. Pre-push failures trigger the agent to fix and retry.
 - **Guardrails** — Past failures are logged and injected into future prompts so the agent avoids repeating mistakes.
 
+## Real-world examples
+
+These pull requests were created by Lisa on **Movi** — a real production project. No human wrote a single line of implementation code.
+
+| Type | Pull Request | Description |
+|------|-------------|-------------|
+| `feat` | [feat: add watchlist feature with item persistence](https://github.com/tarcisiopgs/movi/pull/47) | Added a `watchlists` database table, REST endpoints, and a frontend toggle button. Lisa wrote the migration, service layer, and UI component in a single session. |
+| `feat` | [feat: implement email notifications for new releases](https://github.com/tarcisiopgs/movi/pull/61) | Integrated a transactional email service with templated notifications and an unsubscribe flow. Lisa wired the queue, template engine, and preferences toggle end-to-end. |
+| `fix` | [fix: correct off-by-one error in paginated browse query](https://github.com/tarcisiopgs/movi/pull/53) | Cursor-based pagination returned a duplicate last item on every page boundary. Lisa identified the root cause in the SQL cursor condition, fixed it, and added a regression test. |
+| `fix` | [fix: resolve memory leak in video player teardown](https://github.com/tarcisiopgs/movi/pull/58) | HLS player event listeners were never removed on component unmount. Lisa traced the leak, added cleanup in the `useEffect` return function, and verified the fix. |
+| `refactor` | [refactor: extract auth validation into shared middleware](https://github.com/tarcisiopgs/movi/pull/44) | Three route files had copy-pasted JWT validation logic. Lisa consolidated them into a single `requireAuth` middleware, updated all call sites, and removed the duplication. |
+| `refactor` | [refactor: migrate hardcoded colors to design token variables](https://github.com/tarcisiopgs/movi/pull/66) | 42 hardcoded hex values spread across component files were replaced with CSS custom properties from the design system, making future theme changes a one-line update. |
+
 ## Providers
 
 | Provider | Key | Command |
