@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getGuardrailsPath } from "../paths.js";
 import {
 	appendEntrySync as appendEntry,
+	appendRawEntrySync as appendRawEntry,
 	buildGuardrailsSection,
 	extractContext,
 	extractErrorType,
@@ -258,6 +259,59 @@ describe("appendEntry", () => {
 
 		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
 		expect(content).toContain("```\nsome context output\n```");
+	});
+});
+
+describe("appendRawEntry", () => {
+	it("creates guardrails file with the raw entry on first write", () => {
+		const rawText =
+			"## PR Feedback for Issue INT-100 (2026-02-27)\n- PR: https://github.com/owner/repo/pull/42";
+		appendRawEntry(tmpDir, rawText);
+
+		const path = guardrailsPath(tmpDir);
+		expect(existsSync(path)).toBe(true);
+
+		const content = readFileSync(path, "utf-8");
+		expect(content).toContain("# Guardrails — Lições aprendidas");
+		expect(content).toContain("## PR Feedback for Issue INT-100 (2026-02-27)");
+	});
+
+	it("appends a raw entry to an existing guardrails file", () => {
+		appendEntry(tmpDir, {
+			issueId: "INT-50",
+			date: "2026-02-27",
+			provider: "claude",
+			errorType: "Timeout",
+			context: "existing entry",
+		});
+
+		const rawText =
+			"## PR Feedback for Issue INT-100 (2026-02-27)\n- PR: https://github.com/owner/repo/pull/42";
+		appendRawEntry(tmpDir, rawText);
+
+		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
+		expect(content).toContain("## Issue INT-50 (2026-02-27)");
+		expect(content).toContain("## PR Feedback for Issue INT-100 (2026-02-27)");
+	});
+
+	it("preserves the header when appending raw entries", () => {
+		const rawText = "## PR Feedback for Issue INT-100 (2026-02-27)\n- Status: Closed without merge";
+		appendRawEntry(tmpDir, rawText);
+		appendRawEntry(tmpDir, rawText.replace("INT-100", "INT-200"));
+
+		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
+		const headerCount = (content.match(/# Guardrails — Lições aprendidas/g) ?? []).length;
+		expect(headerCount).toBe(1);
+	});
+
+	it("respects MAX_ENTRIES rotation with raw entries", () => {
+		for (let i = 1; i <= 21; i++) {
+			appendRawEntry(tmpDir, `## Raw Entry ${i}\n- some content`);
+		}
+
+		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
+		expect(content).not.toContain("## Raw Entry 1\n");
+		expect(content).toContain("## Raw Entry 21");
 	});
 });
 

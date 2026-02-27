@@ -172,6 +172,7 @@ export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and
 | `lisa status` | Show session stats |
 | `lisa issue get <id>` | Fetch full issue details as JSON (for use inside worktrees) |
 | `lisa issue done <id> --pr-url <url>` | Complete issue, attach PR, update status, remove label |
+| `lisa feedback --pr <url> --issue <id>` | Inject PR review comments from a closed-without-merge PR into guardrails |
 
 ## TUI
 
@@ -375,7 +376,8 @@ Lisa detects blocked issues using the `completedBlockerIds` from your issue trac
 - **Orphan recovery** — On startup, Lisa scans for issues stuck in `in_progress` from interrupted runs and reverts them to `pick_from`.
 - **Push recovery** — If `git push` fails due to pre-push hooks (linter, typecheck, tests), Lisa re-invokes the agent with the error output and retries the push.
 - **Signal handling** — SIGINT/SIGTERM gracefully revert the active issue to its previous status before exiting.
-- **Guardrails** — Failed sessions are logged to `.lisa/guardrails.md` and injected into future prompts so the agent avoids repeating the same mistakes.
+- **Guardrails** — Failed sessions and rejected PR reviews are logged and injected into future prompts so the agent avoids repeating the same mistakes.
+- **PR feedback injection** — When a PR created by Lisa is closed without merge, review comments are automatically captured and injected as guardrails for the next run of the same issue. Use `lisa feedback --pr <url> --issue <id>` to inject feedback manually.
 
 ### Overseer
 

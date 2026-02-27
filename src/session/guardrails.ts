@@ -106,6 +106,42 @@ export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
 	writeFileSync(path, content, "utf-8");
 }
 
+/**
+ * Appends a pre-formatted markdown entry (e.g. PR feedback) to the guardrails log.
+ * Serialized via the same mutex as appendEntry.
+ */
+export function appendRawEntry(dir: string, entryText: string): void {
+	writeLock = writeLock.then(() => appendRawEntrySync(dir, entryText)).catch(() => {});
+}
+
+/**
+ * Synchronous variant of appendRawEntry for single-threaded callers (CLI command).
+ * @internal exported for testing only
+ */
+export function appendRawEntrySync(dir: string, entryText: string): void {
+	const path = guardrailsPath(dir);
+	const guardrailsDir = dirname(path);
+
+	if (!existsSync(guardrailsDir)) {
+		mkdirSync(guardrailsDir, { recursive: true });
+	}
+
+	const existing = existsSync(path) ? readFileSync(path, "utf-8") : "";
+
+	let content: string;
+	if (!existing.trim()) {
+		content = `# Guardrails — Lições aprendidas\n\n${entryText}`;
+	} else {
+		const header = extractHeader(existing);
+		const entries = splitEntries(existing);
+		entries.push(entryText);
+		const rotated = entries.length > MAX_ENTRIES ? entries.slice(-MAX_ENTRIES) : entries;
+		content = `${header}\n\n${rotated.join("\n\n")}`;
+	}
+
+	writeFileSync(path, content, "utf-8");
+}
+
 function formatEntry(entry: GuardrailEntry): string {
 	return [
 		`## Issue ${entry.issueId} (${entry.date})`,

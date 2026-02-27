@@ -5,6 +5,7 @@ import { formatLabels, getRemoveLabel } from "./config.js";
 import { analyzeProject } from "./context.js";
 import { resolveFirstDependency } from "./git/dependency.js";
 import { appendPlatformAttribution } from "./git/platform.js";
+import { fetchPrFeedback, formatPrFeedbackEntry } from "./git/pr-feedback.js";
 import {
 	createWorktree,
 	determineRepoPath,
@@ -29,8 +30,9 @@ import {
 	runWithFallback,
 } from "./providers/index.js";
 import { discoverInfra } from "./session/discovery.js";
-import { migrateGuardrails } from "./session/guardrails.js";
+import { appendRawEntry, migrateGuardrails } from "./session/guardrails.js";
 import { startResources, stopResources } from "./session/lifecycle.js";
+import { clearPrUrl, loadPrUrl, storePrUrl } from "./session/pr-cache.js";
 import { createSource } from "./sources/index.js";
 import type {
 	ExecutionPlan,
@@ -304,6 +306,37 @@ function installSignalHandlers(): void {
 	});
 }
 
+/**
+ * Checks if a previously-created PR for this issue was closed without merge.
+ * If so, fetches review comments and injects them into guardrails for future runs.
+ */
+async function injectRejectedPrFeedback(
+	workspace: string,
+	issueId: string,
+	prUrl: string,
+): Promise<void> {
+	try {
+		const feedback = await fetchPrFeedback(prUrl);
+		if (feedback.state !== "closed") return;
+
+		const hasAnyFeedback = feedback.reviews.length > 0 || feedback.comments.length > 0;
+		if (!hasAnyFeedback) {
+			clearPrUrl(workspace, issueId);
+			return;
+		}
+
+		const date = new Date().toISOString().slice(0, 10);
+		const entryText = formatPrFeedbackEntry(feedback, issueId, date);
+		appendRawEntry(workspace, entryText);
+		clearPrUrl(workspace, issueId);
+		logger.ok(`Injected PR review feedback for ${issueId} into guardrails`);
+	} catch (err) {
+		logger.warn(
+			`Could not check PR feedback for ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+}
+
 async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<void> {
 	const orphanConfig = {
 		...config.source_config,
@@ -482,6 +515,12 @@ async function runSequentialLoop(
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
+		// Check if a previous PR for this issue was closed without merge — inject feedback
+		const cachedPrUrl = loadPrUrl(workspace, issue.id);
+		if (cachedPrUrl) {
+			await injectRejectedPrFeedback(workspace, issue.id, cachedPrUrl);
+		}
+
 		// Validate minimum issue spec before accepting
 		const specResult = validateIssueSpec(issue, config.validation);
 		if (!specResult.valid) {
@@ -638,6 +677,12 @@ async function runConcurrentLoop(
 		const logFile = resolve(getLogsDir(workspace), `session_${session}_${timestamp}.log`);
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
+
+		// Check if a previous PR for this issue was closed without merge — inject feedback
+		const concurrentCachedPrUrl = loadPrUrl(workspace, issue.id);
+		if (concurrentCachedPrUrl) {
+			await injectRejectedPrFeedback(workspace, issue.id, concurrentCachedPrUrl);
+		}
 
 		// Validate minimum issue spec before accepting
 		const specResult = validateIssueSpec(issue, config.validation);
@@ -881,13 +926,19 @@ async function handleSessionResult(
 		return false;
 	}
 
-	// Attach PR links
+	// Attach PR links and cache URLs for potential future feedback injection
+	const workspace = resolve(config.workspace);
 	for (const prUrl of sessionResult.prUrls) {
 		try {
 			await source.attachPullRequest(issue.id, prUrl);
 			logger.ok(`Attached PR to ${issue.id}`);
 		} catch (err) {
 			logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		try {
+			storePrUrl(workspace, issue.id, prUrl);
+		} catch {
+			// Non-fatal — PR cache is best-effort
 		}
 	}
 
