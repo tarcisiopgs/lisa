@@ -55,16 +55,18 @@ function scrollBar(pct: number, width = 8): string {
 	return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
-function statusLabel(
+export function statusLabel(
 	column: string,
 	hasError?: boolean,
 	killed?: boolean,
 	skipped?: boolean,
+	merged?: boolean,
 ): { text: string; color: string } {
 	if (killed) return { text: "KILLED", color: "red" };
 	if (skipped) return { text: "SKIPPED", color: "gray" };
 	if (hasError) return { text: "FAILED", color: "red" };
 	if (column === "in_progress") return { text: "IN PROGRESS", color: "yellow" };
+	if (column === "done" && merged) return { text: "MERGED", color: "magenta" };
 	if (column === "done") return { text: "DONE", color: "green" };
 	return { text: "QUEUED", color: "white" };
 }
@@ -120,7 +122,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const startLine = Math.max(0, lines.length - bodyRows - logScrollOffset);
 	const visibleLines = lines.slice(startLine, startLine + bodyRows);
 
-	const status = statusLabel(card.column, card.hasError, card.killed, card.skipped);
+	const status = statusLabel(card.column, card.hasError, card.killed, card.skipped, card.merged);
 
 	let elapsedDisplay: string | null = null;
 	let isRunning = false;
@@ -189,8 +191,8 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 					)}
 					{!isRunning && !isPausedInProgress && elapsedDisplay && (
 						<Box flexDirection="row" marginRight={2}>
-							<Text color="green">{"✔ "}</Text>
-							<Text color="green" bold>
+							<Text color={status.color}>{"✔ "}</Text>
+							<Text color={status.color} bold>
 								{elapsedDisplay}
 							</Text>
 						</Box>
