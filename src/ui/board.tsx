@@ -20,6 +20,7 @@ interface BoardProps {
 		done: string;
 	};
 	isEmpty: boolean;
+	isWatching?: boolean;
 	workComplete: { total: number; duration: number } | null;
 	activeColIndex?: number;
 	activeCardIndex?: number;
@@ -30,6 +31,7 @@ export function Board({
 	cards,
 	labels,
 	isEmpty,
+	isWatching = false,
 	workComplete,
 	activeColIndex = 0,
 	activeCardIndex = 0,
@@ -43,6 +45,32 @@ export function Board({
 	const totalCards = cards.length;
 	const doneCards = done.length;
 	const runningCards = inProgress.length;
+
+	if (isWatching) {
+		return (
+			<Box flexGrow={1} alignItems="center" justifyContent="center">
+				<Box
+					flexDirection="column"
+					borderStyle="single"
+					borderColor="cyan"
+					paddingX={3}
+					paddingY={1}
+				>
+					<Text color="cyan" bold>
+						{"◎  WATCHING FOR ISSUES..."}
+					</Text>
+					<Box height={1} />
+					<Text color="white" dimColor>
+						Polling every 60s for new issues with the ready label.
+					</Text>
+					<Box height={1} />
+					<Text color="gray" dimColor>
+						Press Ctrl+C to stop
+					</Text>
+				</Box>
+			</Box>
+		);
+	}
 
 	if (isEmpty) {
 		return (
@@ -97,6 +125,7 @@ export function Board({
 					running={runningCards}
 					workComplete={!!workComplete}
 					paused={paused}
+					watching={isWatching}
 					availableWidth={terminalCols - 30}
 				/>
 			)}

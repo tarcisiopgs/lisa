@@ -149,6 +149,7 @@ export JIRA_API_TOKEN=""       # Atlassian API token
 | `lisa run` | Run the agent loop |
 | `lisa run --once` | Process a single issue |
 | `lisa run --once --dry-run` | **Recommended first step** — preview config without executing |
+| `lisa run --watch` / `-w` | Keep running after queue empties — poll every 60s for new issues |
 | `lisa run --issue ID` | Process a specific issue by identifier or URL |
 | `lisa run --limit N` | Process up to N issues |
 | `lisa run --concurrency N` / `-c N` | Process up to N issues in parallel (default: 1) |

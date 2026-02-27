@@ -155,11 +155,14 @@ kanbanEmitter.on("loop:skip", (issueId?: string) => {
 
 export interface LoopOptions {
 	once: boolean;
+	watch: boolean;
 	limit: number;
 	dryRun: boolean;
 	issueId?: string;
 	concurrency: number;
 }
+
+export const WATCH_POLL_INTERVAL_MS = 60_000;
 
 function resolveModels(config: LisaConfig): ModelSpec[] {
 	const providerModels = config.provider_options?.[config.provider]?.models;
@@ -453,11 +456,25 @@ async function runSequentialLoop(
 		if (!issue) {
 			if (opts.issueId) {
 				logger.error(`Issue '${opts.issueId}' not found.`);
-			} else {
-				logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
-				if (session === 1) {
-					kanbanEmitter.emit("work:empty");
-				}
+				break;
+			}
+
+			if (opts.watch) {
+				logger.ok(
+					`No issues ready. Watching for new issues (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`,
+				);
+				kanbanEmitter.emit("work:watching");
+				setTitle("Lisa \u2014 watching...");
+				await sleep(WATCH_POLL_INTERVAL_MS);
+				kanbanEmitter.emit("work:watch-resume");
+				// Don't increment session counter — this wasn't a real session
+				session--;
+				continue;
+			}
+
+			logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
+			if (session === 1) {
+				kanbanEmitter.emit("work:empty");
 			}
 			break;
 		}
@@ -728,6 +745,20 @@ async function runConcurrentLoop(
 			}
 
 			if (!issue) {
+				if (opts.watch) {
+					// In watch mode: wait for any running workers, then poll again
+					if (activeWorkers.size === 0) {
+						logger.ok(
+							`No issues ready. Watching for new issues (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`,
+						);
+						kanbanEmitter.emit("work:watching");
+						setTitle("Lisa \u2014 watching...");
+						await sleep(WATCH_POLL_INTERVAL_MS);
+						kanbanEmitter.emit("work:watch-resume");
+					}
+					sessionCounter--; // Don't count this as a session
+					break; // Break inner fill loop; noMoreIssues stays false → outer while re-enters
+				}
 				if (activeWorkers.size === 0) {
 					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
 					if (sessionCounter === 1) {
@@ -745,7 +776,8 @@ async function runConcurrentLoop(
 			activeWorkers.set(issue.id, promise);
 		}
 
-		if (activeWorkers.size === 0) break;
+		if (activeWorkers.size === 0 && !opts.watch) break;
+		if (activeWorkers.size === 0) continue;
 
 		// Wait for at least one worker to finish before trying to fill again
 		await Promise.race([...activeWorkers.values()]);
