@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitLabIssuesSource, parseGitLabIssueRef, parseGitLabProject } from "./gitlab-issues.js";
+import {
+	checkPrMerged,
+	GitLabIssuesSource,
+	parseGitLabIssueRef,
+	parseGitLabMrUrl,
+	parseGitLabProject,
+} from "./gitlab-issues.js";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -614,5 +620,100 @@ describe("GitLabIssuesSource", () => {
 			const labels = (capturedBody as { labels: string }).labels.split(",");
 			expect(labels).not.toContain("Ready");
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseGitLabMrUrl
+// ---------------------------------------------------------------------------
+
+describe("parseGitLabMrUrl", () => {
+	it("parses a standard gitlab.com MR URL", () => {
+		const result = parseGitLabMrUrl("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toEqual({ project: "my-org/my-repo", iid: "42" });
+	});
+
+	it("parses a self-hosted GitLab MR URL", () => {
+		const result = parseGitLabMrUrl(
+			"https://gitlab.example.com/my-org/my-repo/-/merge_requests/10",
+		);
+		expect(result).toEqual({ project: "my-org/my-repo", iid: "10" });
+	});
+
+	it("parses a nested namespace MR URL", () => {
+		const result = parseGitLabMrUrl("https://gitlab.com/group/subgroup/repo/-/merge_requests/5");
+		expect(result).toEqual({ project: "group/subgroup/repo", iid: "5" });
+	});
+
+	it("returns null for a GitHub PR URL", () => {
+		expect(parseGitLabMrUrl("https://github.com/my-org/my-repo/pull/42")).toBeNull();
+	});
+
+	it("returns null for a GitLab issue URL", () => {
+		expect(parseGitLabMrUrl("https://gitlab.com/my-org/my-repo/-/issues/42")).toBeNull();
+	});
+
+	it("returns null for an empty string", () => {
+		expect(parseGitLabMrUrl("")).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkPrMerged (GitLab)
+// ---------------------------------------------------------------------------
+
+describe("checkPrMerged (GitLab)", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		delete process.env.GITLAB_TOKEN;
+	});
+
+	beforeEach(() => {
+		process.env.GITLAB_TOKEN = "test-token";
+	});
+
+	it("returns true when MR state is merged", async () => {
+		global.fetch = mockFetch({ state: "merged" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(true);
+	});
+
+	it("returns false when MR state is opened", async () => {
+		global.fetch = mockFetch({ state: "opened" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when MR state is closed", async () => {
+		global.fetch = mockFetch({ state: "closed" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when URL is not a GitLab MR URL", async () => {
+		const result = await checkPrMerged("https://not-a-gitlab-url.com/foo");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when API call fails", async () => {
+		global.fetch = mockFetch("Unauthorized", false, 401);
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("calls the correct API endpoint", async () => {
+		let capturedUrl = "";
+		global.fetch = vi.fn().mockImplementation((url: string) => {
+			capturedUrl = url;
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({ state: "merged" }),
+				text: async () => "",
+			});
+		});
+		await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(capturedUrl).toContain("merge_requests/42");
+		expect(capturedUrl).toContain("my-org%2Fmy-repo");
 	});
 });

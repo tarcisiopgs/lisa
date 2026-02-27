@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import { useEffect, useState } from "react";
 import { notify } from "../output/terminal.js";
+import { checkPrMerged as checkGitHubPrMerged } from "../sources/github-issues.js";
+import { checkPrMerged as checkGitLabPrMerged } from "../sources/gitlab-issues.js";
 import type { Issue } from "../types/index.js";
 
 export interface KanbanCard {
@@ -16,6 +18,45 @@ export interface KanbanCard {
 	killed?: boolean;
 	pausedAt?: number;
 	pauseAccumulated?: number;
+	merged?: boolean;
+}
+
+const MERGE_POLL_INTERVAL_MS = 60_000;
+const activePolls = new Map<string, ReturnType<typeof setInterval>>();
+
+async function checkPrMergedByUrl(prUrl: string): Promise<boolean> {
+	if (prUrl.includes("github.com")) {
+		return checkGitHubPrMerged(prUrl);
+	}
+	if (prUrl.includes("gitlab")) {
+		return checkGitLabPrMerged(prUrl);
+	}
+	return false;
+}
+
+function stopMergePolling(issueId: string): void {
+	const interval = activePolls.get(issueId);
+	if (interval !== undefined) {
+		clearInterval(interval);
+		activePolls.delete(issueId);
+	}
+}
+
+function startMergePolling(issueId: string, prUrl: string): void {
+	if (activePolls.has(issueId)) return;
+	const intervalId = setInterval(() => {
+		checkPrMergedByUrl(prUrl)
+			.then((merged) => {
+				if (merged) {
+					stopMergePolling(issueId);
+					kanbanEmitter.emit("issue:merged", issueId);
+				}
+			})
+			.catch(() => {
+				// ignore errors, keep polling
+			});
+	}, MERGE_POLL_INTERVAL_MS);
+	activePolls.set(issueId, intervalId);
 }
 
 export interface KanbanStateData {
@@ -88,6 +129,13 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 					c.id === issueId ? { ...c, column: "done" as const, prUrl, finishedAt: Date.now() } : c,
 				),
 			);
+			if (prUrl) {
+				startMergePolling(issueId, prUrl);
+			}
+		};
+
+		const onMerged = (issueId: string) => {
+			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, merged: true } : c)));
 		};
 
 		const onReverted = (issueId: string) => {
@@ -168,6 +216,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		kanbanEmitter.on("issue:queued", onQueued);
 		kanbanEmitter.on("issue:started", onStarted);
 		kanbanEmitter.on("issue:done", onDone);
+		kanbanEmitter.on("issue:merged", onMerged);
 		kanbanEmitter.on("issue:reverted", onReverted);
 		kanbanEmitter.on("issue:skipped", onSkipped);
 		kanbanEmitter.on("issue:killed", onKilled);
@@ -189,6 +238,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("issue:queued", onQueued);
 			kanbanEmitter.off("issue:started", onStarted);
 			kanbanEmitter.off("issue:done", onDone);
+			kanbanEmitter.off("issue:merged", onMerged);
 			kanbanEmitter.off("issue:reverted", onReverted);
 			kanbanEmitter.off("issue:skipped", onSkipped);
 			kanbanEmitter.off("issue:killed", onKilled);
@@ -199,6 +249,9 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("work:empty", onEmpty);
 			kanbanEmitter.off("work:complete", onComplete);
 			cleanupBell();
+			for (const issueId of activePolls.keys()) {
+				stopMergePolling(issueId);
+			}
 		};
 	}, [bellEnabled]);
 

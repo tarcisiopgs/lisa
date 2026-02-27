@@ -62,6 +62,32 @@ interface GitLabIssue {
 	state: string;
 }
 
+interface GitLabMr {
+	state: string;
+}
+
+export function parseGitLabMrUrl(url: string): { project: string; iid: string } | null {
+	const match = url.match(/gitlab(?:\.com|[^/]*)\/(.+?)\/-\/merge_requests\/(\d+)/);
+	if (match?.[1] && match?.[2]) {
+		return { project: match[1], iid: match[2] };
+	}
+	return null;
+}
+
+export async function checkPrMerged(prUrl: string): Promise<boolean> {
+	const parsed = parseGitLabMrUrl(prUrl);
+	if (!parsed) return false;
+	try {
+		const encodedProject = parseGitLabProject(parsed.project);
+		const mr = await gitlabGet<GitLabMr>(
+			`/projects/${encodedProject}/merge_requests/${parsed.iid}`,
+		);
+		return mr.state === "merged";
+	} catch {
+		return false;
+	}
+}
+
 interface GitLabIssueLink {
 	source: { iid: number; state: string };
 	target: { iid: number; state: string };
