@@ -31,6 +31,10 @@ export function getManifestPath(cwd: string, issueId?: string): string {
 	return join(getCacheDir(cwd), "manifest.json");
 }
 
+export function getPrCachePath(cwd: string): string {
+	return join(getCacheDir(cwd), "pr-cache.json");
+}
+
 export function getPlanPath(cwd: string, issueId?: string): string {
 	if (issueId) {
 		const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
