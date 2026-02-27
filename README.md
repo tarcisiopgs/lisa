@@ -45,6 +45,35 @@ Example output:
 
 If the output looks correct, you're ready to run Lisa for real.
 
+## Why Lisa?
+
+There are other approaches to autonomous code generation. Here's how Lisa compares:
+
+| | Lisa | Devin / SWE-agent | GitHub Copilot Workspace | Running agents manually |
+|---|---|---|---|---|
+| **Runs locally** | ✓ | ✗ (cloud) | ✗ (cloud) | ✓ |
+| **Open source** | ✓ | ✗ | ✗ | — |
+| **Closes the loop in tracker** | ✓ | ✗ | ✗ | ✗ |
+| **Multi-tracker** | 7 trackers | — | GitHub Issues only | — |
+| **Multi-provider** | 8 providers | fixed | fixed | any one |
+| **Guardrails** | ✓ | — | — | ✗ |
+| **Model fallback** | ✓ | — | — | ✗ |
+| **Deterministic pipeline** | ✓ | — | partial | ✗ |
+
+**Devin / SWE-agent** — Cloud-hosted agents designed for autonomous coding. They run outside your environment, require sending your code to a third-party service, and don't integrate with your issue tracker — you still need to move tickets, create PRs, and orchestrate the workflow manually.
+
+**GitHub Copilot Workspace** — Well-integrated with GitHub but scoped to GitHub Issues. It doesn't update tracker status, doesn't retry on pre-push hook failures, and doesn't produce a PR from a structured end-to-end pipeline.
+
+**Running agents manually** — Claude Code, Gemini CLI, and similar tools are capable, but without a pipeline you become the orchestrator: pick the issue, write the prompt, monitor for errors, create the PR, update the ticket. That's the loop Lisa automates.
+
+**Lisa's actual differentiators:**
+
+- **Local and open source** — runs in your environment, uses your own API keys; code stays on your machine.
+- **Tracker-first** — issues move through your board automatically; your team always sees real-time status.
+- **Guardrails** — past failures are logged per-issue and injected into the next attempt so the agent avoids repeating the same mistakes.
+- **Provider flexibility** — not locked to one vendor; switch or chain multiple models without changing your workflow.
+- **Deterministic pipeline** — every issue follows the same fixed stages: fetch → activate → implement → validate → PR → update. No speculative loops, no unpredictable retries.
+
 ## What Lisa Does
 
 Lisa follows a deterministic pipeline:
