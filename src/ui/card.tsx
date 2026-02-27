@@ -188,7 +188,9 @@ export function Card({
 				{/* Status row — always rendered exactly once for stable CARD_HEIGHT */}
 				{card.column === "in_progress" ? (
 					// Spinner appears immediately; elapsed time only once startedAt is available
-					<Box flexDirection="row" marginTop={0}>
+					// minWidth guarantees the row stays as wide as other rows (CARD_TITLE_WIDTH + 2)
+					// even before startedAt is set, preventing the card border from shrinking.
+					<Box flexDirection="row" marginTop={0} minWidth={CARD_TITLE_WIDTH + 2}>
 						{isPausedInProgress ? (
 							<Text color="gray">{"⏸"}</Text>
 						) : (
@@ -196,12 +198,9 @@ export function Card({
 								<Spinner type="dots" />
 							</Text>
 						)}
-						{elapsedMs !== null && (
-							<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
-								{" "}
-								{formatElapsed(elapsedMs)}
-							</Text>
-						)}
+						<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
+							{elapsedMs !== null ? ` ${formatElapsed(elapsedMs)}` : ""}
+						</Text>
 					</Box>
 				) : card.column === "done" &&
 					card.startedAt !== undefined &&
