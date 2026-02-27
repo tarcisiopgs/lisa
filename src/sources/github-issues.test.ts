@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubIssuesSource, parseDependencies, parseGitHubIssueNumber } from "./github-issues.js";
+import {
+	checkPrMerged,
+	GitHubIssuesSource,
+	parseDependencies,
+	parseGitHubIssueNumber,
+	parseGitHubPrUrl,
+} from "./github-issues.js";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -627,5 +633,92 @@ describe("GitHubIssuesSource", () => {
 			// Should not throw
 			await expect(source.removeLabel("my-org/my-repo#42", "nonexistent")).resolves.toBeUndefined();
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseGitHubPrUrl
+// ---------------------------------------------------------------------------
+
+describe("parseGitHubPrUrl", () => {
+	it("parses a standard GitHub PR URL", () => {
+		const result = parseGitHubPrUrl("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toEqual({ owner: "my-org", repo: "my-repo", number: "42" });
+	});
+
+	it("returns null for a non-PR URL", () => {
+		expect(parseGitHubPrUrl("https://github.com/my-org/my-repo/issues/42")).toBeNull();
+	});
+
+	it("returns null for a GitLab URL", () => {
+		expect(parseGitHubPrUrl("https://gitlab.com/my-org/my-repo/-/merge_requests/42")).toBeNull();
+	});
+
+	it("returns null for an empty string", () => {
+		expect(parseGitHubPrUrl("")).toBeNull();
+	});
+
+	it("parses PR URL with numeric owner/repo names", () => {
+		const result = parseGitHubPrUrl("https://github.com/org123/repo456/pull/99");
+		expect(result).toEqual({ owner: "org123", repo: "repo456", number: "99" });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkPrMerged (GitHub)
+// ---------------------------------------------------------------------------
+
+describe("checkPrMerged (GitHub)", () => {
+	beforeEach(() => {
+		process.env.GITHUB_TOKEN = "test-token";
+	});
+
+	afterEach(() => {
+		delete process.env.GITHUB_TOKEN;
+		vi.restoreAllMocks();
+	});
+
+	it("returns true when PR is merged", async () => {
+		global.fetch = mockFetch({ merged: true, state: "closed" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(true);
+	});
+
+	it("returns false when PR is open (not merged)", async () => {
+		global.fetch = mockFetch({ merged: false, state: "open" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when PR is closed but not merged", async () => {
+		global.fetch = mockFetch({ merged: false, state: "closed" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when URL is not a GitHub PR URL", async () => {
+		const result = await checkPrMerged("https://not-a-github-url.com/foo");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when API call fails", async () => {
+		global.fetch = mockFetch("Unauthorized", false, 401);
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("calls the correct API endpoint", async () => {
+		let capturedUrl = "";
+		global.fetch = vi.fn().mockImplementation((url: string) => {
+			capturedUrl = url;
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({ merged: true, state: "closed" }),
+				text: async () => "",
+			});
+		});
+		await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(capturedUrl).toContain("/repos/my-org/my-repo/pulls/42");
 	});
 });

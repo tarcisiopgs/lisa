@@ -104,6 +104,9 @@ export function Card({
 	} else if (card.column === "in_progress") {
 		statusGlyph = "◉";
 		statusColor = "yellow";
+	} else if (card.column === "done" && card.merged) {
+		statusGlyph = "✔";
+		statusColor = "magenta";
 	} else if (card.column === "done") {
 		statusGlyph = "✔";
 		statusColor = "green";
@@ -146,7 +149,9 @@ export function Card({
 							? "gray"
 							: isSelected
 								? "yellow"
-								: "gray"
+								: card.merged
+									? "magenta"
+									: "gray"
 			}
 		>
 			{/* Selection bar */}
@@ -201,7 +206,7 @@ export function Card({
 				) : card.column === "done" &&
 					card.startedAt !== undefined &&
 					card.finishedAt !== undefined ? (
-					<Text color="green">
+					<Text color={card.merged ? "magenta" : "green"}>
 						{"✔ "}
 						{formatElapsed(card.finishedAt - card.startedAt)}
 					</Text>

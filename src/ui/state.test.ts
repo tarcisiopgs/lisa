@@ -6,6 +6,14 @@ vi.mock("../output/terminal.js", () => ({
 	notify: vi.fn(),
 }));
 
+vi.mock("../sources/github-issues.js", () => ({
+	checkPrMerged: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock("../sources/gitlab-issues.js", () => ({
+	checkPrMerged: vi.fn().mockResolvedValue(false),
+}));
+
 const notifyMock = notify as ReturnType<typeof vi.fn>;
 
 describe("registerBellListeners", () => {

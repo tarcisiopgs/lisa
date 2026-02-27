@@ -68,6 +68,34 @@ interface GitHubIssue {
 	state?: string;
 }
 
+interface GitHubPr {
+	merged: boolean;
+	state: string;
+}
+
+export function parseGitHubPrUrl(
+	url: string,
+): { owner: string; repo: string; number: string } | null {
+	const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+	if (match?.[1] && match?.[2] && match?.[3]) {
+		return { owner: match[1], repo: match[2], number: match[3] };
+	}
+	return null;
+}
+
+export async function checkPrMerged(prUrl: string): Promise<boolean> {
+	const parsed = parseGitHubPrUrl(prUrl);
+	if (!parsed) return false;
+	try {
+		const pr = await githubGet<GitHubPr>(
+			`/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}`,
+		);
+		return pr.merged === true;
+	} catch {
+		return false;
+	}
+}
+
 function priorityRank(labels: { name: string }[]): number {
 	const names = labels.map((l) => l.name.toLowerCase());
 	for (let i = 0; i < PRIORITY_LABELS.length; i++) {
