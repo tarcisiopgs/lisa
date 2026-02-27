@@ -73,6 +73,16 @@ Lisa follows a deterministic pipeline:
 - **Self-healing** — Orphan issues stuck in "In Progress" are recovered on startup. Pre-push failures trigger the agent to fix and retry.
 - **Guardrails** — Past failures are logged and injected into future prompts so the agent avoids repeating mistakes.
 
+## What Lisa Doesn't Do
+
+These are deliberate scope boundaries, not limitations:
+
+- **No deployment** — Lisa creates the pull request and stops. Deploying to staging or production is your CI/CD pipeline's job.
+- **No PR reviews** — Lisa does not review pull requests opened by your team. It only works on issues it was explicitly assigned via label.
+- **No review response** — Lisa does not read or respond to review comments on its own PRs. Use `lisa feedback --pr <url> --issue <id>` to manually inject review feedback as guardrails for the next run.
+- **Issue consumer, not creator** — Lisa reads issues from your tracker and resolves them. It does not file new issues, create subtasks, or triage your backlog.
+- **No replacement for human testing** — Lisa runs automated tests and pre-push hooks, but it does not perform exploratory, acceptance, or QA testing. Human review of every PR is expected and encouraged.
+
 ## Providers
 
 | Provider | Key | Command |
