@@ -1,8 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
+import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
-import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
+import type {
+	DependencyContext,
+	GitHubMethod,
+	Issue,
+	LisaConfig,
+	PlanStep,
+} from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
@@ -68,6 +75,7 @@ export function buildImplementPrompt(
 			projectContext,
 			resolvedManifestPath,
 			cwd,
+			config.github,
 		);
 	}
 
@@ -198,6 +206,7 @@ function buildWorktreePrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
+	platform: GitHubMethod = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
@@ -210,6 +219,7 @@ function buildWorktreePrompt(
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
+	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
@@ -252,9 +262,7 @@ ${readmeBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
-   Capture the PR URL from the output.
+5. ${prCreateBlock}
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
@@ -347,9 +355,7 @@ ${readmeBlock}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>" --base ${prBase}\`
-   Capture the PR URL from the output.
+6. ${buildPrCreateInstruction(config.github, prBase)}
 
 7. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
@@ -372,6 +378,7 @@ export function buildNativeWorktreePrompt(
 	baseBranch?: string,
 	projectContext?: ProjectContext,
 	manifestPath?: string,
+	platform: GitHubMethod = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
@@ -384,6 +391,7 @@ export function buildNativeWorktreePrompt(
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
+	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
 Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
@@ -425,9 +433,7 @@ ${readmeBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
-   Capture the PR URL from the output.
+5. ${prCreateBlock}
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
@@ -518,6 +524,7 @@ export function buildScopedImplementPrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
+	platform: GitHubMethod = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
@@ -583,9 +590,7 @@ ${readmeBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${prBase ? ` --base ${prBase}` : ""}\`
-   Capture the PR URL from the output.
+5. ${buildPrCreateInstruction(platform, prBase)}
 ${trackerStep}
 7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa-manifest.json` in the **current directory**"} with JSON:
    \`\`\`json

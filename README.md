@@ -111,8 +111,10 @@ npm install -g @tarcisiopgs/lisa
 ## Environment Variables
 
 ```bash
-# Required for PR creation (at least one)
-export GITHUB_TOKEN=""    # or have `gh` CLI authenticated
+# Required for PR/MR creation (set one based on your platform)
+export GITHUB_TOKEN=""    # GitHub — or have `gh` CLI authenticated (github: cli or token)
+export GITLAB_TOKEN=""    # GitLab MR creation (github: gitlab)
+export BITBUCKET_TOKEN="" # Bitbucket PR creation (github: bitbucket)
 
 # Required when source = linear
 export LINEAR_API_KEY=""
@@ -129,7 +131,7 @@ export PLANE_WORKSPACE="" # optional; fallback when team is not set in config
 # Required when source = shortcut
 export SHORTCUT_API_TOKEN=""
 
-# Required when source = gitlab-issues
+# Required when source = gitlab-issues or github = gitlab
 export GITLAB_TOKEN=""
 export GITLAB_BASE_URL=""  # optional; defaults to https://gitlab.com
 
@@ -161,7 +163,7 @@ export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and
 | `lisa run --provider NAME` | Override AI provider |
 | `lisa run --source NAME` | Override issue source |
 | `lisa run --label NAME` | Override label filter |
-| `lisa run --github METHOD` | Override GitHub method (`cli` or `token`) |
+| `lisa run --github METHOD` | Override PR platform (`cli`, `token`, `gitlab`, or `bitbucket`) |
 | `lisa run --no-bell` | Disable terminal bell on issue completion/failure |
 | `lisa init` | Create `.lisa/config.yaml` interactively |
 | `lisa config` | Edit config interactively |
@@ -223,7 +225,7 @@ source_config:
   in_progress: In Progress
   done: In Review
 
-github: cli          # "cli" (gh) or "token" (GITHUB_TOKEN)
+github: cli          # "cli" (gh), "token" (GITHUB_TOKEN), "gitlab" (GITLAB_TOKEN), or "bitbucket" (BITBUCKET_TOKEN)
 workspace: .
 base_branch: main
 
