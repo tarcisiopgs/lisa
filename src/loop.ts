@@ -4,7 +4,7 @@ import { execa } from "execa";
 import { formatLabels, getRemoveLabel } from "./config.js";
 import { analyzeProject } from "./context.js";
 import { resolveFirstDependency } from "./git/dependency.js";
-import { appendPrAttribution } from "./git/github.js";
+import { appendPlatformAttribution } from "./git/platform.js";
 import {
 	createWorktree,
 	determineRepoPath,
@@ -1042,6 +1042,7 @@ async function runNativeWorktreeSession(
 		_defaultBranch,
 		projectContext,
 		getManifestPath(workspace, issue.id),
+		config.github,
 	);
 	logger.initLogFile(logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
@@ -1090,7 +1091,7 @@ async function runNativeWorktreeSession(
 
 	const worktreePath = await findWorktreeForBranch(repoPath, manifest.branch ?? "");
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPrAttribution(manifest.prUrl, result.providerUsed);
+	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.github);
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
@@ -1232,7 +1233,7 @@ async function runManualWorktreeSession(
 	}
 
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPrAttribution(manifest.prUrl, result.providerUsed);
+	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.github);
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
@@ -1461,6 +1462,7 @@ async function runMultiRepoStep(
 		projectContext,
 		manifestPath,
 		worktreePath,
+		config.github,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
@@ -1502,7 +1504,7 @@ async function runMultiRepoStep(
 	}
 
 	await cleanupWorktree(repoPath, worktreePath);
-	await appendPrAttribution(manifest.prUrl, result.providerUsed);
+	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.github);
 
 	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${manifest.prUrl}`);
 	return {
@@ -1617,7 +1619,7 @@ async function runBranchSession(
 	}
 
 	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPrAttribution(manifest.prUrl, result.providerUsed);
+	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.github);
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,

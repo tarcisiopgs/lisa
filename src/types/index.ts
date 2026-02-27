@@ -1,4 +1,4 @@
-export type GitHubMethod = "cli" | "token";
+export type GitHubMethod = "cli" | "token" | "gitlab" | "bitbucket";
 export type SourceName =
 	| "linear"
 	| "trello"
