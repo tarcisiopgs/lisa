@@ -144,7 +144,7 @@ describe("reportCrash", () => {
 
 		expect(fetch).toHaveBeenCalledOnce();
 		const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
-		expect(url).toContain("telemetry.tarcisiopgs.dev");
+		expect(url).toContain("telemetry.lisa.sh");
 		expect(init.method).toBe("POST");
 		const body = JSON.parse(init.body as string) as Record<string, unknown>;
 		expect(body.errorMessage).toBe("details");
