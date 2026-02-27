@@ -24,6 +24,8 @@ lisa run
 
 That's it. Lisa picks up the next labeled issue, implements it, pushes a branch, opens a pull request, and moves the ticket to "In Review" — all without you touching it.
 
+`lisa init` offers pre-defined templates for the most common source + provider combinations (GitHub Issues + Claude, Linear + Claude, Jira + Claude, and more). Select a template to pre-fill sensible defaults, or choose "Configure manually" for full control.
+
 ## Try it safely first
 
 Before letting Lisa touch real issues, verify your configuration with `--dry-run`. No issues will be fetched, no code will be written, no PRs will be created.
@@ -165,7 +167,7 @@ export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --github METHOD` | Override PR platform (`cli`, `token`, `gitlab`, or `bitbucket`) |
 | `lisa run --no-bell` | Disable terminal bell on issue completion/failure |
-| `lisa init` | Create `.lisa/config.yaml` interactively |
+| `lisa init` | Create `.lisa/config.yaml` interactively (offers pre-defined templates) |
 | `lisa config` | Edit config interactively |
 | `lisa config --show` | Print current config as JSON |
 | `lisa config --set key=value` | Set a single config value |
