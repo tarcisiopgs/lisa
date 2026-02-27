@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "1.12.0",
+	"version": "1.12.1",
 	"description": "Autonomous issue resolver",
 	"keywords": [
 		"ralph",
@@ -65,7 +65,8 @@
 		"url": "https://github.com/tarcisiopgs/lisa.git"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"README.md"
 	],
 	"lint-staged": {
 		"*.{ts,tsx}": [
