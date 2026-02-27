@@ -5,6 +5,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/v/@tarcisiopgs/lisa.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/dw/@tarcisiopgs/lisa.svg" alt="weekly downloads" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/tarcisiopgs/lisa/actions/workflows/ci.yml"><img src="https://github.com/tarcisiopgs/lisa/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+</p>
+
+<p align="center">
   <strong>Label an issue. Walk away. Come back to a PR.</strong>
 </p>
 
