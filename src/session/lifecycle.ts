@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { resolve } from "node:path";
 import * as logger from "../output/logger.js";
+import type { LifecycleConfig } from "../types/index.js";
 import type { InfraConfig, ResourceConfig } from "./discovery.js";
 
 interface ManagedResource {
@@ -187,6 +188,53 @@ export async function startResources(
 	}
 
 	return { success: true, env: allocatedEnv };
+}
+
+/**
+ * Run lifecycle management according to the configured mode.
+ *
+ * - "auto" (default): starts resources via startResources, applies optional timeout override
+ * - "skip": returns success immediately without touching resources
+ * - "validate-only": checks ports via isPortInUse; returns failure if any resource is not running
+ */
+export async function runLifecycle(
+	infra: InfraConfig,
+	lifecycle: LifecycleConfig | undefined,
+	baseCwd: string,
+): Promise<StartResourcesResult> {
+	const mode = lifecycle?.mode ?? "auto";
+
+	if (mode === "skip") {
+		return { success: true, env: {} };
+	}
+
+	if (mode === "validate-only") {
+		for (const resource of infra.resources) {
+			const inUse = await isPortInUse(resource.check_port);
+			if (!inUse) {
+				logger.error(
+					`Resource "${resource.name}" is not running on port ${resource.check_port}. ` +
+						`Start it manually or use lifecycle: auto.`,
+				);
+				return { success: false, env: {} };
+			}
+		}
+		return { success: true, env: {} };
+	}
+
+	// mode === "auto": use startResources, optionally overriding per-resource timeout
+	if (lifecycle?.timeout !== undefined) {
+		const patchedInfra: InfraConfig = {
+			...infra,
+			resources: infra.resources.map((r) => ({
+				...r,
+				startup_timeout: lifecycle.timeout as number,
+			})),
+		};
+		return startResources(patchedInfra, baseCwd);
+	}
+
+	return startResources(infra, baseCwd);
 }
 
 export async function stopResources(): Promise<void> {

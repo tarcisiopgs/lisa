@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { allocatePort, isPortInUse, waitForPort } from "./lifecycle.js";
+import type { LifecycleConfig } from "../types/index.js";
+import type { InfraConfig } from "./discovery.js";
+import { allocatePort, isPortInUse, runLifecycle, waitForPort } from "./lifecycle.js";
 
 // Mock node:net for port checking
 vi.mock("node:net", () => ({
@@ -210,5 +212,52 @@ describe("allocatePort", () => {
 
 		const port = await allocatePort(8080, 1);
 		expect(port).toBe(null);
+	});
+});
+
+const mockInfra: InfraConfig = {
+	resources: [
+		{
+			name: "db",
+			check_port: 5432,
+			up: "echo up",
+			down: "echo down",
+			startup_timeout: 30,
+		},
+	],
+	setup: [],
+};
+
+describe("runLifecycle", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("skip mode returns success immediately without checking ports", async () => {
+		const lifecycle: LifecycleConfig = { mode: "skip" };
+		const result = await runLifecycle(mockInfra, lifecycle, "/tmp");
+		expect(result.success).toBe(true);
+		expect(result.env).toEqual({});
+		expect(vi.mocked(createConnection)).not.toHaveBeenCalled();
+	});
+
+	it("validate-only mode returns success when resource port is in use", async () => {
+		makeMockSocket({ connect: true });
+		const lifecycle: LifecycleConfig = { mode: "validate-only" };
+		const result = await runLifecycle(mockInfra, lifecycle, "/tmp");
+		expect(result.success).toBe(true);
+	});
+
+	it("validate-only mode returns failure when resource port is not in use", async () => {
+		makeMockSocket({ error: true });
+		const lifecycle: LifecycleConfig = { mode: "validate-only" };
+		const result = await runLifecycle(mockInfra, lifecycle, "/tmp");
+		expect(result.success).toBe(false);
+	});
+
+	it("auto mode (undefined lifecycle) delegates to startResources — port already running", async () => {
+		makeMockSocket({ connect: true });
+		const result = await runLifecycle(mockInfra, undefined, "/tmp");
+		expect(result.success).toBe(true);
 	});
 });
