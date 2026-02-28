@@ -726,8 +726,8 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		);
 	}
 
-	// Detect GitHub method
-	const githubMethod = await detectGitHubMethod();
+	// Detect platform
+	const platform = await detectPlatform();
 
 	// --- Issue source config ---
 
@@ -929,7 +929,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			in_progress: inProgress,
 			done,
 		},
-		platform: githubMethod,
+		platform,
 		workflow,
 		workspace: ".",
 		base_branch: baseBranch,
@@ -945,34 +945,83 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	);
 }
 
-async function detectGitHubMethod(): Promise<PRPlatform> {
-	const hasToken = !!process.env.GITHUB_TOKEN;
-	const hasCli = await isGhCliAvailable();
+export function detectPlatformFromRemoteUrl(remoteUrl: string): PRPlatform | null {
+	if (/github\.com/.test(remoteUrl)) return "cli"; // GitHub → default to CLI
+	if (/gitlab\./.test(remoteUrl)) return "gitlab";
+	if (/bitbucket\.org/.test(remoteUrl)) return "bitbucket";
+	return null;
+}
 
-	if (hasToken && hasCli) {
-		const selected = await clack.select({
-			message: "How should Lisa create pull requests?",
-			options: [
-				{ value: "cli", label: "GitHub CLI", hint: "uses `gh pr create` — recommended" },
-				{ value: "token", label: "GitHub API", hint: "uses GITHUB_TOKEN directly" },
-			],
-		});
-		if (clack.isCancel(selected)) return process.exit(0);
-		return selected as PRPlatform;
+async function detectPlatform(): Promise<PRPlatform> {
+	// Try to detect from git remote
+	let detectedPlatform: PRPlatform | null = null;
+	try {
+		const remoteUrl = execSync("git remote get-url origin", {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+		detectedPlatform = detectPlatformFromRemoteUrl(remoteUrl);
+		if (detectedPlatform) {
+			const platformLabel =
+				detectedPlatform === "cli" || detectedPlatform === "token"
+					? "GitHub"
+					: detectedPlatform === "gitlab"
+						? "GitLab"
+						: "Bitbucket";
+			clack.log.info(`Detected ${platformLabel} remote`);
+		}
+	} catch {
+		// Not in a git repo or no remote — skip detection
 	}
 
-	if (hasCli) {
-		clack.log.info("Pull requests will be created using the GitHub CLI.");
-		return "cli";
-	}
+	const initialValue: PRPlatform = detectedPlatform ?? "cli";
 
-	if (hasToken) {
-		clack.log.info("Pull requests will be created using GITHUB_TOKEN.");
-		return "token";
-	}
+	const selected = await clack.select({
+		message: "How should Lisa create pull requests?",
+		initialValue,
+		options: [
+			{ value: "cli", label: "GitHub CLI", hint: "uses `gh pr create` — recommended for GitHub" },
+			{ value: "token", label: "GitHub API", hint: "uses GITHUB_TOKEN directly" },
+			{ value: "gitlab", label: "GitLab API", hint: "uses GITLAB_TOKEN (glab or REST API)" },
+			{ value: "bitbucket", label: "Bitbucket API", hint: "uses BITBUCKET_TOKEN (REST API)" },
+		],
+	});
+	if (clack.isCancel(selected)) return process.exit(0);
+	const platform = selected as PRPlatform;
 
-	// Neither available — default to token (getMissingEnvVars already warns)
-	return "token";
+	await verifyPlatformCredential(platform);
+
+	return platform;
+}
+
+async function verifyPlatformCredential(platform: PRPlatform): Promise<void> {
+	if (platform === "cli") {
+		const hasCli = await isGhCliAvailable();
+		if (!hasCli) {
+			clack.log.warning(
+				"GitHub CLI (`gh`) is not authenticated. Run `gh auth login` before using Lisa.",
+			);
+		}
+		return;
+	}
+	if (platform === "token") {
+		if (!process.env.GITHUB_TOKEN) {
+			clack.log.warning("GITHUB_TOKEN is not set. Add it to your shell profile.");
+		}
+		return;
+	}
+	if (platform === "gitlab") {
+		if (!process.env.GITLAB_TOKEN) {
+			clack.log.warning("GITLAB_TOKEN is not set. Add it to your shell profile.");
+		}
+		return;
+	}
+	if (platform === "bitbucket") {
+		if (!process.env.BITBUCKET_TOKEN) {
+			clack.log.warning("BITBUCKET_TOKEN is not set. Add it to your shell profile.");
+		}
+		return;
+	}
 }
 
 async function detectGitRepos(): Promise<RepoConfig[]> {
