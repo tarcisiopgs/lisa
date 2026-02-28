@@ -203,6 +203,25 @@ repos:
 		const config = loadConfig(tmpDir);
 		expect(config.lifecycle).toBeUndefined();
 	});
+
+	it("loads legacy 'github' field as 'platform'", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\ngithub: gitlab\n");
+		const config = loadConfig(tmpDir);
+		expect(config.platform).toBe("gitlab");
+	});
+
+	it("prefers 'platform' over legacy 'github' when both are present", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			"provider: claude\ngithub: cli\nplatform: bitbucket\n",
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.platform).toBe("bitbucket");
+	});
 });
 
 describe("saveConfig", () => {
@@ -228,7 +247,7 @@ describe("saveConfig", () => {
 				in_progress: "In Progress",
 				done: "Done",
 			},
-			github: "cli",
+			platform: "cli",
 			workflow: "worktree",
 			workspace: "/workspace",
 			base_branch: "main",
@@ -255,7 +274,7 @@ describe("saveConfig", () => {
 				in_progress: "Doing",
 				done: "Done",
 			},
-			github: "cli",
+			platform: "cli",
 			workflow: "branch",
 			workspace: "/workspace",
 			base_branch: "main",
@@ -293,7 +312,7 @@ describe("mergeWithFlags", () => {
 			in_progress: "In Progress",
 			done: "Done",
 		},
-		github: "cli",
+		platform: "cli",
 		workflow: "worktree",
 		workspace: "/workspace",
 		base_branch: "main",
@@ -316,9 +335,9 @@ describe("mergeWithFlags", () => {
 		expect(merged.source_config.label).toBe("custom-label");
 	});
 
-	it("overrides github method", () => {
-		const merged = mergeWithFlags(baseConfig, { github: "token" });
-		expect(merged.github).toBe("token");
+	it("overrides platform", () => {
+		const merged = mergeWithFlags(baseConfig, { platform: "token" });
+		expect(merged.platform).toBe("token");
 	});
 
 	it("does not modify original config", () => {
@@ -436,7 +455,7 @@ describe("saveConfig multi-label", () => {
 				in_progress: "In Progress",
 				done: "Done",
 			},
-			github: "cli",
+			platform: "cli",
 			workflow: "worktree",
 			workspace: "/workspace",
 			base_branch: "main",
@@ -462,7 +481,7 @@ describe("saveConfig multi-label", () => {
 				in_progress: "In Progress",
 				done: "Done",
 			},
-			github: "cli",
+			platform: "cli",
 			workflow: "worktree",
 			workspace: "/workspace",
 			base_branch: "main",
@@ -489,7 +508,7 @@ describe("mergeWithFlags multi-label", () => {
 			in_progress: "In Progress",
 			done: "Done",
 		},
-		github: "cli",
+		platform: "cli",
 		workflow: "worktree",
 		workspace: "/workspace",
 		base_branch: "main",

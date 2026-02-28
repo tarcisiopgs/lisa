@@ -3,13 +3,7 @@ import { join, resolve } from "node:path";
 import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
 import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
-import type {
-	DependencyContext,
-	GitHubMethod,
-	Issue,
-	LisaConfig,
-	PlanStep,
-} from "./types/index.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
@@ -75,7 +69,7 @@ export function buildImplementPrompt(
 			projectContext,
 			resolvedManifestPath,
 			cwd,
-			config.github,
+			config.platform,
 		);
 	}
 
@@ -206,7 +200,7 @@ function buildWorktreePrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
-	platform: GitHubMethod = "cli",
+	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
@@ -355,7 +349,7 @@ ${readmeBlock}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. ${buildPrCreateInstruction(config.github, prBase)}
+6. ${buildPrCreateInstruction(config.platform, prBase)}
 
 7. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
@@ -378,7 +372,7 @@ export function buildNativeWorktreePrompt(
 	baseBranch?: string,
 	projectContext?: ProjectContext,
 	manifestPath?: string,
-	platform: GitHubMethod = "cli",
+	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
@@ -524,7 +518,7 @@ export function buildScopedImplementPrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
-	platform: GitHubMethod = "cli",
+	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];

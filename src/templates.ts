@@ -109,7 +109,7 @@ export function templateToPartialConfig(template: ConfigTemplate): LisaConfig {
 			in_progress: template.sourceDefaults.in_progress,
 			done: template.sourceDefaults.done,
 		},
-		github: "cli",
+		platform: "cli",
 		workflow: template.workflow,
 		workspace: ".",
 		base_branch: "main",

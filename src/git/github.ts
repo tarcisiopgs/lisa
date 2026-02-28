@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import type { GitHubMethod } from "../types/index.js";
+import type { PRPlatform } from "../types/index.js";
 import { PROVIDER_ATTRIBUTION_RE, stripProviderAttribution } from "./pr-body.js";
 
 const API_URL = "https://api.github.com";
@@ -36,7 +36,7 @@ export interface PullRequestResult {
 
 export async function createPullRequest(
 	opts: PullRequestOptions,
-	method: GitHubMethod = "cli",
+	method: PRPlatform = "cli",
 ): Promise<PullRequestResult> {
 	if (method === "cli" && (await isGhCliAvailable())) {
 		return createPullRequestWithGhCli(opts);

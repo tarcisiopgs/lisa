@@ -25,10 +25,10 @@ import { createSource } from "./sources/index.js";
 import { isTelemetryEnabled } from "./telemetry.js";
 import { getTemplateById, getTemplates, templateToPartialConfig } from "./templates.js";
 import type {
-	GitHubMethod,
 	Issue,
 	LifecycleMode,
 	LisaConfig,
+	PRPlatform,
 	ProviderName,
 	RepoConfig,
 	SourceName,
@@ -72,7 +72,7 @@ const run = defineCommand({
 		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
-		github: { type: "string", description: "GitHub method: cli or token" },
+		platform: { type: "string", description: "PR platform: cli, token, gitlab, or bitbucket" },
 		lifecycle: {
 			type: "string",
 			description: "Lifecycle mode: auto | skip | validate-only",
@@ -98,7 +98,7 @@ const run = defineCommand({
 		const merged = mergeWithFlags(config, {
 			provider: args.provider as ProviderName | undefined,
 			source: args.source as SourceName | undefined,
-			github: args.github as GitHubMethod | undefined,
+			platform: args.platform as PRPlatform | undefined,
 			label: args.label,
 			bell: args.bell,
 		});
@@ -929,7 +929,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			in_progress: inProgress,
 			done,
 		},
-		github: githubMethod,
+		platform: githubMethod,
 		workflow,
 		workspace: ".",
 		base_branch: baseBranch,
@@ -945,7 +945,7 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	);
 }
 
-async function detectGitHubMethod(): Promise<GitHubMethod> {
+async function detectGitHubMethod(): Promise<PRPlatform> {
 	const hasToken = !!process.env.GITHUB_TOKEN;
 	const hasCli = await isGhCliAvailable();
 
@@ -958,7 +958,7 @@ async function detectGitHubMethod(): Promise<GitHubMethod> {
 			],
 		});
 		if (clack.isCancel(selected)) return process.exit(0);
-		return selected as GitHubMethod;
+		return selected as PRPlatform;
 	}
 
 	if (hasCli) {

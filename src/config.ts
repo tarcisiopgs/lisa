@@ -5,6 +5,7 @@ import type {
 	LifecycleConfig,
 	LisaConfig,
 	OverseerConfig,
+	PRPlatform,
 	ProviderName,
 	SourceConfig,
 	SourceName,
@@ -32,7 +33,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 		in_progress: "",
 		done: "",
 	},
-	github: "cli",
+	platform: "cli",
 	workflow: "branch",
 	workspace: "",
 	base_branch: "main",
@@ -127,6 +128,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
 		...(parsedWithoutLogs as Partial<LisaConfig>),
+		platform: (parsed.platform ?? parsed.github ?? "cli") as PRPlatform,
 		source_config: sourceConfig,
 		loop: { ...DEFAULT_CONFIG.loop, ...((parsed.loop ?? {}) as LisaConfig["loop"]) },
 		overseer: {
@@ -250,7 +252,7 @@ export function mergeWithFlags(
 
 	if (flags.provider) merged.provider = flags.provider;
 	if (flags.source) merged.source = flags.source;
-	if (flags.github) merged.github = flags.github;
+	if (flags.platform) merged.platform = flags.platform;
 	if (flags.bell !== undefined) merged.bell = flags.bell;
 	if (flags.lifecycle) {
 		merged.lifecycle = { ...merged.lifecycle, ...flags.lifecycle };

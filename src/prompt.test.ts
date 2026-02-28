@@ -36,7 +36,7 @@ function makeConfig(overrides?: Partial<LisaConfig>): LisaConfig {
 			in_progress: "In Progress",
 			done: "Done",
 		},
-		github: "cli",
+		platform: "cli",
 		workflow: "worktree",
 		workspace: "/tmp/workspace",
 		base_branch: "main",

@@ -1,4 +1,4 @@
-export type GitHubMethod = "cli" | "token" | "gitlab" | "bitbucket";
+export type PRPlatform = "cli" | "token" | "gitlab" | "bitbucket";
 export type SourceName =
 	| "linear"
 	| "trello"
@@ -68,7 +68,7 @@ export interface LisaConfig {
 	bell?: boolean;
 	source: SourceName;
 	source_config: SourceConfig;
-	github: GitHubMethod;
+	platform: PRPlatform;
 	workflow: WorkflowMode;
 	workspace: string;
 	base_branch: string;

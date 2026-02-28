@@ -1,4 +1,4 @@
-import type { GitHubMethod } from "../types/index.js";
+import type { PRPlatform } from "../types/index.js";
 import { appendPrAttribution as appendBitbucketAttribution } from "./bitbucket.js";
 import { appendPrAttribution as appendGitHubAttribution } from "./github.js";
 import { appendMrAttribution as appendGitLabAttribution } from "./gitlab.js";
@@ -10,7 +10,7 @@ import { appendMrAttribution as appendGitLabAttribution } from "./gitlab.js";
 export async function appendPlatformAttribution(
 	prUrl: string,
 	providerUsed: string,
-	platform: GitHubMethod,
+	platform: PRPlatform,
 ): Promise<void> {
 	if (platform === "gitlab") {
 		await appendGitLabAttribution(prUrl, providerUsed);
@@ -27,7 +27,7 @@ export async function appendPlatformAttribution(
  * Returns the content only (without a step number prefix).
  */
 export function buildPrCreateInstruction(
-	platform: GitHubMethod,
+	platform: PRPlatform,
 	targetBranch: string | undefined,
 ): string {
 	const base = targetBranch ? ` --base ${targetBranch}` : "";
