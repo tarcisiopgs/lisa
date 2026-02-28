@@ -183,6 +183,26 @@ repos:
 		expect(config.repos).toHaveLength(1);
 		expect(config.repos[0]?.name).toBe("api");
 	});
+
+	it("loads lifecycle.mode and lifecycle.timeout from YAML", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			"provider: claude\nlifecycle:\n  mode: skip\n  timeout: 60\n",
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.lifecycle?.mode).toBe("skip");
+		expect(config.lifecycle?.timeout).toBe(60);
+	});
+
+	it("lifecycle defaults to undefined when not present in YAML", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
+		const config = loadConfig(tmpDir);
+		expect(config.lifecycle).toBeUndefined();
+	});
 });
 
 describe("saveConfig", () => {
@@ -252,6 +272,16 @@ describe("saveConfig", () => {
 });
 
 describe("mergeWithFlags", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
 	const baseConfig: LisaConfig = {
 		provider: "claude",
 		source: "linear",
@@ -300,6 +330,26 @@ describe("mergeWithFlags", () => {
 		const merged = mergeWithFlags(baseConfig, {});
 		expect(merged.provider).toBe("claude");
 		expect(merged.source).toBe("linear");
+	});
+
+	it("mergeWithFlags applies lifecycle override", () => {
+		const base = loadConfig(tmpDir); // no lifecycle in config
+		const result = mergeWithFlags(base, {
+			lifecycle: { mode: "skip" as import("./types/index.js").LifecycleMode },
+		});
+		expect(result.lifecycle?.mode).toBe("skip");
+	});
+
+	it("mergeWithFlags merges lifecycle.timeout without overwriting mode", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\nlifecycle:\n  mode: skip\n");
+		const base = loadConfig(tmpDir);
+		const result = mergeWithFlags(base, {
+			lifecycle: { timeout: 120 },
+		});
+		expect(result.lifecycle?.mode).toBe("skip");
+		expect(result.lifecycle?.timeout).toBe(120);
 	});
 });
 
