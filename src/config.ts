@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import type {
+	LifecycleConfig,
 	LisaConfig,
 	OverseerConfig,
 	ProviderName,
@@ -122,6 +123,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const { logs: _ignoredLogs, ...parsedWithoutLogs } = parsed as Record<string, unknown>;
 
 	const rawTelemetry = (parsed.telemetry ?? {}) as Partial<TelemetryConfig>;
+	const rawLifecycle = (parsed.lifecycle ?? undefined) as Partial<LifecycleConfig> | undefined;
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
 		...(parsedWithoutLogs as Partial<LisaConfig>),
@@ -133,6 +135,12 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		},
 		telemetry:
 			Object.keys(rawTelemetry).length > 0 ? { enabled: rawTelemetry.enabled ?? false } : undefined,
+		lifecycle: rawLifecycle
+			? {
+					mode: rawLifecycle.mode,
+					timeout: rawLifecycle.timeout,
+				}
+			: undefined,
 		provider_options: {
 			...(DEFAULT_CONFIG.provider_options || {}),
 			...((parsed.provider_options ?? {}) as Partial<
@@ -244,6 +252,9 @@ export function mergeWithFlags(
 	if (flags.source) merged.source = flags.source;
 	if (flags.github) merged.github = flags.github;
 	if (flags.bell !== undefined) merged.bell = flags.bell;
+	if (flags.lifecycle) {
+		merged.lifecycle = { ...merged.lifecycle, ...flags.lifecycle };
+	}
 	if (flags.label) {
 		const parts = flags.label
 			.split(",")

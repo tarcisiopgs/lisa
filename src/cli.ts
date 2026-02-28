@@ -27,6 +27,7 @@ import { getTemplateById, getTemplates, templateToPartialConfig } from "./templa
 import type {
 	GitHubMethod,
 	Issue,
+	LifecycleMode,
 	LisaConfig,
 	ProviderName,
 	RepoConfig,
@@ -72,6 +73,14 @@ const run = defineCommand({
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 		github: { type: "string", description: "GitHub method: cli or token" },
+		lifecycle: {
+			type: "string",
+			description: "Lifecycle mode: auto | skip | validate-only",
+		},
+		"lifecycle-timeout": {
+			type: "string",
+			description: "Startup timeout per resource in seconds (default: 30)",
+		},
 	},
 	async run({ args }) {
 		const isTTY = !!process.stdout.isTTY;
@@ -93,6 +102,22 @@ const run = defineCommand({
 			label: args.label,
 			bell: args.bell,
 		});
+		// Apply lifecycle overrides from CLI flags
+		if (args.lifecycle || args["lifecycle-timeout"]) {
+			const lifecycleTimeout = args["lifecycle-timeout"]
+				? Number.parseInt(args["lifecycle-timeout"], 10)
+				: undefined;
+			merged.lifecycle = {
+				...merged.lifecycle,
+				...(args.lifecycle && {
+					mode: args.lifecycle as LifecycleMode,
+				}),
+				...(lifecycleTimeout !== undefined &&
+					!Number.isNaN(lifecycleTimeout) && {
+						timeout: lifecycleTimeout,
+					}),
+			};
+		}
 		// Validate env vars before running
 		const missingVars = await getMissingEnvVars(merged.source);
 		if (missingVars.length > 0) {

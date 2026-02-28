@@ -51,6 +51,13 @@ export interface ValidationConfig {
 	require_acceptance_criteria?: boolean;
 }
 
+export type LifecycleMode = "auto" | "skip" | "validate-only";
+
+export interface LifecycleConfig {
+	mode?: LifecycleMode; // default: "auto"
+	timeout?: number; // seconds per resource, default: 30
+}
+
 export interface TelemetryConfig {
 	enabled: boolean;
 }
@@ -69,6 +76,7 @@ export interface LisaConfig {
 	loop: LoopConfig;
 	overseer?: OverseerConfig;
 	validation?: ValidationConfig;
+	lifecycle?: LifecycleConfig;
 	telemetry?: TelemetryConfig;
 }
 
