@@ -31,7 +31,7 @@ import {
 } from "./providers/index.js";
 import { discoverInfra } from "./session/discovery.js";
 import { appendRawEntry, migrateGuardrails } from "./session/guardrails.js";
-import { startResources, stopResources } from "./session/lifecycle.js";
+import { runLifecycle, stopResources } from "./session/lifecycle.js";
 import { clearPrUrl, loadPrUrl, storePrUrl } from "./session/pr-cache.js";
 import { createSource } from "./sources/index.js";
 import type {
@@ -1062,7 +1062,7 @@ async function runNativeWorktreeSession(
 	let lifecycleEnv: Record<string, string> = {};
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(infra, repoPath);
+		const started = await runLifecycle(infra, config.lifecycle, repoPath);
 		stopSpinner();
 		if (!started.success) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
@@ -1207,7 +1207,7 @@ async function runManualWorktreeSession(
 	let lifecycleEnv: Record<string, string> = {};
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(infra, worktreePath);
+		const started = await runLifecycle(infra, config.lifecycle, worktreePath);
 		stopSpinner();
 		if (!started.success) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
@@ -1488,7 +1488,7 @@ async function runMultiRepoStep(
 	let lifecycleEnv: Record<string, string> = {};
 	if (infra) {
 		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
-		const started = await startResources(infra, worktreePath);
+		const started = await runLifecycle(infra, config.lifecycle, worktreePath);
 		stopSpinner();
 		if (!started.success) {
 			logger.error(`Lifecycle startup failed for step ${stepNum}. Aborting.`);
@@ -1596,7 +1596,7 @@ async function runBranchSession(
 	let lifecycleEnv: Record<string, string> = {};
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await startResources(infra, workspace);
+		const started = await runLifecycle(infra, config.lifecycle, workspace);
 		stopSpinner();
 		if (!started.success) {
 			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
