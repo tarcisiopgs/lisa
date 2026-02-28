@@ -27,6 +27,7 @@ import { getTemplateById, getTemplates, templateToPartialConfig } from "./templa
 import type {
 	GitHubMethod,
 	Issue,
+	LifecycleMode,
 	LisaConfig,
 	ProviderName,
 	RepoConfig,
@@ -103,14 +104,18 @@ const run = defineCommand({
 		});
 		// Apply lifecycle overrides from CLI flags
 		if (args.lifecycle || args["lifecycle-timeout"]) {
+			const lifecycleTimeout = args["lifecycle-timeout"]
+				? Number.parseInt(args["lifecycle-timeout"], 10)
+				: undefined;
 			merged.lifecycle = {
 				...merged.lifecycle,
 				...(args.lifecycle && {
-					mode: args.lifecycle as import("./types/index.js").LifecycleMode,
+					mode: args.lifecycle as LifecycleMode,
 				}),
-				...(args["lifecycle-timeout"] && {
-					timeout: Number.parseInt(args["lifecycle-timeout"], 10),
-				}),
+				...(lifecycleTimeout !== undefined &&
+					!Number.isNaN(lifecycleTimeout) && {
+						timeout: lifecycleTimeout,
+					}),
 			};
 		}
 		// Validate env vars before running
