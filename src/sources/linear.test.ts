@@ -361,3 +361,110 @@ describe("LinearSource.listIssues", () => {
 		expect(issues[0]).toMatchObject({ id: "ENG-1", title: "Has both" });
 	});
 });
+
+describe("LinearSource.addLabel", () => {
+	beforeEach(() => {
+		process.env.LINEAR_API_KEY = "test-key";
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("auto-creates the label when not found in team, then adds it to the issue", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: { id: "team-1", labels: { nodes: [] } },
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			if (callCount === 2) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							labelCreate: {
+								success: true,
+								label: { id: "label-new-id", name: "needs-spec" },
+							},
+						},
+					}),
+				};
+			}
+			return {
+				ok: true,
+				json: async () => ({
+					data: { issueUpdate: { success: true } },
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(callCount).toBe(3);
+	});
+
+	it("adds existing label without creating a new one", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: {
+									id: "team-1",
+									labels: { nodes: [{ id: "label-existing", name: "needs-spec" }] },
+								},
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			return {
+				ok: true,
+				json: async () => ({
+					data: { issueUpdate: { success: true } },
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(callCount).toBe(2);
+	});
+
+	it("skips issueUpdate when issue already has the label", async () => {
+		global.fetch = mockFetch({
+			data: {
+				issue: {
+					id: "internal-id-1",
+					team: {
+						id: "team-1",
+						labels: { nodes: [{ id: "label-id", name: "needs-spec" }] },
+					},
+					labels: { nodes: [{ id: "label-id", name: "needs-spec" }] },
+				},
+			},
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(1);
+	});
+});
