@@ -361,3 +361,219 @@ describe("LinearSource.listIssues", () => {
 		expect(issues[0]).toMatchObject({ id: "ENG-1", title: "Has both" });
 	});
 });
+
+describe("LinearSource.addLabel", () => {
+	beforeEach(() => {
+		process.env.LINEAR_API_KEY = "test-key";
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("auto-creates the label when not found in team, then adds it to the issue", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: { id: "team-1", labels: { nodes: [] } },
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			if (callCount === 2) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							labelCreate: {
+								success: true,
+								label: { id: "label-new-id", name: "needs-spec" },
+							},
+						},
+					}),
+				};
+			}
+			return {
+				ok: true,
+				json: async () => ({
+					data: { issueUpdate: { success: true } },
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(callCount).toBe(3);
+	});
+
+	it("adds existing label without creating a new one", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: {
+									id: "team-1",
+									labels: { nodes: [{ id: "label-existing", name: "needs-spec" }] },
+								},
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			return {
+				ok: true,
+				json: async () => ({
+					data: { issueUpdate: { success: true } },
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(callCount).toBe(2);
+	});
+
+	it("skips issueUpdate when issue already has the label", async () => {
+		global.fetch = mockFetch({
+			data: {
+				issue: {
+					id: "internal-id-1",
+					team: {
+						id: "team-1",
+						labels: { nodes: [{ id: "label-id", name: "needs-spec" }] },
+					},
+					labels: { nodes: [{ id: "label-id", name: "needs-spec" }] },
+				},
+			},
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(1);
+	});
+
+	it("handles race condition: labelCreate fails but label found on refetch", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				// Initial fetch: label not in team
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: { id: "team-1", labels: { nodes: [] } },
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			if (callCount === 2) {
+				// labelCreate fails (race condition: another process created it)
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							labelCreate: { success: false, label: null },
+						},
+					}),
+				};
+			}
+			if (callCount === 3) {
+				// Refetch: label now exists in team
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								team: {
+									labels: { nodes: [{ id: "label-race-id", name: "needs-spec" }] },
+								},
+							},
+						},
+					}),
+				};
+			}
+			// callCount === 4: issueUpdate
+			return {
+				ok: true,
+				json: async () => ({
+					data: { issueUpdate: { success: true } },
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).resolves.not.toThrow();
+		expect(callCount).toBe(4);
+	});
+
+	it("throws when labelCreate fails and label still not found after refetch", async () => {
+		let callCount = 0;
+		global.fetch = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				// Initial fetch: label not in team
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							issue: {
+								id: "internal-id-1",
+								team: { id: "team-1", labels: { nodes: [] } },
+								labels: { nodes: [] },
+							},
+						},
+					}),
+				};
+			}
+			if (callCount === 2) {
+				// labelCreate fails
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							labelCreate: { success: false, label: null },
+						},
+					}),
+				};
+			}
+			// callCount === 3: Refetch also returns no matching label
+			return {
+				ok: true,
+				json: async () => ({
+					data: {
+						issue: {
+							team: { labels: { nodes: [] } }, // label not there either
+						},
+					},
+				}),
+			};
+		});
+
+		const source = new LinearSource();
+		await expect(source.addLabel("ENG-1", "needs-spec")).rejects.toThrow(
+			'Failed to create or find label "needs-spec" in team',
+		);
+		expect(callCount).toBe(3);
+	});
+});

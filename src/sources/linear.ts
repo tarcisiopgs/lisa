@@ -386,7 +386,7 @@ export class LinearSource implements Source {
 	}
 
 	async addLabel(issueId: string, labelName: string): Promise<void> {
-		// Get issue with current labels and team labels
+		// Fetch issue with current labels and team labels
 		const issueData = await gql<{
 			issue: {
 				id: string;
@@ -407,13 +407,46 @@ export class LinearSource implements Source {
 			{ identifier: issueId },
 		);
 
-		// Find label in team labels
-		const teamLabel = issueData.issue.team.labels.nodes.find(
+		// Find label in team labels — auto-create if missing
+		let teamLabel = issueData.issue.team.labels.nodes.find(
 			(l) => l.name.toLowerCase() === labelName.toLowerCase(),
 		);
 
 		if (!teamLabel) {
-			throw new Error(`Label "${labelName}" not found in team. Create it in Linear first.`);
+			const created = await gql<{
+				labelCreate: { success: boolean; label: { id: string; name: string } | null };
+			}>(
+				`mutation($teamId: String!, $name: String!) {
+					labelCreate(input: { teamId: $teamId, name: $name }) {
+						success
+						label { id name }
+					}
+				}`,
+				{ teamId: issueData.issue.team.id, name: labelName },
+			);
+
+			if (created.labelCreate.success && created.labelCreate.label) {
+				logger.log(`Label "${labelName}" created automatically in team ${issueData.issue.team.id}`);
+				teamLabel = created.labelCreate.label;
+			} else {
+				// Race condition: label may have been created by another process — refetch
+				const refetch = await gql<{
+					issue: { team: { labels: { nodes: { id: string; name: string }[] } } };
+				}>(
+					`query($identifier: String!) {
+						issue(id: $identifier) {
+							team { labels { nodes { id name } } }
+						}
+					}`,
+					{ identifier: issueId },
+				);
+				teamLabel = refetch.issue.team.labels.nodes.find(
+					(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+				);
+				if (!teamLabel) {
+					throw new Error(`Failed to create or find label "${labelName}" in team`);
+				}
+			}
 		}
 
 		// Skip if issue already has this label
