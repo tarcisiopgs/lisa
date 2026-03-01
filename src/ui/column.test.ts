@@ -39,20 +39,20 @@ describe("calcVisibleCount", () => {
 });
 
 describe("calcCardWidth", () => {
-	it("returns minimum of 20 for very narrow terminals", () => {
-		// (40 - 28) / 3 - 9 = 4 - 9 < 0, clamp to 20
-		expect(calcCardWidth(40)).toBe(20);
-		expect(calcCardWidth(1)).toBe(20);
+	it("returns minimum of 1 for very narrow terminals", () => {
+		// (40 - 28) / 3 - 9 = 4 - 9 < 0, clamp to 1
+		expect(calcCardWidth(40)).toBe(1);
+		expect(calcCardWidth(1)).toBe(1);
 	});
 
-	it("returns minimum of 20 for 80-col terminals", () => {
-		// (80 - 28) / 3 - 9 = floor(17.33) - 9 = 17 - 9 = 8 → clamped to 20
-		expect(calcCardWidth(80)).toBe(20);
+	it("calculates correctly for 80-col terminals", () => {
+		// (80 - 28) / 3 - 9 = floor(17.33) - 9 = 17 - 9 = 8
+		expect(calcCardWidth(80)).toBe(8);
 	});
 
-	it("returns minimum of 20 for 100-col terminals", () => {
-		// (100 - 28) / 3 - 9 = floor(24) - 9 = 24 - 9 = 15 → clamped to 20
-		expect(calcCardWidth(100)).toBe(20);
+	it("calculates correctly for 100-col terminals", () => {
+		// (100 - 28) / 3 - 9 = floor(24) - 9 = 24 - 9 = 15
+		expect(calcCardWidth(100)).toBe(15);
 	});
 
 	it("calculates correctly for 120-col terminal", () => {
@@ -70,9 +70,9 @@ describe("calcCardWidth", () => {
 		expect(calcCardWidth(160)).toBe(35);
 	});
 
-	it("never returns less than 20", () => {
+	it("never returns less than 1", () => {
 		for (const cols of [40, 60, 80, 100]) {
-			expect(calcCardWidth(cols)).toBeGreaterThanOrEqual(20);
+			expect(calcCardWidth(cols)).toBeGreaterThanOrEqual(1);
 		}
 	});
 

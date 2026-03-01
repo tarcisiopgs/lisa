@@ -30,11 +30,6 @@ export function ProgressHeader({
 	const progress = (done / total) * 100;
 	const pct = Math.round(progress);
 
-	const progressBarLength = 100;
-
-	const completedBars = Math.round((progress / 100) * progressBarLength);
-	const remainingBars = progressBarLength - completedBars;
-
 	const barColor = workComplete ? "green" : watching ? "cyan" : paused ? "yellow" : "cyan";
 	const borderColor = workComplete ? "green" : watching ? "cyan" : paused ? "yellow" : "gray";
 
@@ -43,8 +38,11 @@ export function ProgressHeader({
 	const terminalWidth = availableWidth ?? stdout?.columns ?? 80;
 	const barWidth = Math.max(10, terminalWidth - statsLength - OVERHEAD);
 
+	const completedBars = Math.round((progress / 100) * barWidth);
+	const remainingBars = barWidth - completedBars;
+
 	const progressBar = (
-		<Box width={barWidth} overflow="hidden">
+		<Box width={barWidth}>
 			<Text color={barColor}>
 				{"█".repeat(completedBars)}
 				{"░".repeat(remainingBars)}

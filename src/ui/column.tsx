@@ -26,7 +26,7 @@ const COLUMN_OVERHEAD = 4;
 // Per-card overhead: card border (2) + selection bar (1) + card paddingX (2).
 const CARD_OVERHEAD = 5;
 // Minimum card content width regardless of terminal size.
-const MIN_CARD_WIDTH = 20;
+const MIN_CARD_WIDTH = 1;
 
 export function calcVisibleCount(terminalRows: number): number {
 	return Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
