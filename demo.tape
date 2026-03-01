@@ -10,18 +10,15 @@ Set TypingSpeed 80ms
 Set CursorBlink false
 
 Hide
-Type "cd /Users/tarcisiopgs/Workspace/lisa/cli"
-Enter
-Type "lisa() { bash /Users/tarcisiopgs/Workspace/lisa/cli/assets/demo.sh; }"
-Enter
 Type "clear"
 Enter
 Show
 
 Sleep 300ms
 
-Type "lisa run"
-Sleep 500ms
+Type "lisa run --demo"
+Sleep 600ms
 Enter
 
-Sleep 12s
+# Kanban animates: queue 3 issues, run 2 to done, watching state (~20s)
+Sleep 20s

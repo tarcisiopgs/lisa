@@ -17,7 +17,7 @@ import {
 } from "./config.js";
 import { isGhCliAvailable } from "./git/github.js";
 import { ensureWorktreeGitignore } from "./git/worktree.js";
-import { runLoop } from "./loop.js";
+import { runDemoLoop, runLoop } from "./loop.js";
 import { banner, log, setOutputMode } from "./output/logger.js";
 import { getLogsDir } from "./paths.js";
 import { getAllProvidersWithAvailability } from "./providers/index.js";
@@ -81,6 +81,11 @@ const run = defineCommand({
 			type: "string",
 			description: "Startup timeout per resource in seconds (default: 30)",
 		},
+		demo: {
+			type: "boolean",
+			description: "Run an animated demo of the kanban UI with fake issues",
+			default: false,
+		},
 	},
 	async run({ args }) {
 		const isTTY = !!process.stdout.isTTY;
@@ -88,6 +93,33 @@ const run = defineCommand({
 		setOutputMode(isTTY ? "tui" : "default");
 
 		banner(); // no-op in tui mode since outputMode !== "default"
+
+		if (args.demo) {
+			if (isTTY) {
+				const { render } = await import("ink");
+				const { createElement } = await import("react");
+				const { KanbanApp } = await import("./ui/kanban.js");
+				const demoConfig = {
+					provider: "claude" as const,
+					source: "linear" as const,
+					workflow: "worktree" as const,
+					platform: "cli" as const,
+					source_config: {
+						team: "Engineering",
+						project: "Web App",
+						label: "ready",
+						pick_from: "Ready",
+						in_progress: "In Progress",
+						done: "Done",
+					},
+					loop: { cooldown: 30 },
+					bell: false,
+				};
+				render(createElement(KanbanApp, { config: demoConfig as never }), { exitOnCtrlC: false });
+			}
+			await runDemoLoop();
+			return;
+		}
 
 		if (!configExists()) {
 			console.error(pc.red("No configuration found. Run `lisa init` first."));
