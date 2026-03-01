@@ -338,6 +338,11 @@ async function injectRejectedPrFeedback(
 }
 
 async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<void> {
+	// If in_progress and pick_from are the same status (e.g. GitHub/GitLab Issues both use "open"),
+	// orphan recovery would loop infinitely — the updateStatus call would be a no-op and the same
+	// issue would be found again on the next iteration.
+	if (config.source_config.in_progress === config.source_config.pick_from) return;
+
 	const orphanConfig = {
 		...config.source_config,
 		pick_from: config.source_config.in_progress,
