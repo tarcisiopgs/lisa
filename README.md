@@ -12,6 +12,13 @@
   Lisa is an autonomous issue resolver that turns your backlog into pull requests — no babysitting required.
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/v/@tarcisiopgs/lisa.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/dm/@tarcisiopgs/lisa.svg" alt="npm downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/node/v/%40tarcisiopgs%2Flisa" alt="Node.js version" />
+</p>
+
 ---
 
 ## Quickstart
@@ -55,11 +62,11 @@ Lisa follows a deterministic pipeline:
 └─────────┘    └──────────┘    └───────────┘    └──────────┘    └────┘    └────────┘
 ```
 
-1. **Fetch** — Pulls the next issue from Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, or Jira matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
+1. **Fetch** — Pulls the next issue from your project tracker matching the configured label, team, and project. Issues are sorted by priority. Blocked issues are skipped.
 2. **Activate** — Moves the issue to `in_progress` so your team knows it's being worked on.
 3. **Implement** — Builds a structured prompt with full issue context and sends it to the AI agent. The agent works in a worktree or branch, implements the change, runs tests, and commits.
 4. **Validate** — If the agent's tests pass and pre-push hooks succeed, the branch is pushed. If hooks fail, Lisa re-invokes the agent with the error output and retries.
-5. **PR** — Pushes the branch and creates a pull request referencing the original issue.
+5. **PR** — Pushes the branch and creates a pull request (or merge request) referencing the original issue.
 6. **Update** — Moves the issue to the `done` status and removes the pickup label.
 7. **Next** — Picks the next issue. When there are no more matching issues, Lisa stops.
 
@@ -73,7 +80,29 @@ Lisa follows a deterministic pipeline:
 - **Self-healing** — Orphan issues stuck in "In Progress" are recovered on startup. Pre-push failures trigger the agent to fix and retry.
 - **Guardrails** — Past failures are logged and injected into future prompts so the agent avoids repeating mistakes.
 
-## Providers
+---
+
+## Issue Sources
+
+Lisa integrates with **7 project trackers** out of the box:
+
+| Source | Key | Notes |
+|--------|-----|-------|
+| Linear | `linear` | GraphQL API — priority-sorted, project-scoped, blocker-aware |
+| GitHub Issues | `github-issues` | Native GitHub issues with label-based pickup |
+| Jira | `jira` | Atlassian Jira via REST API (cloud and self-hosted) |
+| GitLab Issues | `gitlab-issues` | GitLab issues with label transitions |
+| Trello | `trello` | Card-based workflow via Trello REST API |
+| Plane | `plane` | Open-source project management (cloud and self-hosted) |
+| Shortcut | `shortcut` | Story-based tracking (formerly Clubhouse) |
+
+Each source supports label filtering, priority ordering, and status transitions out of the box. See [Source-Specific Fields](#source-specific-fields) for configuration details.
+
+---
+
+## AI Providers
+
+Lisa supports **8 AI coding agents** as implementation backends:
 
 | Provider | Key | Command |
 |----------|-----|---------|
@@ -104,6 +133,33 @@ models:
   - claude-haiku-4-5    # fallback 2
 ```
 
+---
+
+## PR Delivery
+
+Lisa delivers pull requests and merge requests to **4 platforms**:
+
+| Platform | Key | Auth | Output |
+|----------|-----|------|--------|
+| GitHub CLI | `cli` | `gh auth login` | Pull Request |
+| GitHub API | `token` | `GITHUB_TOKEN` | Pull Request |
+| GitLab | `gitlab` | `GITLAB_TOKEN` | Merge Request |
+| Bitbucket | `bitbucket` | `BITBUCKET_TOKEN` + `BITBUCKET_USERNAME` | Pull Request |
+
+Set `github` in your config (or pass `--github` at runtime) to select the delivery method:
+
+```yaml
+github: gitlab   # or: cli, token, bitbucket
+```
+
+```bash
+lisa run --github bitbucket   # override at runtime
+```
+
+Each platform appends a `🤖 Resolved by lisa` attribution comment to the PR/MR after creation.
+
+---
+
 ## Install
 
 ```bash
@@ -113,10 +169,11 @@ npm install -g @tarcisiopgs/lisa
 ## Environment Variables
 
 ```bash
-# Required for PR/MR creation (set one based on your platform)
-export GITHUB_TOKEN=""    # GitHub — or have `gh` CLI authenticated (github: cli or token)
-export GITLAB_TOKEN=""    # GitLab MR creation (github: gitlab)
-export BITBUCKET_TOKEN="" # Bitbucket PR creation (github: bitbucket)
+# PR/MR delivery — set one based on your platform
+export GITHUB_TOKEN=""       # GitHub — or have `gh` CLI authenticated (github: cli or token)
+export GITLAB_TOKEN=""       # GitLab MR creation (github: gitlab)
+export BITBUCKET_TOKEN=""    # Bitbucket PR creation (github: bitbucket)
+export BITBUCKET_USERNAME="" # Bitbucket username (required with BITBUCKET_TOKEN)
 
 # Required when source = linear
 export LINEAR_API_KEY=""
