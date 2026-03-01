@@ -31,7 +31,7 @@ function makeIssue(
 		description_stripped: string | null;
 		priority: string;
 		state: string;
-		label_ids: string[];
+		labels: string[];
 		sequence_id: number;
 		project: string;
 	}> = {},
@@ -42,7 +42,7 @@ function makeIssue(
 		description_stripped: "Some description",
 		priority: "medium",
 		state: "state-uuid-1",
-		label_ids: ["label-uuid-1"],
+		labels: ["label-uuid-1"],
 		sequence_id: 1,
 		project: "project-uuid-1",
 		...overrides,
@@ -193,7 +193,7 @@ describe("PlaneSource", () => {
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
-				ok(makePage([makeIssue({ label_ids: ["other-label-id"] })])),
+				ok(makePage([makeIssue({ labels: ["other-label-id"] })])),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -577,7 +577,7 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: [] }),
+						json: async () => makeIssue({ labels: [] }),
 						text: async () => "",
 					});
 				}
@@ -587,7 +587,7 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: ["label-uuid-1"] }),
+						json: async () => makeIssue({ labels: ["label-uuid-1"] }),
 						text: async () => "",
 					});
 				}
@@ -657,7 +657,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-1", "label-uuid-2"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-1", "label-uuid-2"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -674,14 +674,14 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: ["label-uuid-2"] }),
+						json: async () => makeIssue({ labels: ["label-uuid-2"] }),
 						text: async () => "",
 					});
 				});
 
 			await source.removeLabel("my-workspace::project-uuid-1::issue-uuid-1", "ready");
 
-			expect((capturedBody as { label_ids: string[] }).label_ids).toEqual(["label-uuid-2"]);
+			expect((capturedBody as { labels: string[] }).labels).toEqual(["label-uuid-2"]);
 		});
 
 		it("skips API call if label is not on the issue", async () => {
@@ -690,7 +690,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-2"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-2"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -716,7 +716,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-1"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-1"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -730,14 +730,14 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: [] }),
+						json: async () => makeIssue({ labels: [] }),
 						text: async () => "",
 					});
 				});
 
 			await source.removeLabel("my-workspace::project-uuid-1::issue-uuid-1", "ready");
 
-			expect((capturedBody as { label_ids: string[] }).label_ids).toEqual([]);
+			expect((capturedBody as { labels: string[] }).labels).toEqual([]);
 		});
 	});
 
@@ -770,7 +770,7 @@ describe("PlaneSource", () => {
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
-				ok(makePage([makeIssue({ label_ids: ["other-label-id"] })])),
+				ok(makePage([makeIssue({ labels: ["other-label-id"] })])),
 			]);
 
 			const result = await source.listIssues(baseConfig);

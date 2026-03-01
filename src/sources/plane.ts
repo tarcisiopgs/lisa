@@ -84,7 +84,7 @@ interface PlaneIssue {
 	description_stripped: string | null;
 	priority: string;
 	state: string;
-	label_ids: string[];
+	labels: string[];
 	sequence_id: number;
 	project: string;
 }
@@ -226,7 +226,7 @@ export class PlaneSource implements Source {
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
 		);
 
-		const matching = data.results.filter((i) => labelIds.every((lid) => i.label_ids.includes(lid)));
+		const matching = data.results.filter((i) => labelIds.every((lid) => i.labels.includes(lid)));
 		if (matching.length === 0) return null;
 
 		// Fetch all states to check if blocking issues are completed
@@ -356,7 +356,7 @@ export class PlaneSource implements Source {
 		);
 
 		return data.results
-			.filter((i) => labelIds.every((lid) => i.label_ids.includes(lid)))
+			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)))
 			.map((i) => {
 				const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${i.id}`;
 				return {
@@ -378,12 +378,12 @@ export class PlaneSource implements Source {
 		const labels = await fetchLabels(workspaceSlug, projectId);
 		const labelObj = labels.find((l) => l.name.toLowerCase() === labelName.toLowerCase());
 
-		if (!labelObj || !issue.label_ids.includes(labelObj.id)) return;
+		if (!labelObj || !issue.labels.includes(labelObj.id)) return;
 
-		const updatedLabelIds = issue.label_ids.filter((lid) => lid !== labelObj.id);
+		const updatedLabels = issue.labels.filter((lid) => lid !== labelObj.id);
 		await planePatch<PlaneIssue>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
-			{ label_ids: updatedLabelIds },
+			{ labels: updatedLabels },
 		);
 	}
 }
