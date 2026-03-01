@@ -143,6 +143,7 @@ export class ShortcutSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labelNames[0] ?? "";
 		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
 		// Resolve all workflow states to determine "done" states
@@ -156,14 +157,30 @@ export class ShortcutSource implements Source {
 			}
 		}
 
-		// Search for stories in the given workflow states with the given labels (AND)
-		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-			workflow_state_ids: stateIds,
-			label_ids: labelIds,
-			archived: false,
-		});
+		// Search stories per workflow state (API only accepts singular workflow_state_id)
+		// and filter by primary label; deduplicate by story ID
+		const seen = new Set<number>();
+		const allStories: ShortcutStory[] = [];
+		for (const stateId of stateIds) {
+			const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			});
+			for (const story of searchResult.data ?? []) {
+				if (!seen.has(story.id)) {
+					seen.add(story.id);
+					allStories.push(story);
+				}
+			}
+		}
 
-		const stories = searchResult.data ?? [];
+		// Client-side AND filter for additional labels
+		const stories =
+			labelIds.length > 1
+				? allStories.filter((s) => labelIds.every((lid) => s.label_ids.includes(lid)))
+				: allStories;
+
 		if (stories.length === 0) return null;
 
 		// Check blocking relations for each story
@@ -268,15 +285,33 @@ export class ShortcutSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labelNames[0] ?? "";
 		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
-		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-			workflow_state_ids: stateIds,
-			label_ids: labelIds,
-			archived: false,
-		});
+		// Search stories per workflow state (API only accepts singular workflow_state_id)
+		const seen = new Set<number>();
+		const allStories: ShortcutStory[] = [];
+		for (const stateId of stateIds) {
+			const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			});
+			for (const story of searchResult.data ?? []) {
+				if (!seen.has(story.id)) {
+					seen.add(story.id);
+					allStories.push(story);
+				}
+			}
+		}
 
-		return (searchResult.data ?? []).map((story) => ({
+		// Client-side AND filter for additional labels
+		const stories =
+			labelIds.length > 1
+				? allStories.filter((s) => labelIds.every((lid) => s.label_ids.includes(lid)))
+				: allStories;
+
+		return stories.map((story) => ({
 			id: String(story.id),
 			title: story.name,
 			description: story.description ?? "",
