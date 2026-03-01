@@ -104,11 +104,13 @@ describe("getBitbucketRepoInfo", () => {
 describe("createPullRequest", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		process.env.BITBUCKET_TOKEN = "test-token";
+		process.env.BITBUCKET_TOKEN = "test-app-password";
+		process.env.BITBUCKET_USERNAME = "myuser";
 	});
 
 	afterEach(() => {
 		delete process.env.BITBUCKET_TOKEN;
+		delete process.env.BITBUCKET_USERNAME;
 	});
 
 	it("creates a pull request via Bitbucket API", async () => {
@@ -136,7 +138,8 @@ describe("createPullRequest", () => {
 		expect(url).toContain("api.bitbucket.org");
 		expect(url).toContain("pullrequests");
 		expect(options.method).toBe("POST");
-		expect(options.headers).toMatchObject({ Authorization: "Bearer test-token" });
+		const expectedCreds = Buffer.from("myuser:test-app-password").toString("base64");
+		expect(options.headers).toMatchObject({ Authorization: `Basic ${expectedCreds}` });
 	});
 
 	it("throws when BITBUCKET_TOKEN is not set", async () => {
@@ -151,6 +154,20 @@ describe("createPullRequest", () => {
 				description: "desc",
 			}),
 		).rejects.toThrow("BITBUCKET_TOKEN is not set");
+	});
+
+	it("throws when BITBUCKET_USERNAME is not set", async () => {
+		delete process.env.BITBUCKET_USERNAME;
+		await expect(
+			createPullRequest({
+				workspace: "ws",
+				repoSlug: "repo",
+				sourceBranch: "feat/x",
+				destinationBranch: "main",
+				title: "title",
+				description: "desc",
+			}),
+		).rejects.toThrow("BITBUCKET_USERNAME is not set");
 	});
 
 	it("throws on API error response", async () => {
@@ -176,11 +193,13 @@ describe("createPullRequest", () => {
 describe("appendPrAttribution", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		process.env.BITBUCKET_TOKEN = "test-token";
+		process.env.BITBUCKET_TOKEN = "test-app-password";
+		process.env.BITBUCKET_USERNAME = "myuser";
 	});
 
 	afterEach(() => {
 		delete process.env.BITBUCKET_TOKEN;
+		delete process.env.BITBUCKET_USERNAME;
 	});
 
 	it("appends attribution to PR description", async () => {
@@ -202,6 +221,7 @@ describe("appendPrAttribution", () => {
 
 	it("is non-fatal when BITBUCKET_TOKEN is not set", async () => {
 		delete process.env.BITBUCKET_TOKEN;
+		delete process.env.BITBUCKET_USERNAME;
 		await expect(
 			appendPrAttribution("https://bitbucket.org/ws/repo/pull-requests/1", "claude"),
 		).resolves.toBeUndefined();
