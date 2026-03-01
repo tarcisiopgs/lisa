@@ -8,6 +8,20 @@ import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 
+// Aider reads these env vars to authenticate with LLM providers.
+// OAuth-based auth (e.g. Gemini CLI) is not supported — a direct API key is required.
+const AIDER_API_KEY_ENV_VARS = [
+	"OPENAI_API_KEY",
+	"ANTHROPIC_API_KEY",
+	"GEMINI_API_KEY",
+	"GROQ_API_KEY",
+	"OPENROUTER_API_KEY",
+	"COHERE_API_KEY",
+	"MISTRAL_API_KEY",
+	"DEEPSEEK_API_KEY",
+	"AZURE_API_KEY",
+];
+
 export class AiderProvider implements Provider {
 	name = "aider" as const;
 
@@ -22,6 +36,17 @@ export class AiderProvider implements Provider {
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
+
+		// Fail fast if no API key is set — aider would otherwise try to open a browser
+		// for OAuth auth, which hangs in non-interactive environments.
+		const hasApiKey = AIDER_API_KEY_ENV_VARS.some((v) => process.env[v]);
+		if (!hasApiKey) {
+			return {
+				success: false,
+				output: `Aider requires a direct LLM API key. Set one of: ${AIDER_API_KEY_ENV_VARS.join(", ")}`,
+				duration: 0,
+			};
+		}
 
 		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-"));
 		const promptFile = join(tmpDir, "prompt.md");
