@@ -256,8 +256,44 @@ export class GitHubIssuesSource implements Source {
 		}
 	}
 
-	async updateStatus(issueId: string, labelToAdd: string): Promise<void> {
+	async updateStatus(issueId: string, labelToAdd: string, config?: SourceConfig): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
+
+		if (config && config.in_progress !== config.pick_from) {
+			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const isMovingToInProgress = labelToAdd === config.in_progress;
+
+			if (isMovingToInProgress) {
+				// Add in_progress label and remove filter labels (prevent re-picking)
+				await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+					labels: [labelToAdd],
+				});
+				for (const label of filterLabels) {
+					try {
+						await githubDelete(
+							`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(label)}`,
+						);
+					} catch {
+						// Label may not exist; ignore
+					}
+				}
+				return;
+			}
+
+			// Reverting to pick_from: add back filter labels and remove in_progress label
+			await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+				labels: filterLabels,
+			});
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
+			return;
+		}
+
 		await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 			labels: [labelToAdd],
 		});

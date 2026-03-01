@@ -205,13 +205,38 @@ export class GitLabIssuesSource implements Source {
 		}
 	}
 
-	async updateStatus(issueId: string, labelToAdd: string): Promise<void> {
+	async updateStatus(issueId: string, labelToAdd: string, config?: SourceConfig): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
 		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
-		const labels = [...new Set([...issue.labels, labelToAdd])];
 
+		if (config && config.in_progress !== config.pick_from) {
+			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const isMovingToInProgress = labelToAdd === config.in_progress;
+
+			if (isMovingToInProgress) {
+				// Add in_progress label and remove filter labels (prevent re-picking)
+				const updated = [...new Set([...issue.labels, labelToAdd])].filter(
+					(l) => !filterLabels.includes(l),
+				);
+				await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+					labels: updated.join(","),
+				});
+				return;
+			}
+
+			// Reverting to pick_from: add back filter labels and remove in_progress label
+			const updated = [...new Set([...issue.labels, ...filterLabels])].filter(
+				(l) => l !== config.in_progress,
+			);
+			await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+				labels: updated.join(","),
+			});
+			return;
+		}
+
+		const labels = [...new Set([...issue.labels, labelToAdd])];
 		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, { labels: labels.join(",") });
 	}
 
