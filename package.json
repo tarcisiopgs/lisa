@@ -64,6 +64,9 @@
 		"ink-testing-library": "^3.0.0"
 	},
 	"packageManager": "pnpm@10.30.3",
+	"engines": {
+		"node": ">=20"
+	},
 	"publishConfig": {
 		"access": "public"
 	},
