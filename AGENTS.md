@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **cli** (762 symbols, 2014 relationships, 59 execution flows).
+This project is indexed by GitNexus as **cli** (767 symbols, 2026 relationships, 59 execution flows).
 
 ## Always Start Here
 
