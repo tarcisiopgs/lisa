@@ -982,7 +982,7 @@ async function handleSessionResult(
 	try {
 		const doneStatus = config.source_config.done;
 		const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
-		await source.completeIssue(issue.id, doneStatus, labelToRemove);
+		await source.completeIssue(issue.id, doneStatus, labelToRemove, config.source_config);
 		logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
 		if (labelToRemove) {
 			logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);

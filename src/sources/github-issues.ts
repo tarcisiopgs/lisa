@@ -157,8 +157,16 @@ export class GitHubIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
-		const label = labels.map((l) => encodeURIComponent(l)).join(",");
+		// GitHub valid states: open, closed, all. If pick_from is not a valid state
+		// (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		const validStates = ["open", "closed", "all"];
+		const isValidState = validStates.includes(config.pick_from);
+		const filterLabels = isValidState
+			? Array.isArray(config.label)
+				? config.label
+				: [config.label]
+			: [config.pick_from];
+		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
 		const issues = await githubGet<GitHubIssue[]>(path);
@@ -306,13 +314,28 @@ export class GitHubIssuesSource implements Source {
 		});
 	}
 
-	async completeIssue(issueId: string, _status: string, labelToRemove?: string): Promise<void> {
+	async completeIssue(
+		issueId: string,
+		_status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		await githubPatch(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, {
 			state: "closed",
 		});
 		if (labelToRemove) {
 			await this.removeLabel(issueId, labelToRemove);
+		}
+		// Also remove in_progress label if config-aware and in_progress differs from pick_from
+		if (config && config.in_progress !== config.pick_from) {
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
 		}
 	}
 

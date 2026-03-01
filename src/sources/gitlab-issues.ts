@@ -121,8 +121,16 @@ export class GitLabIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const project = parseGitLabProject(config.team);
-		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
-		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
+		// GitLab valid states: opened, closed, all. If pick_from is not a valid state
+		// (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		const validStates = ["opened", "closed", "all"];
+		const isValidState = validStates.includes(config.pick_from);
+		const filterLabels = isValidState
+			? Array.isArray(config.label)
+				? config.label
+				: [config.label]
+			: [config.pick_from];
+		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);
@@ -249,14 +257,24 @@ export class GitLabIssuesSource implements Source {
 		});
 	}
 
-	async completeIssue(issueId: string, _status: string, labelToRemove?: string): Promise<void> {
+	async completeIssue(
+		issueId: string,
+		_status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
 		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
-		const labels = labelToRemove
+		let labels = labelToRemove
 			? issue.labels.filter((l) => l.toLowerCase() !== labelToRemove.toLowerCase())
 			: issue.labels;
+
+		// Also remove in_progress label if config-aware and in_progress differs from pick_from
+		if (config && config.in_progress !== config.pick_from) {
+			labels = labels.filter((l) => l !== config.in_progress);
+		}
 
 		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
 			state_event: "close",
