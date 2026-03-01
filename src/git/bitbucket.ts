@@ -20,10 +20,13 @@ function formatProviderName(providerUsed: string): string {
 	return PROVIDER_DISPLAY_NAMES[providerKey] ?? providerKey;
 }
 
-function getToken(): string {
+function getAuthHeader(): string {
 	const token = process.env.BITBUCKET_TOKEN;
 	if (!token) throw new Error("BITBUCKET_TOKEN is not set");
-	return token;
+	const username = process.env.BITBUCKET_USERNAME;
+	if (!username) throw new Error("BITBUCKET_USERNAME is not set");
+	const credentials = Buffer.from(`${username}:${token}`).toString("base64");
+	return `Basic ${credentials}`;
 }
 
 export interface BitbucketRepoInfo {
@@ -89,14 +92,12 @@ export async function getBitbucketRepoInfo(cwd: string): Promise<BitbucketRepoIn
 }
 
 export async function createPullRequest(opts: PullRequestOptions): Promise<PullRequestResult> {
-	const token = getToken();
-
 	const res = await fetch(
 		`${API_URL}/repositories/${opts.workspace}/${opts.repoSlug}/pullrequests`,
 		{
 			method: "POST",
 			headers: {
-				Authorization: `Bearer ${token}`,
+				Authorization: getAuthHeader(),
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
@@ -125,14 +126,14 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 		if (!match) return;
 
 		const [, workspace, repoSlug, prId] = match;
-		const token = process.env.BITBUCKET_TOKEN;
-		if (!token) return;
+		if (!process.env.BITBUCKET_TOKEN || !process.env.BITBUCKET_USERNAME) return;
+		const authHeader = getAuthHeader();
 
 		// Fetch current PR description
 		const getRes = await fetch(
 			`${API_URL}/repositories/${workspace}/${repoSlug}/pullrequests/${prId}`,
 			{
-				headers: { Authorization: `Bearer ${token}` },
+				headers: { Authorization: authHeader },
 				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 			},
 		);
@@ -149,7 +150,7 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 		await fetch(`${API_URL}/repositories/${workspace}/${repoSlug}/pullrequests/${prId}`, {
 			method: "PUT",
 			headers: {
-				Authorization: `Bearer ${token}`,
+				Authorization: authHeader,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({ description: newDescription }),
