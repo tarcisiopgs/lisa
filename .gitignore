@@ -13,3 +13,4 @@ pnpm-lock.yaml
 # Docs
 docs/
 .gitnexus
+.aider*
