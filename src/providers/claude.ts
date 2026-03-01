@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,10 +36,23 @@ export class ClaudeProvider implements Provider {
 			}
 
 			const command = `claude ${flags.join(" ")} "$(cat '${promptFile}')"`;
-			const { proc, isPty } = spawnWithPty(command, {
-				cwd: opts.cwd,
-				env: { ...process.env, ...opts.env, CLAUDECODE: undefined },
-			});
+			const spawnEnv = { ...process.env, ...opts.env, CLAUDECODE: undefined };
+			// When Lisa itself runs inside an active Claude Code session (CLAUDECODE is set in the
+			// parent environment), the script PTY wrapper reads EOF from its closed stdin and
+			// forwards ^D to Claude, causing it to exit. Use a plain spawn without PTY instead.
+			const isNestedInClaude = Boolean(process.env.CLAUDECODE);
+			let proc: ReturnType<typeof spawn>;
+			let isPty: boolean;
+			if (isNestedInClaude) {
+				proc = spawn("sh", ["-c", command], {
+					cwd: opts.cwd,
+					env: spawnEnv,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				isPty = false;
+			} else {
+				({ proc, isPty } = spawnWithPty(command, { cwd: opts.cwd, env: spawnEnv }));
+			}
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
