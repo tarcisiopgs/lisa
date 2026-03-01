@@ -150,14 +150,14 @@ Lisa delivers pull requests and merge requests to **4 platforms**:
 | GitLab | `gitlab` | `GITLAB_TOKEN` | Merge Request |
 | Bitbucket | `bitbucket` | `BITBUCKET_TOKEN` + `BITBUCKET_USERNAME` | Pull Request |
 
-Set `github` in your config (or pass `--github` at runtime) to select the delivery method:
+Set `platform` in your config (or pass `--platform` at runtime) to select the delivery method:
 
 ```yaml
-github: gitlab   # or: cli, token, bitbucket
+platform: gitlab   # or: cli, token, bitbucket
 ```
 
 ```bash
-lisa run --github bitbucket   # override at runtime
+lisa run --platform bitbucket   # override at runtime
 ```
 
 Each platform appends a `🤖 Resolved by lisa` attribution comment to the PR/MR after creation.
@@ -174,9 +174,9 @@ npm install -g @tarcisiopgs/lisa
 
 ```bash
 # PR/MR delivery — set one based on your platform
-export GITHUB_TOKEN=""       # GitHub — or have `gh` CLI authenticated (github: cli or token)
-export GITLAB_TOKEN=""       # GitLab MR creation (github: gitlab)
-export BITBUCKET_TOKEN=""    # Bitbucket PR creation (github: bitbucket)
+export GITHUB_TOKEN=""       # GitHub — or have `gh` CLI authenticated (platform: cli or token)
+export GITLAB_TOKEN=""       # GitLab MR creation (platform: gitlab)
+export BITBUCKET_TOKEN=""    # Bitbucket PR creation (platform: bitbucket)
 export BITBUCKET_USERNAME="" # Bitbucket username (required with BITBUCKET_TOKEN)
 
 # Required when source = linear
@@ -226,7 +226,7 @@ export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and
 | `lisa run --provider NAME` | Override AI provider |
 | `lisa run --source NAME` | Override issue source |
 | `lisa run --label NAME` | Override label filter |
-| `lisa run --github METHOD` | Override PR platform (`cli`, `token`, `gitlab`, or `bitbucket`) |
+| `lisa run --platform METHOD` | Override PR platform (`cli`, `token`, `gitlab`, or `bitbucket`) |
 | `lisa run --no-bell` | Disable terminal bell on issue completion/failure |
 | `lisa init` | Create `.lisa/config.yaml` interactively (offers pre-defined templates) |
 | `lisa config` | Edit config interactively |
@@ -289,7 +289,7 @@ source_config:
   in_progress: In Progress
   done: In Review
 
-github: cli          # "cli" (gh), "token" (GITHUB_TOKEN), "gitlab" (GITLAB_TOKEN), or "bitbucket" (BITBUCKET_TOKEN)
+platform: cli        # "cli" (gh), "token" (GITHUB_TOKEN), "gitlab" (GITLAB_TOKEN), or "bitbucket" (BITBUCKET_TOKEN)
 workspace: .
 base_branch: main
 
@@ -463,7 +463,7 @@ validation:
   require_acceptance_criteria: false
 ```
 
-> **Note:** The `needs-spec` label must exist in your issue tracker before Lisa can apply it. Create it manually if it does not exist — Lisa will log a warning if the label is missing.
+> **Note:** For Linear, Lisa auto-creates the `needs-spec` label if it does not exist. For other trackers, the label must exist before Lisa can apply it — Lisa will log a warning if it is missing.
 
 ### Infrastructure Auto-Discovery
 
