@@ -143,7 +143,7 @@ export class JiraSource implements Source {
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
 		const data = await jiraGet<JiraSearchResult>(
-			`/search?jql=${jql}&fields=${fields}&maxResults=50`,
+			`/search/jql?jql=${jql}&fields=${fields}&maxResults=50`,
 		);
 
 		const issues = data.issues ?? [];
@@ -262,7 +262,7 @@ export class JiraSource implements Source {
 		const fields = "summary,description,priority,status,labels";
 
 		const data = await jiraGet<JiraSearchResult>(
-			`/search?jql=${jql}&fields=${fields}&maxResults=100`,
+			`/search/jql?jql=${jql}&fields=${fields}&maxResults=100`,
 		);
 
 		const baseUrl = getBaseUrl();
