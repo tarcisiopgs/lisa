@@ -160,10 +160,15 @@ export interface Source {
 	name: SourceName;
 	fetchNextIssue(config: SourceConfig): Promise<Issue | null>;
 	fetchIssueById(id: string): Promise<Issue | null>;
-	updateStatus(issueId: string, status: string): Promise<void>;
+	updateStatus(issueId: string, status: string, config?: SourceConfig): Promise<void>;
 	removeLabel(issueId: string, label: string): Promise<void>;
 	addLabel?(issueId: string, label: string): Promise<void>;
 	attachPullRequest(issueId: string, prUrl: string): Promise<void>;
-	completeIssue(issueId: string, status: string, labelToRemove?: string): Promise<void>;
+	completeIssue(
+		issueId: string,
+		status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
 }

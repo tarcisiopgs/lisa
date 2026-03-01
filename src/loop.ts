@@ -42,12 +42,16 @@ import type {
 	ModelSpec,
 	PlanStep,
 	Source,
+	SourceConfig,
 } from "./types/index.js";
 import { kanbanEmitter } from "./ui/state.js";
 import { validateIssueSpec } from "./validation.js";
 
 // === Per-issue state maps for concurrent execution ===
-const activeCleanups = new Map<string, { previousStatus: string; source: Source }>();
+const activeCleanups = new Map<
+	string,
+	{ previousStatus: string; source: Source; sourceConfig: SourceConfig }
+>();
 const activeProviderPids = new Map<string, number>();
 const providerPausedSet = new Set<string>();
 const userKilledSet = new Set<string>();
@@ -269,10 +273,10 @@ function installSignalHandlers(): void {
 
 		// Revert all active issues
 		const revertPromises = [...activeCleanups.entries()].map(
-			async ([issueId, { previousStatus, source }]) => {
+			async ([issueId, { previousStatus, source, sourceConfig }]) => {
 				try {
 					await Promise.race([
-						source.updateStatus(issueId, previousStatus),
+						source.updateStatus(issueId, previousStatus, sourceConfig),
 						new Promise<never>((_, reject) =>
 							setTimeout(() => reject(new Error("Revert timed out")), 5000),
 						),
@@ -365,7 +369,7 @@ async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<
 			`Found orphan issue ${orphan.id} stuck in "${config.source_config.in_progress}". Reverting to "${config.source_config.pick_from}".`,
 		);
 		try {
-			await source.updateStatus(orphan.id, config.source_config.pick_from);
+			await source.updateStatus(orphan.id, config.source_config.pick_from, config.source_config);
 			logger.ok(`Recovered orphan ${orphan.id}`);
 		} catch (err) {
 			logger.error(
@@ -575,14 +579,14 @@ async function runSequentialLoop(
 		try {
 			const inProgress = config.source_config.in_progress;
 			kanbanEmitter.emit("issue:started", issue.id);
-			await source.updateStatus(issue.id, inProgress);
+			await source.updateStatus(issue.id, inProgress, config.source_config);
 			logger.ok(`Moved ${issue.id} to "${inProgress}"`);
 		} catch (err) {
 			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
 		// Register active issue for signal handler cleanup
-		activeCleanups.set(issue.id, { previousStatus, source });
+		activeCleanups.set(issue.id, { previousStatus, source, sourceConfig: config.source_config });
 
 		let sessionResult: SessionResult;
 		try {
@@ -596,7 +600,7 @@ async function runSequentialLoop(
 				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
 			);
 			try {
-				await source.updateStatus(issue.id, previousStatus);
+				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (revertErr) {
 				logger.error(
@@ -723,13 +727,13 @@ async function runConcurrentLoop(
 		const previousStatus = config.source_config.pick_from;
 		try {
 			kanbanEmitter.emit("issue:started", issue.id);
-			await source.updateStatus(issue.id, config.source_config.in_progress);
+			await source.updateStatus(issue.id, config.source_config.in_progress, config.source_config);
 			logger.ok(`Moved ${issue.id} to "${config.source_config.in_progress}"`);
 		} catch (err) {
 			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		activeCleanups.set(issue.id, { previousStatus, source });
+		activeCleanups.set(issue.id, { previousStatus, source, sourceConfig: config.source_config });
 
 		let sessionResult: SessionResult;
 		try {
@@ -739,7 +743,7 @@ async function runConcurrentLoop(
 				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
 			);
 			try {
-				await source.updateStatus(issue.id, previousStatus);
+				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (revertErr) {
 				logger.error(
@@ -891,7 +895,7 @@ async function handleSessionResult(
 			providerPausedSet.delete(issue.id);
 			logger.warn(`Issue ${issue.id} killed by user.`);
 			try {
-				await source.updateStatus(issue.id, previousStatus);
+				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (err) {
 				logger.error(
@@ -908,7 +912,7 @@ async function handleSessionResult(
 			providerPausedSet.delete(issue.id);
 			logger.warn(`Issue ${issue.id} skipped by user.`);
 			try {
-				await source.updateStatus(issue.id, previousStatus);
+				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (err) {
 				logger.error(
@@ -925,7 +929,7 @@ async function handleSessionResult(
 		logger.error(`All models failed for ${issue.id}. Reverting to "${previousStatus}".`);
 		logAttemptHistory(sessionResult);
 		try {
-			await source.updateStatus(issue.id, previousStatus);
+			await source.updateStatus(issue.id, previousStatus, config.source_config);
 			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			kanbanEmitter.emit("issue:reverted", issue.id);
 		} catch (err) {
@@ -943,7 +947,7 @@ async function handleSessionResult(
 			`Session succeeded but no PRs created for ${issue.id}. Reverting to "${previousStatus}".`,
 		);
 		try {
-			await source.updateStatus(issue.id, previousStatus);
+			await source.updateStatus(issue.id, previousStatus, config.source_config);
 			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			kanbanEmitter.emit("issue:reverted", issue.id);
 		} catch (err) {
@@ -978,7 +982,7 @@ async function handleSessionResult(
 	try {
 		const doneStatus = config.source_config.done;
 		const labelToRemove = opts.issueId ? undefined : getRemoveLabel(config.source_config);
-		await source.completeIssue(issue.id, doneStatus, labelToRemove);
+		await source.completeIssue(issue.id, doneStatus, labelToRemove, config.source_config);
 		logger.ok(`Updated ${issue.id} status to "${doneStatus}"`);
 		if (labelToRemove) {
 			logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);

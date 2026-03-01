@@ -81,6 +81,12 @@ interface ShortcutStorySearchResult {
 	next: string | null;
 }
 
+// The search API may return either { data: [...] } or a plain array depending on the version.
+function extractStories(result: ShortcutStorySearchResult | ShortcutStory[]): ShortcutStory[] {
+	if (Array.isArray(result)) return result;
+	return result.data ?? [];
+}
+
 interface ShortcutComment {
 	id: number;
 	text: string;
@@ -162,12 +168,15 @@ export class ShortcutSource implements Source {
 		const seen = new Set<number>();
 		const allStories: ShortcutStory[] = [];
 		for (const stateId of stateIds) {
-			const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-				workflow_state_id: stateId,
-				label_name: primaryLabel,
-				archived: false,
-			});
-			for (const story of searchResult.data ?? []) {
+			const searchResult = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
+				"/api/v3/stories/search",
+				{
+					workflow_state_id: stateId,
+					label_name: primaryLabel,
+					archived: false,
+				},
+			);
+			for (const story of extractStories(searchResult)) {
 				if (!seen.has(story.id)) {
 					seen.add(story.id);
 					allStories.push(story);
@@ -292,12 +301,15 @@ export class ShortcutSource implements Source {
 		const seen = new Set<number>();
 		const allStories: ShortcutStory[] = [];
 		for (const stateId of stateIds) {
-			const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-				workflow_state_id: stateId,
-				label_name: primaryLabel,
-				archived: false,
-			});
-			for (const story of searchResult.data ?? []) {
+			const searchResult = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
+				"/api/v3/stories/search",
+				{
+					workflow_state_id: stateId,
+					label_name: primaryLabel,
+					archived: false,
+				},
+			);
+			for (const story of extractStories(searchResult)) {
 				if (!seen.has(story.id)) {
 					seen.add(story.id);
 					allStories.push(story);

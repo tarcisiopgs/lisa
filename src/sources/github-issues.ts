@@ -157,8 +157,16 @@ export class GitHubIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
-		const label = labels.map((l) => encodeURIComponent(l)).join(",");
+		// GitHub valid states: open, closed, all. If pick_from is a non-empty, non-standard-state
+		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		const validStates = ["open", "closed", "all"];
+		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
+		const filterLabels = isOrphanDetection
+			? [config.pick_from]
+			: Array.isArray(config.label)
+				? config.label
+				: [config.label];
+		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
 		const issues = await githubGet<GitHubIssue[]>(path);
@@ -256,8 +264,44 @@ export class GitHubIssuesSource implements Source {
 		}
 	}
 
-	async updateStatus(issueId: string, labelToAdd: string): Promise<void> {
+	async updateStatus(issueId: string, labelToAdd: string, config?: SourceConfig): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
+
+		if (config && config.in_progress !== config.pick_from) {
+			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const isMovingToInProgress = labelToAdd === config.in_progress;
+
+			if (isMovingToInProgress) {
+				// Add in_progress label and remove filter labels (prevent re-picking)
+				await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+					labels: [labelToAdd],
+				});
+				for (const label of filterLabels) {
+					try {
+						await githubDelete(
+							`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(label)}`,
+						);
+					} catch {
+						// Label may not exist; ignore
+					}
+				}
+				return;
+			}
+
+			// Reverting to pick_from: add back filter labels and remove in_progress label
+			await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+				labels: filterLabels,
+			});
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
+			return;
+		}
+
 		await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 			labels: [labelToAdd],
 		});
@@ -270,13 +314,28 @@ export class GitHubIssuesSource implements Source {
 		});
 	}
 
-	async completeIssue(issueId: string, _status: string, labelToRemove?: string): Promise<void> {
+	async completeIssue(
+		issueId: string,
+		_status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		await githubPatch(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, {
 			state: "closed",
 		});
 		if (labelToRemove) {
 			await this.removeLabel(issueId, labelToRemove);
+		}
+		// Also remove in_progress label if config-aware and in_progress differs from pick_from
+		if (config && config.in_progress !== config.pick_from) {
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
 		}
 	}
 
