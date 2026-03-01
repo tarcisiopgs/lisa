@@ -28,8 +28,13 @@ export class GooseProvider implements Provider {
 		writeFileSync(promptFile, prompt, "utf-8");
 
 		try {
+			// Pass --provider if GOOSE_PROVIDER env var is set, so goose doesn't panic
+			// with "No provider configured" when the user hasn't run `goose configure`.
+			const providerFlag = process.env.GOOSE_PROVIDER
+				? `--provider ${process.env.GOOSE_PROVIDER}`
+				: "";
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const command = `goose run ${modelFlag} --text "$(cat '${promptFile}')"`;
+			const command = `goose run ${providerFlag} ${modelFlag} --text "$(cat '${promptFile}')"`;
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
 				env: { ...process.env, ...opts.env },
