@@ -426,6 +426,8 @@ async function runSequentialLoop(
 	let session = 0;
 	const loopStart = Date.now();
 	let completedCount = 0;
+	let consecutiveFetchErrors = 0;
+	const MAX_CONSECUTIVE_FETCH_ERRORS = 3;
 
 	while (true) {
 		session++;
@@ -475,10 +477,19 @@ async function runSequentialLoop(
 			issue = opts.issueId
 				? await source.fetchIssueById(opts.issueId)
 				: await source.fetchNextIssue(config.source_config);
+			consecutiveFetchErrors = 0;
 		} catch (err) {
 			stopSpinner();
+			consecutiveFetchErrors++;
 			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
-			if (opts.once) break;
+			if (opts.once || consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
+				if (consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
+					logger.error(
+						`Stopping after ${MAX_CONSECUTIVE_FETCH_ERRORS} consecutive fetch failures.`,
+					);
+				}
+				break;
+			}
 			setTitle("Lisa \u2014 cooling down...");
 			await sleep(config.loop.cooldown * 1000);
 			continue;
@@ -670,6 +681,8 @@ async function runConcurrentLoop(
 	let sessionCounter = 0;
 	let noMoreIssues = false;
 	let exhausted = false;
+	let consecutiveFetchErrors = 0;
+	const MAX_CONSECUTIVE_FETCH_ERRORS = 3;
 	const activeWorkers = new Map<string, Promise<void>>();
 
 	const processIssue = async (issue: Issue, session: number): Promise<void> => {
@@ -782,10 +795,19 @@ async function runConcurrentLoop(
 			let issue: Issue | null;
 			try {
 				issue = await source.fetchNextIssue(config.source_config);
+				consecutiveFetchErrors = 0;
 			} catch (err) {
+				consecutiveFetchErrors++;
 				logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
-				await sleep(config.loop.cooldown * 1000);
 				sessionCounter--; // Don't count failed fetches
+				if (consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
+					logger.error(
+						`Stopping after ${MAX_CONSECUTIVE_FETCH_ERRORS} consecutive fetch failures.`,
+					);
+					noMoreIssues = true;
+				} else {
+					await sleep(config.loop.cooldown * 1000);
+				}
 				break;
 			}
 
