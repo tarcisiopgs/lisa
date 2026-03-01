@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <img src="assets/demo.gif" alt="Lisa demo" width="800" />
+</p>
+
+<p align="center">
   Lisa is an autonomous issue resolver that turns your backlog into pull requests — no babysitting required.
 </p>
 
