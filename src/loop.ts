@@ -1732,9 +1732,9 @@ async function waitIfPaused(): Promise<void> {
 
 export async function runDemoLoop(): Promise<void> {
 	const demoIssues = [
-		{ id: "INT-512", title: "Add rate limiting middleware to REST API" },
-		{ id: "INT-513", title: "Fix memory leak in WebSocket connection handler" },
-		{ id: "INT-514", title: "Implement dark mode toggle in settings page" },
+		{ id: "INT-512", title: "Add rate limiting middleware" },
+		{ id: "INT-513", title: "Fix WebSocket memory leak" },
+		{ id: "INT-514", title: "Add dark mode to settings" },
 	];
 
 	// Wait for Ink/React to fully mount and register event listeners
