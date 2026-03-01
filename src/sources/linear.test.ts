@@ -394,7 +394,7 @@ describe("LinearSource.addLabel", () => {
 					ok: true,
 					json: async () => ({
 						data: {
-							labelCreate: {
+							issueLabelCreate: {
 								success: true,
 								label: { id: "label-new-id", name: "needs-spec" },
 							},
@@ -493,7 +493,7 @@ describe("LinearSource.addLabel", () => {
 					ok: true,
 					json: async () => ({
 						data: {
-							labelCreate: { success: false, label: null },
+							issueLabelCreate: { success: false, label: null },
 						},
 					}),
 				};
@@ -552,7 +552,7 @@ describe("LinearSource.addLabel", () => {
 					ok: true,
 					json: async () => ({
 						data: {
-							labelCreate: { success: false, label: null },
+							issueLabelCreate: { success: false, label: null },
 						},
 					}),
 				};
