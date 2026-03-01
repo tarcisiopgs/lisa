@@ -121,15 +121,15 @@ export class GitLabIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const project = parseGitLabProject(config.team);
-		// GitLab valid states: opened, closed, all. If pick_from is not a valid state
-		// (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		// GitLab valid states: opened, closed, all. If pick_from is a non-empty, non-standard-state
+		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
 		const validStates = ["opened", "closed", "all"];
-		const isValidState = validStates.includes(config.pick_from);
-		const filterLabels = isValidState
-			? Array.isArray(config.label)
+		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
+		const filterLabels = isOrphanDetection
+			? [config.pick_from]
+			: Array.isArray(config.label)
 				? config.label
-				: [config.label]
-			: [config.pick_from];
+				: [config.label];
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
