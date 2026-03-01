@@ -23,7 +23,8 @@ export function generateBranchName(issueId: string, title: string): string {
 		.substring(0, 40)
 		.replace(/^-|-$/g, "");
 
-	return `feat/${issueId.toLowerCase()}-${slug}`;
+	const safeId = issueId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+	return `feat/${safeId}-${slug}`;
 }
 
 /**

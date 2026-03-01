@@ -226,7 +226,10 @@ export class PlaneSource implements Source {
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
 		);
 
-		const matching = data.results.filter((i) => labelIds.every((lid) => i.labels.includes(lid)));
+		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
+		const matching = data.results
+			.filter((i) => i.state === stateId)
+			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)));
 		if (matching.length === 0) return null;
 
 		// Fetch all states to check if blocking issues are completed
@@ -355,7 +358,9 @@ export class PlaneSource implements Source {
 			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
 		);
 
+		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
 		return data.results
+			.filter((i) => i.state === stateId)
 			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)))
 			.map((i) => {
 				const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${i.id}`;
