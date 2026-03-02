@@ -1,7 +1,6 @@
 import { Box, Text } from "ink";
 import { Column } from "./column.js";
 import type { KanbanCard } from "./state.js";
-import { useTerminalSize } from "./use-terminal-size.js";
 
 function formatDuration(ms: number): string {
 	const totalSeconds = Math.floor(ms / 1000);
@@ -36,7 +35,6 @@ export function Board({
 	activeCardIndex = 0,
 	paused = false,
 }: BoardProps) {
-	const { columns: terminalCols } = useTerminalSize();
 	const backlog = cards.filter((c) => c.column === "backlog");
 	const inProgress = cards.filter((c) => c.column === "in_progress");
 	const done = cards.filter((c) => c.column === "done");
