@@ -73,9 +73,12 @@ export const run = defineCommand({
 						team: "Engineering",
 						project: "Web App",
 						label: "ready",
-						pick_from: "Ready",
+						pick_from: "Backlog",
 						in_progress: "In Progress",
 						done: "Done",
+					},
+					provider_options: {
+						claude: { models: ["claude-sonnet-4-6"] },
 					},
 					loop: { cooldown: 30 },
 					bell: false,
