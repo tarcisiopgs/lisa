@@ -205,10 +205,6 @@ export GITHUB_TOKEN=""     # same token used for PR creation
 export JIRA_BASE_URL=""        # e.g. https://yourcompany.atlassian.net
 export JIRA_EMAIL=""           # Atlassian account email
 export JIRA_API_TOKEN=""       # Atlassian API token
-
-# Optional — anonymous crash reporting (disabled by default)
-export LISA_TELEMETRY=1        # enable anonymous crash/error reporting
-export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and config)
 ```
 
 ## Commands
@@ -228,6 +224,9 @@ export LISA_NO_TELEMETRY=1     # disable reporting (overrides LISA_TELEMETRY and
 | `lisa run --label NAME` | Override label filter |
 | `lisa run --platform METHOD` | Override PR platform (`cli`, `token`, `gitlab`, or `bitbucket`) |
 | `lisa run --no-bell` | Disable terminal bell on issue completion/failure |
+| `lisa run --lifecycle MODE` | Lifecycle mode: `auto` (default), `skip`, or `validate-only` |
+| `lisa run --lifecycle-timeout N` | Startup timeout per resource in seconds (default: 30) |
+| `lisa run --demo` | Run animated demo with fake issues to preview the TUI |
 | `lisa init` | Create `.lisa/config.yaml` interactively (offers pre-defined templates) |
 | `lisa config` | Edit config interactively |
 | `lisa config --show` | Print current config as JSON |
@@ -253,7 +252,7 @@ When running in an interactive terminal, `lisa run` renders a real-time Kanban b
 └──────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
 ```
 
-In-progress cards show a live elapsed timer and the last action taken by the provider. A global progress bar in the header tracks overall session progress. When the loop is paused, active cards display a visual pause indicator. The detail view includes a scroll bar when output overflows and shows the active model name in the sidebar.
+In-progress cards show a live elapsed timer and the last action taken by the provider. When the loop is paused, active cards display a visual pause indicator. The detail view includes a scroll bar when output overflows and shows the active model name in the sidebar.
 
 ### Keyboard shortcuts
 
@@ -320,9 +319,10 @@ overseer:
 validation:
   require_acceptance_criteria: true  # skip issues without detectable acceptance criteria (default: true)
 
-# Optional — anonymous crash/error reporting (disabled by default)
-telemetry:
-  enabled: true  # set via `lisa init` prompt or LISA_TELEMETRY=1; override with LISA_NO_TELEMETRY=1
+# Optional — control infrastructure lifecycle
+lifecycle:
+  mode: auto             # "auto" (default), "skip", or "validate-only"
+  timeout: 30            # seconds to wait per resource (default: 30)
 ```
 
 ### Source-Specific Fields
@@ -467,7 +467,20 @@ validation:
 
 ### Infrastructure Auto-Discovery
 
-Lisa auto-discovers Docker Compose services in each repository and starts them before handing control to the agent. If a `docker-compose.yml` / `compose.yml` is present, Lisa reads port mappings and starts the services, waiting for each port to become ready.
+Lisa auto-discovers Docker Compose services and ORM/migration tools in each repository and starts them before handing control to the agent.
+
+**Docker Compose** — If a `docker-compose.yml` / `compose.yml` is present, Lisa reads port mappings and starts the services, waiting for each port to become ready.
+
+**ORM/Migration setup** — Lisa detects and runs migration commands automatically:
+
+| Tool | Commands |
+|------|----------|
+| Prisma | `npx prisma generate`, `npx prisma db push` |
+| Drizzle | `npx drizzle-kit push` |
+| TypeORM | `npx typeorm migration:run` |
+| Sequelize | `npx sequelize-cli db:migrate` |
+
+**Environment files** — If `.env.example` exists but `.env` doesn't, Lisa copies it automatically before starting infrastructure.
 
 **Dynamic port allocation** prevents collisions when multiple Lisa instances run in parallel. Add `port_range` and `port_env_var` to any discovered or manually configured resource:
 
@@ -488,9 +501,44 @@ When `port_range` is set, Lisa scans ports `check_port` through `check_port + po
 
 If no free port is found within the range, Lisa logs a clear error and aborts the session.
 
+**Lifecycle modes** control how Lisa handles infrastructure:
+
+| Mode | Behavior |
+|------|----------|
+| `auto` (default) | Discover, start, and tear down infrastructure automatically |
+| `skip` | Skip all infrastructure management — assume services are already running |
+| `validate-only` | Check that required ports are available but don't start or stop services |
+
 ### Auto-Detection
 
 Lisa auto-detects `vitest` or `jest` from `package.json` dependencies and injects the correct test command into the agent prompt. It also detects the package manager from lockfiles (`bun.lockb`/`bun.lock` → `bun`, `pnpm-lock.yaml` → `pnpm`, `yarn.lock` → `yarn`, otherwise `npm`).
+
+### Project Context Analysis
+
+Before building the prompt for the AI agent, Lisa automatically analyzes the project and injects rich context into the prompt:
+
+- **Quality scripts** — detects `lint`, `typecheck`, `check`, `format`, `test`, `build`, `ci` scripts from `package.json`
+- **Test patterns** — discovers test file location (colocated vs separate directory), style (describe/it vs top-level test), mocking libraries (`vi.mock`, `jest.mock`, fixtures), and includes example code from the first test file found
+- **Code tools** — reads configuration from Biome (`biome.json`), ESLint (`.eslintrc.*`, `eslint.config.*`), and Prettier (`.prettierrc.*`, `prettier.config.*`)
+- **Project structure** — generates a tree view of immediate subdirectories and their children
+- **Environment type** — classifies the project as CLI, Mobile (React Native/Flutter), Web, Server, Library, or Unknown
+
+This context is formatted as a `## Project Context` section in the implementation prompt, giving the agent immediate understanding of the codebase conventions without exploration.
+
+### API Client Generator Detection
+
+Lisa detects API client generators in the project and enriches the agent prompt with generation details — input spec location, output directory, and the command to regenerate clients:
+
+| Generator | Config Files |
+|-----------|-------------|
+| Orval | `orval.config.ts/js`, `.orvalrc`, `.orvalrc.json/js/ts` |
+| Kubb | `kubb.config.ts/js/mjs` |
+| hey-api | `openapi-ts.config.ts/js/mjs` |
+| openapi-generator | `openapitools.json`, `.openapi-generator/` |
+| swagger-codegen | `swagger-codegen-config.json` |
+| openapi-typescript | detected from `package.json` dependencies |
+
+When a generator is detected, the agent receives the config file path, whether the spec is a live URL or local file, the output directory, and the `package.json` script (or `npx` command) to run the generator.
 
 ## License
 
