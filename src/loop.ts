@@ -1018,6 +1018,27 @@ function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
 	return repo?.base_branch ?? config.base_branch;
 }
 
+export async function checkoutBaseBranches(config: LisaConfig, workspace: string): Promise<void> {
+	const targets: { cwd: string; branch: string }[] = [
+		{ cwd: workspace, branch: config.base_branch },
+		...config.repos.map((r) => ({
+			cwd: resolve(workspace, r.path),
+			branch: r.base_branch,
+		})),
+	];
+
+	for (const { cwd, branch } of targets) {
+		try {
+			await execa("git", ["checkout", branch], { cwd });
+			logger.ok(`Checked out ${branch} in ${cwd}`);
+		} catch (err) {
+			logger.warn(
+				`Could not checkout ${branch} in ${cwd}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+}
+
 async function findWorktreeForBranch(repoRoot: string, branch: string): Promise<string | null> {
 	try {
 		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });

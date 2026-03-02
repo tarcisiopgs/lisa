@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { LoopOptions } from "./loop.js";
 import { WATCH_POLL_INTERVAL_MS } from "./loop.js";
 
