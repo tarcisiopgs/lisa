@@ -33,6 +33,19 @@ export function readManifestFile(filePath: string): LisaManifest | null {
 	}
 }
 
+export function extractPrUrlFromOutput(output: string): string | null {
+	const patterns = [
+		/https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/,
+		/https?:\/\/[^/]*gitlab[^/]*\/[^/].+?\/-\/merge_requests\/\d+/,
+		/https?:\/\/bitbucket\.org\/[^/]+\/[^/]+\/pull-requests\/\d+/,
+	];
+	for (const pattern of patterns) {
+		const match = output.match(pattern);
+		if (match) return match[0];
+	}
+	return null;
+}
+
 export function readPlanFile(filePath: string): ExecutionPlan | null {
 	if (!existsSync(filePath)) return null;
 	try {

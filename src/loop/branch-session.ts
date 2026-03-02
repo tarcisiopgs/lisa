@@ -9,7 +9,7 @@ import { runWithFallback } from "../providers/index.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
-import { readManifestFile } from "./manifest.js";
+import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
 
@@ -110,18 +110,25 @@ export async function runBranchSession(
 		unlinkSync(manifestPath);
 	} catch {}
 
-	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	let prUrl = manifest?.prUrl;
+	if (!prUrl) {
+		const extractedUrl = extractPrUrlFromOutput(result.output);
+		if (extractedUrl) {
+			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
+			prUrl = extractedUrl;
+		} else {
+			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
+			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		}
 	}
 
-	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.platform);
+	logger.ok(`PR created by provider: ${prUrl}`);
+	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		prUrls: [manifest.prUrl],
+		prUrls: [prUrl],
 		fallback: result,
 	};
 }

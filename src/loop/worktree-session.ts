@@ -23,7 +23,12 @@ import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { resolveBaseBranch } from "./helpers.js";
-import { cleanupManifest, readLisaManifest, readManifestFile } from "./manifest.js";
+import {
+	cleanupManifest,
+	extractPrUrlFromOutput,
+	readLisaManifest,
+	readManifestFile,
+} from "./manifest.js";
 import { runWorktreeMultiRepoSession } from "./multi-repo-session.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
@@ -184,25 +189,32 @@ export async function runNativeWorktreeSession(
 	const manifest = readLisaManifest(workspace, issue.id);
 	cleanupManifest(workspace, issue.id);
 
-	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
-		const worktreePath = manifest?.branch
-			? await findWorktreeForBranch(repoPath, manifest.branch)
-			: null;
-		if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	let prUrl = manifest?.prUrl;
+	if (!prUrl) {
+		const extractedUrl = extractPrUrlFromOutput(result.output);
+		if (extractedUrl) {
+			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
+			prUrl = extractedUrl;
+		} else {
+			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
+			const worktreePath = manifest?.branch
+				? await findWorktreeForBranch(repoPath, manifest.branch)
+				: null;
+			if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		}
 	}
 
-	const worktreePath = await findWorktreeForBranch(repoPath, manifest.branch ?? "");
-	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.platform);
+	const worktreePath = await findWorktreeForBranch(repoPath, manifest?.branch ?? "");
+	logger.ok(`PR created by provider: ${prUrl}`);
+	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		prUrls: [manifest.prUrl],
+		prUrls: [prUrl],
 		fallback: result,
 	};
 }
@@ -330,21 +342,28 @@ export async function runManualWorktreeSession(
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
 	const manifest = readManifestFile(manifestPath);
 
-	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	let prUrl = manifest?.prUrl;
+	if (!prUrl) {
+		const extractedUrl = extractPrUrlFromOutput(result.output);
+		if (extractedUrl) {
+			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
+			prUrl = extractedUrl;
+		} else {
+			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		}
 	}
 
-	logger.ok(`PR created by provider: ${manifest.prUrl}`);
-	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.platform);
+	logger.ok(`PR created by provider: ${prUrl}`);
+	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		prUrls: [manifest.prUrl],
+		prUrls: [prUrl],
 		fallback: result,
 	};
 }
