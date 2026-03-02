@@ -18,6 +18,20 @@ export interface CodeTool {
 	configFile: string;
 }
 
+export type ApiInputSource =
+	| { type: "url"; url: string }
+	| { type: "file"; path: string }
+	| { type: "unknown" };
+
+export interface ApiClientGenerator {
+	name: string;
+	configFile: string;
+	inputSource: ApiInputSource;
+	outputDir?: string;
+	command: string;
+	customScript?: string;
+}
+
 export type ProjectEnvironment = "cli" | "mobile" | "web" | "server" | "library" | "unknown";
 
 export interface ProjectContext {
@@ -26,6 +40,7 @@ export interface ProjectContext {
 	codeTools: CodeTool[];
 	projectTree: string;
 	environment: ProjectEnvironment;
+	apiClientGenerator: ApiClientGenerator | null;
 }
 
 const QUALITY_SCRIPT_NAMES = new Set([
@@ -60,6 +75,7 @@ export function analyzeProject(cwd: string): ProjectContext {
 		codeTools: detectCodeTools(cwd),
 		projectTree: generateProjectTree(cwd),
 		environment: detectEnvironment(cwd),
+		apiClientGenerator: detectApiClientGenerator(cwd),
 	};
 }
 
@@ -238,6 +254,213 @@ export function detectCodeTools(cwd: string): CodeTool[] {
 	return tools;
 }
 
+interface GeneratorDef {
+	name: string;
+	configFiles: string[];
+	configDirs?: string[];
+	packageName?: string;
+	command: string;
+}
+
+const GENERATOR_DEFS: GeneratorDef[] = [
+	{
+		name: "Orval",
+		configFiles: [
+			"orval.config.ts",
+			"orval.config.js",
+			"orval.config.mjs",
+			".orvalrc",
+			".orvalrc.json",
+			".orvalrc.js",
+			".orvalrc.ts",
+		],
+		packageName: "orval",
+		command: "npx orval",
+	},
+	{
+		name: "Kubb",
+		configFiles: ["kubb.config.ts", "kubb.config.js", "kubb.config.mjs"],
+		packageName: "@kubb/cli",
+		command: "npx kubb generate",
+	},
+	{
+		name: "hey-api",
+		configFiles: ["openapi-ts.config.ts", "openapi-ts.config.js", "openapi-ts.config.mjs"],
+		packageName: "@hey-api/openapi-ts",
+		command: "npx @hey-api/openapi-ts",
+	},
+	{
+		name: "openapi-generator",
+		configFiles: ["openapitools.json"],
+		configDirs: [".openapi-generator"],
+		packageName: "@openapitools/openapi-generator-cli",
+		command: "npx openapi-generator-cli generate",
+	},
+	{
+		name: "swagger-codegen",
+		configFiles: ["swagger-codegen-config.json"],
+		command: "npx swagger-codegen generate",
+	},
+	{
+		name: "openapi-typescript",
+		configFiles: [],
+		packageName: "openapi-typescript",
+		command: "npx openapi-typescript",
+	},
+];
+
+const GENERATION_SCRIPT_PATTERNS = ["generate", "codegen", "openapi", "orval", "kubb", "swagger"];
+
+function parseInputSource(content: string): ApiInputSource {
+	// Match input: 'value' or input: "value" or input: `value`
+	const inputMatch = content.match(/input\s*:\s*['"`]([^'"`]+)['"`]/);
+	if (inputMatch?.[1]) {
+		const value = inputMatch[1];
+		if (value.startsWith("http://") || value.startsWith("https://")) {
+			return { type: "url", url: value };
+		}
+		return { type: "file", path: value };
+	}
+
+	// Match input: { target: 'value' } pattern (Orval)
+	const targetMatch = content.match(/target\s*:\s*['"`]([^'"`]+)['"`]/);
+	if (targetMatch?.[1]) {
+		const value = targetMatch[1];
+		if (value.startsWith("http://") || value.startsWith("https://")) {
+			return { type: "url", url: value };
+		}
+		return { type: "file", path: value };
+	}
+
+	return { type: "unknown" };
+}
+
+function parseJsonInputSource(json: Record<string, unknown>): ApiInputSource {
+	// Check common JSON config patterns
+	const input =
+		(json.input as string | undefined) ??
+		(json.inputSpec as string | undefined) ??
+		(json.specPath as string | undefined);
+	if (typeof input === "string") {
+		if (input.startsWith("http://") || input.startsWith("https://")) {
+			return { type: "url", url: input };
+		}
+		return { type: "file", path: input };
+	}
+
+	// Orval .orvalrc.json: { [key]: { input: 'value' } }
+	for (const value of Object.values(json)) {
+		if (typeof value === "object" && value !== null && "input" in value) {
+			const nestedInput = (value as Record<string, unknown>).input;
+			if (typeof nestedInput === "string") {
+				if (nestedInput.startsWith("http://") || nestedInput.startsWith("https://")) {
+					return { type: "url", url: nestedInput };
+				}
+				return { type: "file", path: nestedInput };
+			}
+		}
+	}
+
+	return { type: "unknown" };
+}
+
+function parseOutputDir(content: string): string | undefined {
+	const outputMatch = content.match(/output\s*:\s*['"`]([^'"`]+)['"`]/);
+	return outputMatch?.[1];
+}
+
+function findCustomScript(
+	scripts: Record<string, string>,
+	generatorName: string,
+): string | undefined {
+	const lowerName = generatorName.toLowerCase();
+	for (const [name, command] of Object.entries(scripts)) {
+		const lowerCmd = command.toLowerCase();
+		if (
+			GENERATION_SCRIPT_PATTERNS.some((p) => name.toLowerCase().includes(p)) &&
+			(lowerCmd.includes(lowerName) ||
+				lowerCmd.includes("orval") ||
+				lowerCmd.includes("kubb") ||
+				lowerCmd.includes("openapi"))
+		) {
+			return name;
+		}
+	}
+	return undefined;
+}
+
+export function detectApiClientGenerator(cwd: string): ApiClientGenerator | null {
+	const packageJsonPath = join(cwd, "package.json");
+	let pkg: {
+		dependencies?: Record<string, string>;
+		devDependencies?: Record<string, string>;
+		scripts?: Record<string, string>;
+	} = {};
+
+	try {
+		if (existsSync(packageJsonPath)) {
+			pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+		}
+	} catch {
+		// Continue with empty pkg
+	}
+
+	const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+	for (const def of GENERATOR_DEFS) {
+		// Check config files
+		const configFile = def.configFiles.find((f) => existsSync(join(cwd, f)));
+
+		// Check config directories
+		const configDir =
+			!configFile && def.configDirs
+				? def.configDirs.find((d) => {
+						try {
+							return statSync(join(cwd, d)).isDirectory();
+						} catch {
+							return false;
+						}
+					})
+				: undefined;
+
+		// Check package.json dependency
+		const hasDep = def.packageName ? def.packageName in deps : false;
+
+		if (!configFile && !configDir && !hasDep) continue;
+
+		let inputSource: ApiInputSource = { type: "unknown" };
+		let outputDir: string | undefined;
+
+		if (configFile) {
+			try {
+				const content = readFileSync(join(cwd, configFile), "utf-8");
+				if (configFile.endsWith(".json")) {
+					const json = JSON.parse(content) as Record<string, unknown>;
+					inputSource = parseJsonInputSource(json);
+				} else {
+					inputSource = parseInputSource(content);
+					outputDir = parseOutputDir(content);
+				}
+			} catch {
+				// Graceful degradation: keep unknown input source
+			}
+		}
+
+		const customScript = pkg.scripts ? findCustomScript(pkg.scripts, def.name) : undefined;
+
+		return {
+			name: def.name,
+			configFile: configFile ?? configDir ?? def.packageName ?? def.name,
+			inputSource,
+			outputDir,
+			command: def.command,
+			customScript,
+		};
+	}
+
+	return null;
+}
+
 export function generateProjectTree(cwd: string): string {
 	const lines: string[] = [];
 
@@ -339,6 +562,21 @@ export function formatProjectContext(ctx: ProjectContext): string {
 			.map((t) => `- **${t.name}** (config: \`${t.configFile}\`)`)
 			.join("\n");
 		sections.push(`### Code Tools\n\n${toolLines}`);
+	}
+
+	if (ctx.apiClientGenerator) {
+		const gen = ctx.apiClientGenerator;
+		const inputDesc =
+			gen.inputSource.type === "url"
+				? `URL: \`${gen.inputSource.url}\``
+				: gen.inputSource.type === "file"
+					? `File: \`${gen.inputSource.path}\``
+					: "Unknown source";
+		const outputLine = gen.outputDir ? `\n- Output: \`${gen.outputDir}\`` : "";
+		const scriptLine = gen.customScript ? `\n- Custom script: \`npm run ${gen.customScript}\`` : "";
+		sections.push(
+			`### API Client Generator\n\n- **${gen.name}** (config: \`${gen.configFile}\`)\n- Input: ${inputDesc}\n- Command: \`${gen.command}\`${outputLine}${scriptLine}`,
+		);
 	}
 
 	if (ctx.projectTree) {

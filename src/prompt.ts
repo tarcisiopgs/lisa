@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
+import {
+	type ApiClientGenerator,
+	formatProjectContext,
+	type ProjectContext,
+	type ProjectEnvironment,
+} from "./context.js";
 import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
@@ -96,6 +101,32 @@ This project uses **${testRunner}** as its test runner.
 - Tests should cover the main functionality, edge cases, and error scenarios.
 - Run \`${testCmd}\` and ensure ALL tests pass before committing.
 - Do NOT skip writing tests — the PR will be blocked if tests are missing or failing.
+`;
+}
+
+function buildApiClientInstructions(projectContext?: ProjectContext): string {
+	if (!projectContext?.apiClientGenerator) return "";
+
+	const gen = projectContext.apiClientGenerator;
+	const runCmd = gen.customScript ? `npm run ${gen.customScript}` : gen.command;
+
+	let inputNote = "";
+	if (gen.inputSource.type === "url") {
+		inputNote = `- The generator reads from a live API at \`${gen.inputSource.url}\`. Ensure the API server is running before generating.\n`;
+	} else if (gen.inputSource.type === "file") {
+		inputNote = `- The generator reads from a spec file at \`${gen.inputSource.path}\`. Ensure this file is up to date.\n`;
+	}
+
+	const outputNote = gen.outputDir
+		? `- Import generated types and functions from \`${gen.outputDir}\`.\n`
+		: "";
+
+	return `
+**API Client Generation — ${gen.name}:**
+This project uses **${gen.name}** to generate type-safe API clients.
+- Do NOT write API fetch/request code manually. Use the generated clients.
+- After making API changes, run \`${runCmd}\` to regenerate clients.
+${inputNote}${outputNote}- If generated client code already exists, inspect it to understand the available functions and types before writing new code.
 `;
 }
 
@@ -203,6 +234,7 @@ function buildWorktreePrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
+	const apiClientBlock = buildApiClientInstructions(projectContext);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -238,7 +270,7 @@ ${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n$
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -298,6 +330,7 @@ function buildBranchPrompt(
 			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
+	const apiClientBlock = buildApiClientInstructions(projectContext);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -335,7 +368,7 @@ ${repoEntries}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 4. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -375,6 +408,7 @@ export function buildNativeWorktreePrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
+	const apiClientBlock = buildApiClientInstructions(projectContext);
 	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -410,7 +444,7 @@ ${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n$
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
@@ -442,7 +476,12 @@ ${readmeBlock}
 ${buildRulesSection(projectContext?.environment)}`;
 }
 
-export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?: string): string {
+export function buildPlanningPrompt(
+	issue: Issue,
+	config: LisaConfig,
+	planPath?: string,
+	repoGenerators?: Map<string, ApiClientGenerator>,
+): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
@@ -451,6 +490,25 @@ export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?:
 			return `- **${r.name}**: \`${absPath}\` (base branch: \`${r.base_branch}\`)`;
 		})
 		.join("\n");
+
+	const generatorBlock =
+		repoGenerators && repoGenerators.size > 0
+			? `\n## API Client Generators Detected\n\nThe following repositories use API client generators to produce type-safe API clients:\n\n${[
+					...repoGenerators.entries(),
+				]
+					.map(([repoName, gen]) => {
+						const inputDesc =
+							gen.inputSource.type === "url"
+								? `input from URL \`${gen.inputSource.url}\``
+								: gen.inputSource.type === "file"
+									? `input from file \`${gen.inputSource.path}\``
+									: "unknown input source";
+						return `- **${repoName}**: Uses **${gen.name}**, ${inputDesc}`;
+					})
+					.join(
+						"\n",
+					)}\n\n**Ordering rule**: Repositories that SERVE APIs (backends) must execute BEFORE repositories that CONSUME them (frontends with generators). The frontend step scope should include running the generator command after backend APIs are available.\n`
+			: "";
 
 	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
 
@@ -471,7 +529,7 @@ ${issue.description}
 ## Available Repositories
 
 ${repoBlock}
-
+${generatorBlock}
 ## Instructions
 
 1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
@@ -521,6 +579,7 @@ export function buildScopedImplementPrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
+	const apiClientBlock = buildApiClientInstructions(projectContext);
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -567,7 +626,7 @@ ${previousBlock}
    - Read all relevant files first
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria relevant to your scope
-${testBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
