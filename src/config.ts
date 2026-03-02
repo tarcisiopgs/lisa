@@ -9,7 +9,6 @@ import type {
 	ProviderName,
 	SourceConfig,
 	SourceName,
-	TelemetryConfig,
 } from "./types/index.js";
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
@@ -123,7 +122,6 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	// Strip legacy `logs` field from parsed YAML (moved to system cache)
 	const { logs: _ignoredLogs, ...parsedWithoutLogs } = parsed as Record<string, unknown>;
 
-	const rawTelemetry = (parsed.telemetry ?? {}) as Partial<TelemetryConfig>;
 	const rawLifecycle = (parsed.lifecycle ?? undefined) as Partial<LifecycleConfig> | undefined;
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
@@ -135,8 +133,6 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			...DEFAULT_OVERSEER_CONFIG,
 			...((parsed.overseer ?? {}) as Partial<OverseerConfig>),
 		},
-		telemetry:
-			Object.keys(rawTelemetry).length > 0 ? { enabled: rawTelemetry.enabled ?? false } : undefined,
 		lifecycle: rawLifecycle
 			? {
 					mode: rawLifecycle.mode,
