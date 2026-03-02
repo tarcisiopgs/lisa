@@ -86,6 +86,98 @@ Lisa follows a deterministic pipeline:
 
 ---
 
+## Writing Issues
+
+Issue quality is the single biggest factor in PR quality. Lisa validates issues before accepting them — vague tickets without clear criteria are skipped automatically (labelled `needs-spec`). A well-structured issue gives the AI agent everything it needs to deliver a clean implementation on the first try.
+
+### What Lisa looks for
+
+At minimum, the issue description must contain **acceptance criteria**. Lisa detects them by looking for:
+
+- Markdown checklists (`- [ ]`)
+- Keywords: `acceptance criteria`, `expected`, `should`, `deve`, `critérios`
+
+Issues without these are rejected. Beyond validation, the agent also consumes **relevant files**, **technical constraints**, and **stack information** when present in the description — so including them leads to better results.
+
+### Feature
+
+```markdown
+Title: Add rate limiting to /api/users endpoint
+
+Description:
+Implement rate limiting on the `/api/users` endpoint to prevent abuse.
+
+Relevant files:
+- src/routes/users.ts
+- src/middleware/auth.ts
+
+Acceptance criteria:
+- [ ] Requests exceeding 100/min per IP return HTTP 429
+- [ ] Rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining) included in all responses
+- [ ] Rate limit state stored in Redis (use existing connection from src/lib/redis.ts)
+- [ ] Existing tests still pass
+
+Stack: Express, Redis
+```
+
+### Bug fix
+
+```markdown
+Title: Login redirect loop when session expires
+
+Description:
+Users report being stuck in an infinite redirect loop after their session expires.
+The issue is in the session middleware — it redirects to /login, but /login also
+checks for a valid session and redirects back.
+
+Steps to reproduce:
+1. Log in
+2. Wait for session to expire (or manually clear the session cookie)
+3. Navigate to any protected route
+
+Relevant files:
+- src/middleware/session.ts
+- src/routes/auth.ts
+
+Expected behavior:
+- [ ] Expired sessions redirect to /login without a loop
+- [ ] /login route should not require an active session
+- [ ] After login, user is redirected back to the originally requested page
+```
+
+### Refactor
+
+```markdown
+Title: Extract email sending into a dedicated service
+
+Description:
+Email sending logic is duplicated across 3 controllers. Extract it into a
+shared service.
+
+Relevant files:
+- src/controllers/auth.ts (lines 45-67: welcome email)
+- src/controllers/orders.ts (lines 120-145: order confirmation)
+- src/controllers/support.ts (lines 30-55: ticket confirmation)
+
+Acceptance criteria:
+- [ ] New EmailService class in src/services/email.ts
+- [ ] All 3 controllers use the shared service instead of inline email logic
+- [ ] Existing tests still pass
+- [ ] No new dependencies added
+```
+
+### What makes a good issue
+
+| Do | Don't |
+|---|---|
+| List specific files the agent should read | Say "fix the bug" with no context |
+| Include acceptance criteria as a checklist | Describe the desired outcome vaguely |
+| Mention the stack or libraries to use | Assume the agent knows your preferences |
+| Describe expected behavior for bug fixes | Provide only steps to reproduce |
+| Scope to a single deliverable | Bundle multiple unrelated changes |
+
+---
+
 ## Issue Sources
 
 Lisa integrates with **7 project trackers** out of the box:
