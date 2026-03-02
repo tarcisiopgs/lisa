@@ -666,6 +666,7 @@ async function runSequentialLoop(
 	}
 
 	if (completedCount > 0) {
+		await checkoutBaseBranches(config, workspace);
 		kanbanEmitter.emit("work:complete", {
 			total: completedCount,
 			duration: Date.now() - loopStart,
@@ -871,6 +872,7 @@ async function runConcurrentLoop(
 	}
 
 	if (completedCount > 0) {
+		await checkoutBaseBranches(config, workspace);
 		kanbanEmitter.emit("work:complete", {
 			total: completedCount,
 			duration: Date.now() - loopStart,
