@@ -1,0 +1,127 @@
+import { appendFileSync, unlinkSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { analyzeProject } from "../context.js";
+import { appendPlatformAttribution } from "../git/platform.js";
+import * as logger from "../output/logger.js";
+import { startSpinner, stopSpinner } from "../output/terminal.js";
+import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
+import { runWithFallback } from "../providers/index.js";
+import { discoverInfra } from "../session/discovery.js";
+import { runLifecycle, stopResources } from "../session/lifecycle.js";
+import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
+import { readManifestFile } from "./manifest.js";
+import type { SessionResult } from "./result.js";
+import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
+
+export async function runBranchSession(
+	config: LisaConfig,
+	issue: Issue,
+	logFile: string,
+	session: number,
+	models: ModelSpec[],
+): Promise<SessionResult> {
+	const workspace = resolve(config.workspace);
+	// Manifest written within the workspace so all providers can access it (branch mode is sequential)
+	const manifestPath = join(workspace, ".lisa-manifest.json");
+
+	// Clean any stale manifest from a previous interrupted run
+	try {
+		unlinkSync(manifestPath);
+	} catch {}
+
+	// Detect test runner for prompt enhancement
+	const testRunner = detectTestRunner(workspace);
+	if (testRunner) {
+		logger.log(`Detected test runner: ${testRunner}`);
+	}
+	const pm = detectPackageManager(workspace);
+	const projectContext = analyzeProject(workspace);
+
+	// Start infrastructure resources if auto-discovered
+	const infra = discoverInfra(workspace);
+	let lifecycleEnv: Record<string, string> = {};
+	if (infra) {
+		startSpinner(`${issue.id} \u2014 starting resources...`);
+		const started = await runLifecycle(infra, config.lifecycle, workspace);
+		stopSpinner();
+		if (!started.success) {
+			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
+			return {
+				success: false,
+				providerUsed: models[0]?.provider ?? "claude",
+				prUrls: [],
+				fallback: {
+					success: false,
+					output: "",
+					duration: 0,
+					providerUsed: models[0]?.provider ?? "claude",
+					attempts: [],
+				},
+			};
+		}
+		lifecycleEnv = started.env;
+	}
+
+	const prompt = buildImplementPrompt(
+		issue,
+		config,
+		testRunner,
+		pm,
+		projectContext,
+		workspace,
+		manifestPath,
+	);
+
+	logger.initLogFile(logFile);
+	startSpinner(`${issue.id} \u2014 implementing...`);
+	logger.log(`Implementing... (log: ${logFile})`);
+
+	const result = await runWithFallback(models, prompt, {
+		logFile,
+		cwd: workspace,
+		guardrailsDir: workspace,
+		issueId: issue.id,
+		overseer: config.overseer,
+		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
+		onProcess: (pid) => {
+			activeProviderPids.set(issue.id, pid);
+		},
+		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+	});
+	stopSpinner();
+	if (infra) await stopResources();
+
+	try {
+		appendFileSync(
+			logFile,
+			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
+		);
+	} catch {
+		// Ignore log write errors
+	}
+
+	if (!result.success) {
+		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	const manifest = readManifestFile(manifestPath);
+	try {
+		unlinkSync(manifestPath);
+	} catch {}
+
+	if (!manifest?.prUrl) {
+		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	logger.ok(`PR created by provider: ${manifest.prUrl}`);
+	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.platform);
+	logger.ok(`Session ${session} complete for ${issue.id}`);
+	return {
+		success: true,
+		providerUsed: result.providerUsed,
+		prUrls: [manifest.prUrl],
+		fallback: result,
+	};
+}

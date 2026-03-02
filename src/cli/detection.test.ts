@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPlatformFromRemoteUrl } from "./cli.js";
+import { detectPlatformFromRemoteUrl } from "./detection.js";
 
 describe("detectPlatformFromRemoteUrl", () => {
 	it("detects GitHub SSH remote", () => {
