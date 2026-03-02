@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getPrCachePath } from "../paths.js";
-import { clearPrUrl, loadPrUrl, storePrUrl } from "./pr-cache.js";
+import { clearPrUrl, loadPrUrls, storePrUrls } from "./pr-cache.js";
 
 let tmpDir: string;
 
@@ -15,75 +15,98 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("storePrUrl", () => {
-	it("writes the PR URL to the cache file", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/42");
+describe("storePrUrls", () => {
+	it("writes the PR URLs array to the cache file", () => {
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/42"]);
 
 		const cachePath = getPrCachePath(tmpDir);
 		expect(existsSync(cachePath)).toBe(true);
-		const content = JSON.parse(readFileSync(cachePath, "utf-8")) as Record<string, string>;
-		expect(content["INT-100"]).toBe("https://github.com/owner/repo/pull/42");
+		const content = JSON.parse(readFileSync(cachePath, "utf-8"));
+		expect(content["INT-100"]).toEqual(["https://github.com/owner/repo/pull/42"]);
 	});
 
 	it("can store multiple issue-to-PR mappings", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/1");
-		storePrUrl(tmpDir, "INT-200", "https://github.com/owner/repo/pull/2");
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/1"]);
+		storePrUrls(tmpDir, "INT-200", ["https://github.com/owner/repo/pull/2"]);
 
-		const content = JSON.parse(readFileSync(getPrCachePath(tmpDir), "utf-8")) as Record<
-			string,
-			string
-		>;
-		expect(content["INT-100"]).toBe("https://github.com/owner/repo/pull/1");
-		expect(content["INT-200"]).toBe("https://github.com/owner/repo/pull/2");
+		const content = JSON.parse(readFileSync(getPrCachePath(tmpDir), "utf-8"));
+		expect(content["INT-100"]).toEqual(["https://github.com/owner/repo/pull/1"]);
+		expect(content["INT-200"]).toEqual(["https://github.com/owner/repo/pull/2"]);
 	});
 
-	it("overwrites an existing PR URL for the same issue", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/1");
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/99");
+	it("stores multiple PR URLs for a single issue", () => {
+		storePrUrls(tmpDir, "INT-100", [
+			"https://github.com/owner/repo-a/pull/1",
+			"https://github.com/owner/repo-b/pull/2",
+		]);
 
-		const content = JSON.parse(readFileSync(getPrCachePath(tmpDir), "utf-8")) as Record<
-			string,
-			string
-		>;
-		expect(content["INT-100"]).toBe("https://github.com/owner/repo/pull/99");
+		const content = JSON.parse(readFileSync(getPrCachePath(tmpDir), "utf-8"));
+		expect(content["INT-100"]).toEqual([
+			"https://github.com/owner/repo-a/pull/1",
+			"https://github.com/owner/repo-b/pull/2",
+		]);
+	});
+
+	it("overwrites existing PR URLs for the same issue", () => {
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/1"]);
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/99"]);
+
+		const content = JSON.parse(readFileSync(getPrCachePath(tmpDir), "utf-8"));
+		expect(content["INT-100"]).toEqual(["https://github.com/owner/repo/pull/99"]);
 	});
 
 	it("creates the cache directory if it does not exist", () => {
-		// The cache dir is derived from cwd — verify it handles a fresh tmpDir with no cache dir
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/1");
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/1"]);
 		expect(existsSync(getPrCachePath(tmpDir))).toBe(true);
 	});
 });
 
-describe("loadPrUrl", () => {
-	it("returns the stored PR URL for a known issue", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/42");
-		expect(loadPrUrl(tmpDir, "INT-100")).toBe("https://github.com/owner/repo/pull/42");
+describe("loadPrUrls", () => {
+	it("returns the stored PR URLs for a known issue", () => {
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/42"]);
+		expect(loadPrUrls(tmpDir, "INT-100")).toEqual(["https://github.com/owner/repo/pull/42"]);
 	});
 
-	it("returns null for an unknown issue", () => {
-		expect(loadPrUrl(tmpDir, "INT-999")).toBeNull();
+	it("returns empty array for an unknown issue", () => {
+		expect(loadPrUrls(tmpDir, "INT-999")).toEqual([]);
 	});
 
-	it("returns null when cache file does not exist", () => {
-		expect(loadPrUrl(tmpDir, "INT-100")).toBeNull();
+	it("returns empty array when cache file does not exist", () => {
+		expect(loadPrUrls(tmpDir, "INT-100")).toEqual([]);
+	});
+
+	it("normalizes legacy single-string entries to an array", () => {
+		// Simulate a legacy cache entry written as a single string
+		const cachePath = getPrCachePath(tmpDir);
+		const dir = join(cachePath, "..");
+		if (!existsSync(dir)) {
+			const { mkdirSync } = require("node:fs");
+			mkdirSync(dir, { recursive: true });
+		}
+		writeFileSync(
+			cachePath,
+			JSON.stringify({ "INT-100": "https://github.com/owner/repo/pull/42" }),
+			"utf-8",
+		);
+
+		expect(loadPrUrls(tmpDir, "INT-100")).toEqual(["https://github.com/owner/repo/pull/42"]);
 	});
 });
 
 describe("clearPrUrl", () => {
 	it("removes the entry for the specified issue", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/42");
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/42"]);
 		clearPrUrl(tmpDir, "INT-100");
-		expect(loadPrUrl(tmpDir, "INT-100")).toBeNull();
+		expect(loadPrUrls(tmpDir, "INT-100")).toEqual([]);
 	});
 
 	it("does not affect other entries when clearing one", () => {
-		storePrUrl(tmpDir, "INT-100", "https://github.com/owner/repo/pull/1");
-		storePrUrl(tmpDir, "INT-200", "https://github.com/owner/repo/pull/2");
+		storePrUrls(tmpDir, "INT-100", ["https://github.com/owner/repo/pull/1"]);
+		storePrUrls(tmpDir, "INT-200", ["https://github.com/owner/repo/pull/2"]);
 		clearPrUrl(tmpDir, "INT-100");
 
-		expect(loadPrUrl(tmpDir, "INT-100")).toBeNull();
-		expect(loadPrUrl(tmpDir, "INT-200")).toBe("https://github.com/owner/repo/pull/2");
+		expect(loadPrUrls(tmpDir, "INT-100")).toEqual([]);
+		expect(loadPrUrls(tmpDir, "INT-200")).toEqual(["https://github.com/owner/repo/pull/2"]);
 	});
 
 	it("does not throw when clearing a non-existent entry", () => {

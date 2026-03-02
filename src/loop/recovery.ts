@@ -5,34 +5,33 @@ import { clearPrUrl } from "../session/pr-cache.js";
 import type { LisaConfig, Source } from "../types/index.js";
 
 /**
- * Checks if a previously-created PR for this issue was closed without merge.
+ * Checks if previously-created PRs for this issue were closed without merge.
  * If so, fetches review comments and injects them into guardrails for future runs.
  */
 export async function injectRejectedPrFeedback(
 	workspace: string,
 	issueId: string,
-	prUrl: string,
+	prUrls: string[],
 ): Promise<void> {
-	try {
-		const feedback = await fetchPrFeedback(prUrl);
-		if (feedback.state !== "closed") return;
+	for (const prUrl of prUrls) {
+		try {
+			const feedback = await fetchPrFeedback(prUrl);
+			if (feedback.state !== "closed") continue;
 
-		const hasAnyFeedback = feedback.reviews.length > 0 || feedback.comments.length > 0;
-		if (!hasAnyFeedback) {
-			clearPrUrl(workspace, issueId);
-			return;
+			const hasAnyFeedback = feedback.reviews.length > 0 || feedback.comments.length > 0;
+			if (!hasAnyFeedback) continue;
+
+			const date = new Date().toISOString().slice(0, 10);
+			const entryText = formatPrFeedbackEntry(feedback, issueId, date);
+			appendRawEntry(workspace, entryText);
+			logger.ok(`Injected PR review feedback for ${issueId} into guardrails`);
+		} catch (err) {
+			logger.warn(
+				`Could not check PR feedback for ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
-
-		const date = new Date().toISOString().slice(0, 10);
-		const entryText = formatPrFeedbackEntry(feedback, issueId, date);
-		appendRawEntry(workspace, entryText);
-		clearPrUrl(workspace, issueId);
-		logger.ok(`Injected PR review feedback for ${issueId} into guardrails`);
-	} catch (err) {
-		logger.warn(
-			`Could not check PR feedback for ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
-		);
 	}
+	clearPrUrl(workspace, issueId);
 }
 
 export async function recoverOrphanIssues(source: Source, config: LisaConfig): Promise<void> {

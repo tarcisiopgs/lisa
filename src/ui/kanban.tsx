@@ -172,7 +172,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 			? (cards.find((c) => c.id === selectedCardId) ?? null)
 			: null;
 
-	const hasPrUrl = selectedCard?.prUrl !== undefined && selectedCard.prUrl.length > 0;
+	const hasPrUrl = (selectedCard?.prUrls.length ?? 0) > 0;
 
 	const providerOptions = config.provider_options?.[config.provider];
 	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);

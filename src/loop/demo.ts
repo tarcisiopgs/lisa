@@ -42,7 +42,7 @@ export async function runDemoLoop(): Promise<void> {
 		kanbanEmitter.emit("issue:output", issue1.id, line);
 		await sleep(400);
 	}
-	kanbanEmitter.emit("issue:done", issue1.id, "https://github.com/acme/webapp/pull/89");
+	kanbanEmitter.emit("issue:done", issue1.id, ["https://github.com/acme/webapp/pull/89"]);
 	await sleep(800);
 
 	// Issue 2: implement and complete
@@ -59,7 +59,7 @@ export async function runDemoLoop(): Promise<void> {
 		kanbanEmitter.emit("issue:output", issue2.id, line);
 		await sleep(400);
 	}
-	kanbanEmitter.emit("issue:done", issue2.id, "https://github.com/acme/webapp/pull/90");
+	kanbanEmitter.emit("issue:done", issue2.id, ["https://github.com/acme/webapp/pull/90"]);
 	await sleep(800);
 
 	kanbanEmitter.emit("work:complete", { total: 2, duration: 14000 });
