@@ -6,7 +6,7 @@ import * as logger from "../output/logger.js";
 import { notify, resetTitle, setTitle, startSpinner, stopSpinner } from "../output/terminal.js";
 import { getLogsDir } from "../paths.js";
 import { isCompleteProviderExhaustion } from "../providers/index.js";
-import { loadPrUrl } from "../session/pr-cache.js";
+import { loadPrUrls } from "../session/pr-cache.js";
 import type { LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { validateIssueSpec } from "../validation.js";
@@ -131,9 +131,9 @@ export async function runSequentialLoop(
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
 		// Check if a previous PR for this issue was closed without merge — inject feedback
-		const cachedPrUrl = loadPrUrl(workspace, issue.id);
-		if (cachedPrUrl) {
-			await injectRejectedPrFeedback(workspace, issue.id, cachedPrUrl);
+		const cachedPrUrls = loadPrUrls(workspace, issue.id);
+		if (cachedPrUrls.length > 0) {
+			await injectRejectedPrFeedback(workspace, issue.id, cachedPrUrls);
 		}
 
 		// Validate minimum issue spec before accepting

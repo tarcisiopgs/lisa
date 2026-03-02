@@ -118,27 +118,40 @@ describe("statusLabel", () => {
 	});
 });
 
-describe("KanbanCard prUrl property", () => {
-	it("should have prUrl defined in KanbanCard type", () => {
+describe("KanbanCard prUrls property", () => {
+	it("should have prUrls defined in KanbanCard type", () => {
 		const card: KanbanCard = {
 			id: "TEST-1",
 			title: "Test Issue",
 			column: "done",
-			prUrl: "https://github.com/org/repo/pull/123",
+			prUrls: ["https://github.com/org/repo/pull/123"],
 			outputLog: "",
 		};
 
-		expect(card.prUrl).toBe("https://github.com/org/repo/pull/123");
+		expect(card.prUrls).toEqual(["https://github.com/org/repo/pull/123"]);
 	});
 
-	it("should allow optional prUrl in KanbanCard", () => {
+	it("should support multiple PR URLs", () => {
+		const card: KanbanCard = {
+			id: "TEST-1",
+			title: "Test Issue",
+			column: "done",
+			prUrls: ["https://github.com/org/repo-a/pull/1", "https://github.com/org/repo-b/pull/2"],
+			outputLog: "",
+		};
+
+		expect(card.prUrls).toHaveLength(2);
+	});
+
+	it("should default to empty array for cards without PRs", () => {
 		const card: KanbanCard = {
 			id: "TEST-1",
 			title: "Test Issue",
 			column: "in_progress",
+			prUrls: [],
 			outputLog: "",
 		};
 
-		expect(card.prUrl).toBeUndefined();
+		expect(card.prUrls).toEqual([]);
 	});
 });

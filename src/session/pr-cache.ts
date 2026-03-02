@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { getPrCachePath } from "../paths.js";
 
-type PrCache = Record<string, string>; // issueId → prUrl
+type PrCache = Record<string, string | string[]>; // issueId → prUrl(s)
 
 function readCache(cwd: string): PrCache {
 	const path = getPrCachePath(cwd);
@@ -24,19 +24,22 @@ function writeCache(cwd: string, cache: PrCache): void {
 }
 
 /**
- * Stores the PR URL associated with an issue for future feedback injection.
+ * Stores PR URLs associated with an issue for future feedback injection.
  */
-export function storePrUrl(cwd: string, issueId: string, prUrl: string): void {
+export function storePrUrls(cwd: string, issueId: string, prUrls: string[]): void {
 	const cache = readCache(cwd);
-	cache[issueId] = prUrl;
+	cache[issueId] = prUrls;
 	writeCache(cwd, cache);
 }
 
 /**
- * Retrieves the stored PR URL for an issue, or null if not found.
+ * Retrieves the stored PR URLs for an issue.
+ * Normalizes legacy single-string entries to an array.
  */
-export function loadPrUrl(cwd: string, issueId: string): string | null {
-	return readCache(cwd)[issueId] ?? null;
+export function loadPrUrls(cwd: string, issueId: string): string[] {
+	const entry = readCache(cwd)[issueId];
+	if (!entry) return [];
+	return Array.isArray(entry) ? entry : [entry];
 }
 
 /**

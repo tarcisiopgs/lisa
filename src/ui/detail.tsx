@@ -97,8 +97,10 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 			onBack();
 			return;
 		}
-		if (_input === "o" && card.prUrl) {
-			openUrl(card.prUrl);
+		if (_input === "o" && card.prUrls.length > 0) {
+			for (const url of card.prUrls) {
+				openUrl(url);
+			}
 			return;
 		}
 		if (key.upArrow) {
@@ -207,15 +209,16 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				</Text>
 			</Box>
 
-			{/* PR URL if available */}
-			{card.prUrl !== undefined && card.prUrl.length > 0 && (
-				<Box marginTop={0}>
-					<Text color="yellow" dimColor>
-						{"PR: "}
-					</Text>
-					<Text color="yellow">{hyperlink(card.prUrl, card.prUrl)}</Text>
-				</Box>
-			)}
+			{/* PR URL(s) if available */}
+			{card.prUrls.length > 0 &&
+				card.prUrls.map((url, i) => (
+					<Box marginTop={0} key={url}>
+						<Text color="yellow" dimColor>
+							{card.prUrls.length === 1 ? "PR: " : `PR ${i + 1}: `}
+						</Text>
+						<Text color="yellow">{hyperlink(url, url)}</Text>
+					</Box>
+				))}
 
 			{/* Decorative separator */}
 			<Box>

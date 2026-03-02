@@ -164,7 +164,7 @@ export function Sidebar({
 			) : (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[↑↓] scroll"}</Text>
-					{hasPrUrl && <Text dimColor>{"[o]  open PR"}</Text>}
+					{hasPrUrl && <Text dimColor>{"[o]  open PR(s)"}</Text>}
 					<Text dimColor>{"[Esc] board"}</Text>
 				</Box>
 			)}

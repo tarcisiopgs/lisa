@@ -11,7 +11,7 @@ export interface KanbanCard {
 	column: "backlog" | "in_progress" | "done";
 	startedAt?: number;
 	finishedAt?: number;
-	prUrl?: string;
+	prUrls: string[];
 	hasError?: boolean;
 	outputLog: string;
 	skipped?: boolean;
@@ -34,21 +34,21 @@ async function checkPrMergedByUrl(prUrl: string): Promise<boolean> {
 	return false;
 }
 
-function stopMergePolling(issueId: string): void {
-	const interval = activePolls.get(issueId);
+function stopMergePolling(key: string): void {
+	const interval = activePolls.get(key);
 	if (interval !== undefined) {
 		clearInterval(interval);
-		activePolls.delete(issueId);
+		activePolls.delete(key);
 	}
 }
 
 function startMergePolling(issueId: string, prUrl: string): void {
-	if (activePolls.has(issueId)) return;
+	if (activePolls.has(prUrl)) return;
 	const intervalId = setInterval(() => {
 		checkPrMergedByUrl(prUrl)
 			.then((merged) => {
 				if (merged) {
-					stopMergePolling(issueId);
+					stopMergePolling(prUrl);
 					kanbanEmitter.emit("issue:merged", issueId);
 				}
 			})
@@ -56,7 +56,7 @@ function startMergePolling(issueId: string, prUrl: string): void {
 				// ignore errors, keep polling
 			});
 	}, MERGE_POLL_INTERVAL_MS);
-	activePolls.set(issueId, intervalId);
+	activePolls.set(prUrl, intervalId);
 }
 
 export interface KanbanStateData {
@@ -102,7 +102,10 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		const onQueued = (issue: Issue) => {
 			setCards((prev) => {
 				if (prev.some((c) => c.id === issue.id)) return prev;
-				return [...prev, { id: issue.id, title: issue.title, column: "backlog", outputLog: "" }];
+				return [
+					...prev,
+					{ id: issue.id, title: issue.title, column: "backlog", prUrls: [], outputLog: "" },
+				];
 			});
 		};
 
@@ -117,6 +120,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 								hasError: false,
 								skipped: false,
 								killed: false,
+								prUrls: [],
 								pausedAt: undefined,
 								pauseAccumulated: 0,
 							}
@@ -125,14 +129,14 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			);
 		};
 
-		const onDone = (issueId: string, prUrl: string) => {
+		const onDone = (issueId: string, prUrls: string[]) => {
 			setCards((prev) =>
 				prev.map((c) =>
-					c.id === issueId ? { ...c, column: "done" as const, prUrl, finishedAt: Date.now() } : c,
+					c.id === issueId ? { ...c, column: "done" as const, prUrls, finishedAt: Date.now() } : c,
 				),
 			);
-			if (prUrl) {
-				startMergePolling(issueId, prUrl);
+			for (const url of prUrls) {
+				startMergePolling(issueId, url);
 			}
 		};
 

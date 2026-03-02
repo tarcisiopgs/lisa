@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { getRemoveLabel } from "../config.js";
 import * as logger from "../output/logger.js";
 import { stopSpinner } from "../output/terminal.js";
-import { storePrUrl } from "../session/pr-cache.js";
+import { storePrUrls } from "../session/pr-cache.js";
 import type { FallbackResult, Issue, LisaConfig, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import type { LoopOptions } from "./models.js";
@@ -105,17 +105,15 @@ export async function handleSessionResult(
 		} catch (err) {
 			logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
 		}
-		try {
-			storePrUrl(workspace, issue.id, prUrl);
-		} catch {
-			// Non-fatal — PR cache is best-effort
-		}
+	}
+	try {
+		storePrUrls(workspace, issue.id, sessionResult.prUrls);
+	} catch {
+		// Non-fatal — PR cache is best-effort
 	}
 
 	// Move kanban card as soon as the PR exists — status update is best-effort bookkeeping
-	for (const prUrl of sessionResult.prUrls) {
-		kanbanEmitter.emit("issue:done", issue.id, prUrl);
-	}
+	kanbanEmitter.emit("issue:done", issue.id, sessionResult.prUrls);
 
 	// Update issue status + remove label
 	try {

@@ -24,7 +24,7 @@ describe("registerBellListeners", () => {
 
 	it("calls notify(1) when issue:done fires and bell is enabled", () => {
 		const cleanup = registerBellListeners(true);
-		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
 		expect(notifyMock).toHaveBeenCalledTimes(1);
 		expect(notifyMock).toHaveBeenCalledWith(1);
 		cleanup();
@@ -48,7 +48,7 @@ describe("registerBellListeners", () => {
 
 	it("does not call notify when bell is disabled", () => {
 		const cleanup = registerBellListeners(false);
-		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
 		kanbanEmitter.emit("issue:reverted", "INT-123");
 		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
 		expect(notifyMock).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe("registerBellListeners", () => {
 	it("cleanup removes all bell listeners", () => {
 		const cleanup = registerBellListeners(true);
 		cleanup();
-		kanbanEmitter.emit("issue:done", "INT-123", "http://pr.url");
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
 		kanbanEmitter.emit("issue:reverted", "INT-123");
 		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
 		expect(notifyMock).not.toHaveBeenCalled();
