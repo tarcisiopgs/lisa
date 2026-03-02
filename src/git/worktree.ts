@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
 
@@ -72,6 +72,18 @@ export async function createWorktree(
 
 	// Remove any orphaned worktree/branch before creating a fresh one
 	await cleanupOrphanedWorktree(repoRoot, branchName);
+
+	// Ensure worktree directory doesn't exist on disk (may be left from a crashed run)
+	if (existsSync(worktreePath)) {
+		await execa("git", ["worktree", "remove", worktreePath, "--force"], {
+			cwd: repoRoot,
+			reject: false,
+		});
+		await execa("git", ["worktree", "prune"], { cwd: repoRoot, reject: false });
+		if (existsSync(worktreePath)) {
+			rmSync(worktreePath, { recursive: true, force: true });
+		}
+	}
 
 	await execa("git", ["fetch", "origin", baseBranch], { cwd: repoRoot });
 	await execa("git", ["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`], {

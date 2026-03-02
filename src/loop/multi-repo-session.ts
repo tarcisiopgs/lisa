@@ -17,7 +17,7 @@ import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { resolveBaseBranch } from "./helpers.js";
-import { readManifestFile, readPlanFile } from "./manifest.js";
+import { extractPrUrlFromOutput, readManifestFile, readPlanFile } from "./manifest.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
 import { cleanupWorktree } from "./worktree-session.js";
@@ -274,21 +274,30 @@ export async function runMultiRepoStep(
 	// Read manifest from worktree (accessible to all providers; worktree cleanup removes it)
 	const manifest = readManifestFile(manifestPath);
 
-	if (!manifest?.prUrl) {
-		logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
-		await cleanupWorktree(repoPath, worktreePath);
-		return { ...failResult(result.providerUsed, result), branch: branchName };
+	let prUrl = manifest?.prUrl;
+	if (!prUrl) {
+		const extractedUrl = extractPrUrlFromOutput(result.output);
+		if (extractedUrl) {
+			logger.warn(
+				`Manifest missing prUrl for step ${stepNum}, extracted from output: ${extractedUrl}`,
+			);
+			prUrl = extractedUrl;
+		} else {
+			logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
+			await cleanupWorktree(repoPath, worktreePath);
+			return { ...failResult(result.providerUsed, result), branch: branchName };
+		}
 	}
 
 	await cleanupWorktree(repoPath, worktreePath);
-	await appendPlatformAttribution(manifest.prUrl, result.providerUsed, config.platform);
+	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 
-	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${manifest.prUrl}`);
+	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${prUrl}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		branch: manifest.branch ?? branchName,
-		prUrl: manifest.prUrl,
+		branch: manifest?.branch ?? branchName,
+		prUrl,
 		fallback: result,
 	};
 }
