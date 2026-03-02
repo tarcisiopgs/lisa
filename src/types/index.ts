@@ -58,10 +58,6 @@ export interface LifecycleConfig {
 	timeout?: number; // seconds per resource, default: 30
 }
 
-export interface TelemetryConfig {
-	enabled: boolean;
-}
-
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
@@ -77,7 +73,6 @@ export interface LisaConfig {
 	overseer?: OverseerConfig;
 	validation?: ValidationConfig;
 	lifecycle?: LifecycleConfig;
-	telemetry?: TelemetryConfig;
 }
 
 export interface DependencyContext {

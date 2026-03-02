@@ -22,7 +22,6 @@ import { banner, log, setOutputMode } from "./output/logger.js";
 import { getLogsDir } from "./paths.js";
 import { getAllProvidersWithAvailability } from "./providers/index.js";
 import { createSource } from "./sources/index.js";
-import { isTelemetryEnabled } from "./telemetry.js";
 import { getTemplateById, getTemplates, templateToPartialConfig } from "./templates.js";
 import type {
 	Issue,
@@ -930,21 +929,6 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		clack.log.info("Added .worktrees/ to .gitignore");
 	}
 
-	// --- Telemetry opt-in ---
-	// Skip the prompt if already opted in via env var; respect LISA_NO_TELEMETRY
-	let telemetryEnabled: boolean;
-	if (isTelemetryEnabled()) {
-		telemetryEnabled = true;
-	} else {
-		const telemetryAnswer = await clack.confirm({
-			message:
-				"Allow Lisa to send anonymous crash reports? (stack traces, versions — no user data)",
-			initialValue: existing?.telemetry?.enabled ?? false,
-		});
-		if (clack.isCancel(telemetryAnswer)) return process.exit(0);
-		telemetryEnabled = telemetryAnswer as boolean;
-	}
-
 	const cfg: LisaConfig = {
 		provider: providerName,
 		provider_options: {
@@ -967,7 +951,6 @@ async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		base_branch: baseBranch,
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
-		telemetry: { enabled: telemetryEnabled },
 	};
 
 	saveConfig(cfg);

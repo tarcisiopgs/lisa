@@ -150,6 +150,7 @@ export function Card({
 			flexDirection="row"
 			paddingX={0}
 			marginBottom={0}
+			width="100%"
 			borderStyle="single"
 			borderColor={
 				card.hasError || card.killed
@@ -197,10 +198,7 @@ export function Card({
 
 				{/* Status row — always rendered exactly once for stable CARD_HEIGHT */}
 				{card.column === "in_progress" ? (
-					// Spinner appears immediately; elapsed time only once startedAt is available
-					// minWidth guarantees the row stays as wide as other rows (cardWidth + 2)
-					// even before startedAt is set, preventing the card border from shrinking.
-					<Box flexDirection="row" marginTop={0} minWidth={cardWidth + 2}>
+					<Box flexDirection="row" marginTop={0}>
 						{isPausedInProgress ? (
 							<Text color="gray">{"⏸"}</Text>
 						) : (
