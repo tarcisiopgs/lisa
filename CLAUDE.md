@@ -26,9 +26,15 @@ pnpm run test:watch    # vitest (watch mode)
 pnpm run test:coverage # vitest run --coverage
 pnpm run ci            # lint + typecheck + test in parallel (concurrently)
 npm link               # Install `lisa` CLI globally
+
+# Run a single test file
+pnpm vitest run src/config.test.ts
+
+# Run tests matching a name pattern
+pnpm vitest run -t "should load config"
 ```
 
-Package manager is **pnpm** (v10.29.3). Use `pnpm` for all install/run commands.
+Package manager is **pnpm** (v10.30.3). Use `pnpm` for all install/run commands.
 
 After source changes: always `pnpm run build && npm link` to update the global CLI.
 
@@ -41,37 +47,81 @@ Biome enforces: tabs, double quotes, semicolons, 100-char line width, recommende
 ## Architecture
 
 ```
-assets/
-└── lisa.png          # Project logo
 src/
-├── index.ts          # Entry point → delegates to cli.ts
-├── cli.ts            # citty commands: run, init, config, status + interactive wizard
-├── loop.ts           # Main agent loop orchestration + session management + concurrent pool
-├── config.ts         # YAML config loading/saving with backward compat
-├── prompt.ts         # Prompt templates + detectTestRunner() + detectPackageManager()
+├── index.ts              # Entry point → delegates to cli/
+├── config.ts             # YAML config loading/saving with backward compat
+├── context.ts            # API client detection + agent prompt enrichment
+├── prompt.ts             # Prompt templates + detectTestRunner() + detectPackageManager()
+├── paths.ts              # Shared path resolution utilities
+├── templates.ts          # Init template definitions (source+provider combos)
+├── validation.ts         # Issue spec validation (acceptance criteria check)
 ├── types/
-│   └── index.ts      # All TypeScript interfaces and type aliases
-├── git/              # Git and GitHub utilities
-│   ├── github.ts     # PR creation (gh CLI or GitHub API)
-│   ├── worktree.ts   # Git worktree management + feature branch detection
-│   └── pr-body.ts    # PR body sanitization (strip HTML, normalize bullets)
-├── session/          # Session management
-│   ├── lifecycle.ts  # Port utilities (isPortInUse, waitForPort)
-│   ├── overseer.ts   # Stuck-provider detection via periodic git status checks
-│   └── guardrails.ts # Failed-session log: reads/writes .lisa/guardrails.md
-├── output/           # Logging and terminal output
-│   ├── logger.ts     # Logging (console + file, supports default/tui modes)
-│   └── terminal.ts   # Terminal title (OSC), spinner, bell notification
-├── providers/        # AI agent implementations (spawn child processes)
-│   ├── index.ts      # Provider factory, runWithFallback(), fallback eligibility
-│   ├── claude.ts     # Claude Code: claude -p --dangerously-skip-permissions [--worktree]
-│   ├── gemini.ts     # Gemini CLI: gemini --yolo -p
-│   ├── opencode.ts   # OpenCode: opencode run
-│   ├── copilot.ts    # GitHub Copilot CLI: copilot --allow-all -p
-│   ├── cursor.ts     # Cursor Agent: agent -p --output-format text --force
-│   ├── goose.ts      # Goose (Block): goose run --text
-│   └── aider.ts      # Aider: aider --message ... --yes-always [--model MODEL]
-└── sources/          # Issue tracker integrations
+│   └── index.ts          # All TypeScript interfaces and type aliases
+├── cli/                  # CLI layer (citty commands + interactive wizard)
+│   ├── index.ts          # Main CLI definition, top-level command registration
+│   ├── wizard.ts         # Interactive init/config wizard (clack prompts)
+│   ├── detection.ts      # Provider/model auto-detection for init
+│   └── commands/         # One file per CLI subcommand
+│       ├── run.ts        # `lisa run` — flags, validation, loop entry
+│       ├── init.ts       # `lisa init` — template selection + guided setup
+│       ├── config.ts     # `lisa config` — show/set/edit config
+│       ├── status.ts     # `lisa status` — session stats
+│       ├── issue.ts      # `lisa issue get/done` — worktree helper commands
+│       └── feedback.ts   # `lisa feedback` — inject PR review into guardrails
+├── loop/                 # Main agent loop orchestration
+│   ├── index.ts          # Loop entry point, orchestration
+│   ├── sequential.ts     # Sequential issue processing
+│   ├── concurrent.ts     # Parallel issue processing (slot pool)
+│   ├── worktree-session.ts   # Worktree workflow (single-repo)
+│   ├── branch-session.ts     # Branch workflow
+│   ├── multi-repo-session.ts # Multi-repo two-phase workflow
+│   ├── models.ts         # resolveModels() — model spec resolution
+│   ├── manifest.ts       # .lisa-manifest.json read/write
+│   ├── recovery.ts       # Push recovery (re-invoke agent on hook failure)
+│   ├── result.ts         # Session result handling
+│   ├── helpers.ts        # Shared loop utilities
+│   ├── signals.ts        # SIGINT/SIGTERM graceful shutdown
+│   ├── state.ts          # Loop state management
+│   └── demo.ts           # Dry-run / demo mode
+├── git/                  # Git and PR platform utilities
+│   ├── github.ts         # GitHub PR creation (gh CLI)
+│   ├── bitbucket.ts      # Bitbucket PR creation (API)
+│   ├── gitlab.ts         # GitLab MR creation (API)
+│   ├── platform.ts       # PR platform factory (dispatches to github/gitlab/bitbucket)
+│   ├── worktree.ts       # Git worktree management + feature branch detection
+│   ├── dependency.ts     # Issue dependency/blocker tracking across repos
+│   ├── pr-body.ts        # PR body sanitization (strip HTML, normalize bullets)
+│   └── pr-feedback.ts    # Extract PR review comments for guardrail injection
+├── session/              # Session management
+│   ├── lifecycle.ts      # Port utilities (isPortInUse, waitForPort)
+│   ├── overseer.ts       # Stuck-provider detection via periodic git status checks
+│   ├── guardrails.ts     # Failed-session log: reads/writes .lisa/guardrails.md
+│   ├── discovery.ts      # Docker Compose auto-discovery + infrastructure setup
+│   └── pr-cache.ts       # PR URL caching across multi-repo sessions
+├── output/               # Logging and terminal output
+│   ├── logger.ts         # Logging (console + file, supports default/tui modes)
+│   └── terminal.ts       # Terminal title (OSC), spinner, bell notification
+├── ui/                   # TUI (ink/React) components for Kanban board
+│   ├── board.tsx         # Top-level board layout
+│   ├── kanban.tsx        # Kanban board container
+│   ├── column.tsx        # Kanban column (Backlog, In Progress, In Review)
+│   ├── card.tsx          # Issue card component
+│   ├── detail.tsx        # Issue detail view (streaming provider output)
+│   ├── sidebar.tsx       # Contextual keyboard shortcut legend
+│   ├── state.ts          # TUI state management
+│   └── use-terminal-size.ts # Terminal dimensions hook
+├── providers/            # AI agent implementations (spawn child processes)
+│   ├── index.ts          # Provider factory, runWithFallback(), fallback eligibility
+│   ├── claude.ts         # Claude Code: claude -p --dangerously-skip-permissions [--worktree]
+│   ├── gemini.ts         # Gemini CLI: gemini --yolo -p
+│   ├── opencode.ts       # OpenCode: opencode run
+│   ├── copilot.ts        # GitHub Copilot CLI: copilot --allow-all -p
+│   ├── cursor.ts         # Cursor Agent: agent -p --output-format text --force
+│   ├── goose.ts          # Goose (Block): goose run --text
+│   ├── aider.ts          # Aider: aider --message ... --yes-always [--model MODEL]
+│   ├── codex.ts          # OpenAI Codex: codex --approval-mode full-auto
+│   └── pty.ts            # PTY-based provider execution (alternative to sh -c)
+└── sources/              # Issue tracker integrations
     ├── index.ts           # Source factory
     ├── linear.ts          # Linear GraphQL API
     ├── trello.ts          # Trello REST API
@@ -84,7 +134,7 @@ src/
 
 ## Key Flows
 
-### Main loop (`loop.ts`)
+### Main loop (`loop/`)
 
 Fetches issues from source, runs provider with fallback chain, creates PRs, updates issue status. On startup, recovers orphan issues stuck in `in_progress` from interrupted runs. Two session modes:
 
@@ -93,7 +143,7 @@ Fetches issues from source, runs provider with fallback chain, creates PRs, upda
   - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo.
 - **Branch** (`runBranchSession`): agent creates a branch in the current checkout. After implementation, reads `.lisa-manifest.json` for the branch name; falls back to `detectFeatureBranches()` heuristic.
 
-### Provider model resolution (`loop.ts` `resolveModels`)
+### Provider model resolution (`loop/models.ts`)
 
 As of v1.4.0, `models[]` in config lists **model names within the configured provider** (not provider names). Examples: `["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"]` for Claude, `["gemini-2.5-pro", "gemini-2.0-flash"]` for Gemini. Each entry becomes a `ModelSpec { provider, model }` and is tried in order. If a model fails with an eligible error (quota, rate limit, timeout, network), the next model in the list is tried.
 
@@ -114,7 +164,7 @@ These files are cleaned up by Lisa after each session.
 
 When enabled, periodically runs `git status --porcelain` in the provider's working directory. If no changes are detected within `stuck_threshold` seconds, the provider process is killed with SIGTERM and the error is eligible for fallback.
 
-### Push recovery (`loop.ts` `pushWithRecovery`)
+### Push recovery (`loop/recovery.ts`)
 
 If `git push` fails due to pre-push hooks (husky, lint, typecheck), Lisa re-invokes the provider with the error output using `buildPushRecoveryPrompt()` and retries the push. Up to `MAX_PUSH_RETRIES` (2) recovery attempts.
 
