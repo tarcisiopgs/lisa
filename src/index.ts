@@ -6,6 +6,6 @@ process.on("unhandledRejection", () => {
 	process.exit(1);
 });
 
-import { runCli } from "./cli.js";
+import { runCli } from "./cli/index.js";
 
 runCli();

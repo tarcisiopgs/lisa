@@ -6,8 +6,8 @@ vi.mock("execa", () => ({
 }));
 
 import { execa } from "execa";
-import { checkoutBaseBranches } from "./loop.js";
-import type { LisaConfig } from "./types/index.js";
+import type { LisaConfig } from "../types/index.js";
+import { checkoutBaseBranches } from "./helpers.js";
 
 function makeConfig(overrides: Partial<LisaConfig> = {}): LisaConfig {
 	return {

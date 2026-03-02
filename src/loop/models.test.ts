@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { LoopOptions } from "./loop.js";
-import { WATCH_POLL_INTERVAL_MS } from "./loop.js";
+import type { LoopOptions } from "./models.js";
+import { WATCH_POLL_INTERVAL_MS } from "./models.js";
 
 describe("LoopOptions", () => {
 	it("accepts concurrency field", () => {
