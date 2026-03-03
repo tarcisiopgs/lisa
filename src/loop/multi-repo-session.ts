@@ -5,6 +5,7 @@ import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
+import { getPlanPath } from "../paths.js";
 import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
@@ -38,10 +39,7 @@ export async function runWorktreeMultiRepoSession(
 	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
-	// Plan written within the workspace so all providers can access it; per-issue name avoids
-	// collisions when multiple issues run concurrently in worktree mode
-	const safeId = issue.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-	const planPath = join(workspace, `.lisa-plan-${safeId}.json`);
+	const planPath = getPlanPath(workspace, issue.id);
 
 	// Clean stale plan from a previous interrupted run
 	try {
