@@ -188,13 +188,8 @@ export function Card({
 					{stripDoubleWidth(titleLine2).padEnd(cardWidth)}
 				</Text>
 
-				{/* Last provider output line — always rendered to keep CARD_HEIGHT stable */}
-				{/* padEnd ensures the row is always cardWidth wide, preventing border from shifting */}
-				<Text dimColor>
-					{stripDoubleWidth(
-						card.column === "in_progress" ? getLastOutputLine(card.outputLog, cardWidth) : "",
-					).padEnd(cardWidth)}
-				</Text>
+				{/* Empty row — maintains CARD_HEIGHT */}
+				<Text>{" ".repeat(cardWidth)}</Text>
 
 				{/* Status row — always rendered exactly once for stable CARD_HEIGHT */}
 				{card.column === "in_progress" ? (
