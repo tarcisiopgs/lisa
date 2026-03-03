@@ -58,7 +58,7 @@ export function Board({
 					</Text>
 					<Box height={1} />
 					<Text color="gray" dimColor>
-						Press Ctrl+C to stop
+						Press [q] to quit
 					</Text>
 				</Box>
 			</Box>
