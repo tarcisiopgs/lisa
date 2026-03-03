@@ -13,6 +13,7 @@ export const userSkippedSet = new Set<string>();
 
 let _shuttingDown = false;
 let _loopPaused = false;
+let _userQuitFromWatchPrompt = false;
 
 export function isShuttingDown(): boolean {
 	return _shuttingDown;
@@ -24,6 +25,14 @@ export function setShuttingDown(value: boolean): void {
 
 export function isLoopPaused(): boolean {
 	return _loopPaused;
+}
+
+export function hasUserQuitFromWatchPrompt(): boolean {
+	return _userQuitFromWatchPrompt;
+}
+
+export function setUserQuitFromWatchPrompt(value: boolean): void {
+	_userQuitFromWatchPrompt = value;
 }
 
 export function killProviderForIssue(issueId: string): void {
@@ -124,5 +133,10 @@ export function setupEventListeners(): void {
 				killProviderForIssue(firstId);
 			}
 		}
+	});
+
+	kanbanEmitter.on("loop:quit", () => {
+		_userQuitFromWatchPrompt = true;
+		setShuttingDown(true);
 	});
 }

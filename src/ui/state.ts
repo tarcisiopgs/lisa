@@ -63,6 +63,7 @@ export interface KanbanStateData {
 	cards: KanbanCard[];
 	isEmpty: boolean;
 	isWatching: boolean;
+	isWatchPrompt: boolean;
 	workComplete: { total: number; duration: number } | null;
 	modelInUse: string | null;
 }
@@ -93,6 +94,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>([]);
 	const [isEmpty, setIsEmpty] = useState(false);
 	const [isWatching, setIsWatching] = useState(false);
+	const [isWatchPrompt, setIsWatchPrompt] = useState(false);
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
 		null,
 	);
@@ -237,10 +239,17 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
 		const onWatching = () => setIsWatching(true);
 		const onWatchResume = () => setIsWatching(false);
+		const onWatchPrompt = () => {
+			setIsWatchPrompt(true);
+			setIsWatching(false);
+		};
+		const onWatchPromptResolved = () => setIsWatchPrompt(false);
 		kanbanEmitter.on("work:empty", onEmpty);
 		kanbanEmitter.on("work:complete", onComplete);
 		kanbanEmitter.on("work:watching", onWatching);
 		kanbanEmitter.on("work:watch-resume", onWatchResume);
+		kanbanEmitter.on("work:watch-prompt", onWatchPrompt);
+		kanbanEmitter.on("work:watch-prompt-resolved", onWatchPromptResolved);
 
 		const cleanupBell = registerBellListeners(bellEnabled);
 
@@ -260,6 +269,8 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("work:complete", onComplete);
 			kanbanEmitter.off("work:watching", onWatching);
 			kanbanEmitter.off("work:watch-resume", onWatchResume);
+			kanbanEmitter.off("work:watch-prompt", onWatchPrompt);
+			kanbanEmitter.off("work:watch-prompt-resolved", onWatchPromptResolved);
 			cleanupBell();
 			for (const issueId of activePolls.keys()) {
 				stopMergePolling(issueId);
@@ -267,5 +278,5 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		};
 	}, [bellEnabled]);
 
-	return { cards, isEmpty, isWatching, workComplete, modelInUse };
+	return { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse };
 }

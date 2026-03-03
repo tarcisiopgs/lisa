@@ -19,6 +19,7 @@ interface BoardProps {
 	};
 	isEmpty: boolean;
 	isWatching?: boolean;
+	isWatchPrompt?: boolean;
 	workComplete: { total: number; duration: number } | null;
 	activeColIndex?: number;
 	activeCardIndex?: number;
@@ -30,6 +31,7 @@ export function Board({
 	labels,
 	isEmpty,
 	isWatching = false,
+	isWatchPrompt = false,
 	workComplete,
 	activeColIndex = 0,
 	activeCardIndex = 0,
@@ -59,6 +61,48 @@ export function Board({
 					<Box height={1} />
 					<Text color="gray" dimColor>
 						Press [q] to quit
+					</Text>
+				</Box>
+			</Box>
+		);
+	}
+
+	if (isWatchPrompt) {
+		return (
+			<Box flexGrow={1} alignItems="center" justifyContent="center">
+				<Box
+					flexDirection="column"
+					borderStyle="single"
+					borderColor="green"
+					paddingX={3}
+					paddingY={1}
+				>
+					{workComplete && (
+						<>
+							<Text color="green" bold>
+								{`◈  ${workComplete.total} issue${workComplete.total !== 1 ? "s" : ""} resolved`}
+							</Text>
+							<Box height={1} />
+						</>
+					)}
+					<Text color="cyan" bold>
+						{"◎  CONTINUE WATCHING?"}
+					</Text>
+					<Box height={1} />
+					<Text color="white" dimColor>
+						All issues have been processed.
+					</Text>
+					<Box height={1} />
+					<Text color="gray" dimColor>
+						[
+						<Text color="cyan" bold>
+							w
+						</Text>
+						] Watch / [
+						<Text color="cyan" bold>
+							q
+						</Text>
+						] Quit
 					</Text>
 				</Box>
 			</Box>

@@ -14,7 +14,7 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, isWatching, workComplete, modelInUse } = useKanbanState(
+	const { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse } = useKanbanState(
 		config.bell ?? true,
 	);
 	const { rows } = useTerminalSize();
@@ -82,6 +82,19 @@ export function KanbanApp({ config }: KanbanAppProps) {
 	}, [cards, selectedCardId, activeView]);
 
 	useInput((input, key) => {
+		if (isWatchPrompt) {
+			if (input === "w") {
+				kanbanEmitter.emit("work:watch-prompt-resolved");
+				kanbanEmitter.emit("loop:resume");
+				return;
+			}
+			if (input === "q") {
+				kanbanEmitter.emit("loop:quit");
+				return;
+			}
+			return;
+		}
+
 		if (input === "q") {
 			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
 			process.emit("SIGINT");
@@ -196,6 +209,7 @@ export function KanbanApp({ config }: KanbanAppProps) {
 					labels={labels}
 					isEmpty={isEmpty}
 					isWatching={isWatching}
+					isWatchPrompt={isWatchPrompt}
 					workComplete={workComplete}
 					activeColIndex={activeColIndex}
 					activeCardIndex={activeCardIndex}

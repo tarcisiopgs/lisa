@@ -17,6 +17,8 @@ import { handleSessionResult } from "./result.js";
 import {
 	activeCleanups,
 	activeProviderPids,
+	hasUserQuitFromWatchPrompt,
+	isShuttingDown,
 	providerPausedSet,
 	userKilledSet,
 	userSkippedSet,
@@ -168,8 +170,19 @@ export async function runConcurrentLoop(
 
 			if (!issue) {
 				if (opts.watch) {
-					// In watch mode: wait for any running workers, then poll again
 					if (activeWorkers.size === 0) {
+						if (completedCount > 0) {
+							logger.ok(`All issues resolved. Prompting user to continue watching...`);
+							kanbanEmitter.emit("work:watch-prompt");
+							setTitle("Lisa \u2014 all resolved");
+							await waitIfPaused();
+							if (hasUserQuitFromWatchPrompt() || isShuttingDown()) {
+								noMoreIssues = true;
+								break;
+							}
+							kanbanEmitter.emit("work:watch-prompt-resumed");
+							logger.ok(`Resuming watch mode (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`);
+						}
 						logger.ok(
 							`No issues ready. Watching for new issues (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`,
 						);
