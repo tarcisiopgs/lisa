@@ -12,7 +12,7 @@ import type {
 } from "./types/index.js";
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
-	enabled: false,
+	enabled: true,
 	check_interval: 30,
 	stuck_threshold: 300,
 };

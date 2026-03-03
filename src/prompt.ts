@@ -151,6 +151,7 @@ function buildRulesSection(
 - **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
 - The issue description may be in any language — read it for context but write all code artifacts in English.
 - Do NOT install new dependencies unless the issue explicitly requires it.
+- Do NOT use documentation lookup MCP tools (e.g., Context7, codesearch, Exa) — they have free-tier rate limits that will block your execution. Read files directly from the repository. Web search is allowed only when strictly necessary (e.g., looking up an external API format not available in the codebase).
 ${envRule}${extraRules}- If you get stuck or the issue is unclear, STOP and explain why.
 ${scopeRule}
 - If the repo has a CLAUDE.md, read it first and follow its conventions.`;
