@@ -2,6 +2,7 @@ import { appendFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
+import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
@@ -103,6 +104,34 @@ export async function runBranchSession(
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	const hasChanges = await hasCodeChanges(workspace, config.base_branch);
+	if (!hasChanges) {
+		logger.error(
+			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
+		);
+		const emptyCommitResult: typeof result = {
+			success: false,
+			output: "Provider reported success but no code changes detected",
+			duration: result.duration,
+			providerUsed: result.providerUsed,
+			attempts: [
+				{
+					provider: result.providerUsed,
+					model: "",
+					success: false,
+					error: "Eligible error (empty commit)",
+					duration: result.duration,
+				},
+			],
+		};
+		return {
+			success: false,
+			providerUsed: result.providerUsed,
+			prUrls: [],
+			fallback: emptyCommitResult,
+		};
 	}
 
 	const manifest = readManifestFile(manifestPath);

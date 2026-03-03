@@ -80,6 +80,7 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/lisa-overseer/i,
 	/named models unavailable/i,
 	/free plans can only use/i,
+	/empty commit/i,
 ];
 
 export function isEligibleForFallback(output: string): boolean {

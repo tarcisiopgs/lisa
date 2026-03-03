@@ -5,6 +5,7 @@ import {
 	createWorktree,
 	determineRepoPath,
 	generateBranchName,
+	hasCodeChanges,
 } from "./worktree.js";
 
 vi.mock("execa", () => ({
@@ -260,5 +261,53 @@ describe("createWorktree", () => {
 			expect.objectContaining({ reject: false }),
 		);
 		expect(vi.mocked(rmSync)).not.toHaveBeenCalled();
+	});
+});
+
+describe("hasCodeChanges", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns true when there are code changes", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({
+			stdout: " file1.ts | 10 ++---\n file2.ts | 5 +++\n",
+		} as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(true);
+		expect(vi.mocked(execa)).toHaveBeenCalledWith("git", ["diff", "--stat", "main..HEAD"], {
+			cwd: "/repo",
+			reject: false,
+		});
+	});
+
+	it("returns false when there are no code changes", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
+	});
+
+	it("returns false when git command fails", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockRejectedValueOnce(new Error("git error") as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
+	});
+
+	it("returns true when diff output is only whitespace", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "   " } as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
 	});
 });

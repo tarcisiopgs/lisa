@@ -250,3 +250,20 @@ export async function detectFeatureBranches(
 
 	return results;
 }
+
+/**
+ * Checks if there are actual code changes between the base branch and HEAD.
+ * Returns true if there are changes, false if the diff is empty.
+ */
+export async function hasCodeChanges(repoPath: string, baseBranch: string): Promise<boolean> {
+	try {
+		const { stdout } = await execa("git", ["diff", "--stat", `${baseBranch}..HEAD`], {
+			cwd: repoPath,
+			reject: false,
+		});
+		const trimmed = stdout.trim();
+		return trimmed.length > 0;
+	} catch {
+		return false;
+	}
+}

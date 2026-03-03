@@ -7,6 +7,7 @@ import {
 	createWorktree,
 	determineRepoPath,
 	generateBranchName,
+	hasCodeChanges,
 	removeWorktree,
 } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -186,6 +187,35 @@ export async function runNativeWorktreeSession(
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
 
+	const hasChanges = await hasCodeChanges(repoPath, _defaultBranch);
+	if (!hasChanges) {
+		logger.error(
+			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
+		);
+		cleanupManifest(workspace, issue.id);
+		const emptyCommitResult: typeof result = {
+			success: false,
+			output: "Provider reported success but no code changes detected",
+			duration: result.duration,
+			providerUsed: result.providerUsed,
+			attempts: [
+				{
+					provider: result.providerUsed,
+					model: "",
+					success: false,
+					error: "Eligible error (empty commit)",
+					duration: result.duration,
+				},
+			],
+		};
+		return {
+			success: false,
+			providerUsed: result.providerUsed,
+			prUrls: [],
+			fallback: emptyCommitResult,
+		};
+	}
+
 	const manifest = readLisaManifest(workspace, issue.id);
 	cleanupManifest(workspace, issue.id);
 
@@ -337,6 +367,35 @@ export async function runManualWorktreeSession(
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
+
+	const hasChanges = await hasCodeChanges(worktreePath, baseBranch);
+	if (!hasChanges) {
+		logger.error(
+			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
+		);
+		await cleanupWorktree(repoPath, worktreePath);
+		const emptyCommitResult: typeof result = {
+			success: false,
+			output: "Provider reported success but no code changes detected",
+			duration: result.duration,
+			providerUsed: result.providerUsed,
+			attempts: [
+				{
+					provider: result.providerUsed,
+					model: "",
+					success: false,
+					error: "Eligible error (empty commit)",
+					duration: result.duration,
+				},
+			],
+		};
+		return {
+			success: false,
+			providerUsed: result.providerUsed,
+			prUrls: [],
+			fallback: emptyCommitResult,
+		};
 	}
 
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
