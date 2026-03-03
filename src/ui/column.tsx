@@ -79,7 +79,6 @@ export function Column({
 	const headerColor = isFocused ? "yellow" : "white";
 
 	// Status summary counts for the header
-	const runningCount = cards.filter((c) => c.column === "in_progress").length;
 	const errorCount = cards.filter((c) => c.hasError).length;
 
 	return (
@@ -107,7 +106,6 @@ export function Column({
 				</Box>
 				<Box flexDirection="row">
 					{errorCount > 0 && <Text color="red" bold>{`✖${errorCount} `}</Text>}
-					{runningCount > 0 && <Text color="yellow">{`●${runningCount} `}</Text>}
 					<Text color={headerColor}>{`[${cards.length}]`}</Text>
 				</Box>
 			</Box>
