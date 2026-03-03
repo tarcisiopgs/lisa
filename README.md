@@ -206,26 +206,6 @@ When `--concurrency` is greater than 1, worktree mode is enforced automatically.
 
 ---
 
-## TUI
-
-When running in an interactive terminal, `lisa run` renders a real-time Kanban board:
-
-```
-┌──────────────────────────┐ ┌───────────────────────────┐ ┌───────────────────────────┐
-│ ▶ BACKLOG            [3] │ │ ▶ IN PROGRESS         [1] │ │ ▶ IN REVIEW           [2] │
-│                          │ │                           │ │                           │
-│ ┌────────────────────┐   │ │ ┌─────────────────────┐   │ │ ┌─────────────────────┐   │
-│ │ ENG-42             │   │ │ │ ● ENG-38             │   │ │ │ ✓ ENG-35            │   │
-│ │ Add dark mode      │   │ │ │ Fix login redirect   │   │ │ │ Update dependencies │   │
-│ │ ready              │   │ │ │ ~1 running           │   │ │ │ PR created          │   │
-│ └────────────────────┘   │ │ └─────────────────────┘   │ │ └─────────────────────┘   │
-└──────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
-```
-
-Keyboard shortcuts are shown in the sidebar.
-
----
-
 ## Writing Issues
 
 Issue quality is the single biggest factor in PR quality. Lisa validates issues before accepting them — vague tickets without clear criteria are skipped and labelled `needs-spec`.
