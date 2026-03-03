@@ -32,7 +32,7 @@ export async function runDemoLoop(): Promise<void> {
 	await sleep(1000);
 
 	// Issue 1: implement and complete
-	const issue1 = demoIssues[0]!;
+	const issue1 = demoIssues[0] as (typeof demoIssues)[number];
 	kanbanEmitter.emit("issue:started", issue1.id);
 	const outputs1 = [
 		"Reading issue description...\n",
@@ -51,7 +51,7 @@ export async function runDemoLoop(): Promise<void> {
 	await sleep(1000);
 
 	// Issue 2: implement and complete
-	const issue2 = demoIssues[1]!;
+	const issue2 = demoIssues[1] as (typeof demoIssues)[number];
 	kanbanEmitter.emit("issue:started", issue2.id);
 	const outputs2 = [
 		"Reading issue description...\n",
@@ -69,7 +69,7 @@ export async function runDemoLoop(): Promise<void> {
 	await sleep(1000);
 
 	// Issue 3: implement and complete
-	const issue3 = demoIssues[2]!;
+	const issue3 = demoIssues[2] as (typeof demoIssues)[number];
 	kanbanEmitter.emit("issue:started", issue3.id);
 	const outputs3 = [
 		"Reading issue description...\n",

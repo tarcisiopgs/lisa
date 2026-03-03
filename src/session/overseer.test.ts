@@ -1,4 +1,7 @@
 import type { ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverseerConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
@@ -53,8 +56,13 @@ describe("getGitSnapshot", () => {
 	});
 
 	it("returns empty string for a non-git directory", async () => {
-		const snapshot = await getGitSnapshot("/tmp");
-		expect(snapshot).toBe("");
+		const dir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+		try {
+			const snapshot = await getGitSnapshot(dir);
+			expect(snapshot).toBe("");
+		} finally {
+			rmSync(dir, { recursive: true });
+		}
 	});
 });
 
