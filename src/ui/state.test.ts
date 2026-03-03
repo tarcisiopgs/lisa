@@ -64,3 +64,30 @@ describe("registerBellListeners", () => {
 		expect(notifyMock).not.toHaveBeenCalled();
 	});
 });
+
+describe("watch prompt events", () => {
+	afterEach(() => {
+		kanbanEmitter.removeAllListeners();
+	});
+
+	it("emits work:watch-prompt event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("work:watch-prompt", mockFn);
+		kanbanEmitter.emit("work:watch-prompt");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("emits work:watch-prompt-resolved event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("work:watch-prompt-resolved", mockFn);
+		kanbanEmitter.emit("work:watch-prompt-resolved");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("emits loop:quit event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("loop:quit", mockFn);
+		kanbanEmitter.emit("loop:quit");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+});

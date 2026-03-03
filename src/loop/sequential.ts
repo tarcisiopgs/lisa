@@ -17,7 +17,14 @@ import { WATCH_POLL_INTERVAL_MS } from "./models.js";
 import { injectRejectedPrFeedback } from "./recovery.js";
 import type { SessionResult } from "./result.js";
 import { handleSessionResult } from "./result.js";
-import { activeCleanups, providerPausedSet, userKilledSet, userSkippedSet } from "./state.js";
+import {
+	activeCleanups,
+	hasUserQuitFromWatchPrompt,
+	isShuttingDown,
+	providerPausedSet,
+	userKilledSet,
+	userSkippedSet,
+} from "./state.js";
 import { runWorktreeSession } from "./worktree-session.js";
 
 export async function runSequentialLoop(
@@ -108,6 +115,23 @@ export async function runSequentialLoop(
 			}
 
 			if (opts.watch) {
+				if (completedCount > 0) {
+					logger.ok(`All issues resolved. Prompting user to continue watching...`);
+					kanbanEmitter.emit("work:watch-prompt");
+					setTitle("Lisa \u2014 all resolved");
+					await waitIfPaused();
+					if (hasUserQuitFromWatchPrompt() || isShuttingDown()) {
+						break;
+					}
+					kanbanEmitter.emit("work:watch-prompt-resumed");
+					logger.ok(`Resuming watch mode (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`);
+					kanbanEmitter.emit("work:watching");
+					setTitle("Lisa \u2014 watching...");
+					await sleep(WATCH_POLL_INTERVAL_MS);
+					kanbanEmitter.emit("work:watch-resume");
+					session--;
+					continue;
+				}
 				logger.ok(
 					`No issues ready. Watching for new issues (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`,
 				);
@@ -115,7 +139,6 @@ export async function runSequentialLoop(
 				setTitle("Lisa \u2014 watching...");
 				await sleep(WATCH_POLL_INTERVAL_MS);
 				kanbanEmitter.emit("work:watch-resume");
-				// Don't increment session counter — this wasn't a real session
 				session--;
 				continue;
 			}
