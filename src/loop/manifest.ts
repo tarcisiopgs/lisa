@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { warn } from "../output/logger.js";
 import { getManifestPath } from "../paths.js";
 import type { ExecutionPlan } from "../types/index.js";
 
@@ -14,6 +15,7 @@ export function readLisaManifest(cwd: string, issueId?: string): LisaManifest | 
 	try {
 		return JSON.parse(readFileSync(manifestPath, "utf-8").trim()) as LisaManifest;
 	} catch {
+		warn(`Failed to parse manifest at ${manifestPath} — agent may not have written it correctly`);
 		return null;
 	}
 }

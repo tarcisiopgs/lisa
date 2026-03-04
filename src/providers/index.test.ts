@@ -138,6 +138,19 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("Implementation complete")).toBe(false);
 		expect(isEligibleForFallback("Build failed with errors")).toBe(false);
 	});
+
+	it("does not false-positive on setTimeout/clearTimeout identifiers (U-06)", () => {
+		expect(isEligibleForFallback("const timer = setTimeout(() => {}, 1000)")).toBe(false);
+		expect(isEligibleForFallback("clearTimeout(handle)")).toBe(false);
+		expect(isEligibleForFallback("CONNECT_TIMEOUT_MS = 30000")).toBe(false);
+	});
+
+	it("still matches legitimate timeout errors (U-06)", () => {
+		expect(isEligibleForFallback("Error: timeout")).toBe(true);
+		expect(isEligibleForFallback("Request timeout after 30s")).toBe(true);
+		expect(isEligibleForFallback("connection timed out")).toBe(true);
+		expect(isEligibleForFallback("Timeout: request took too long")).toBe(true);
+	});
 });
 
 describe("isCompleteProviderExhaustion", () => {

@@ -20,15 +20,21 @@ function findCursorBinary(): string | null {
 
 export class CursorProvider implements Provider {
 	name = "cursor" as const;
+	private _bin: string | null | undefined = undefined;
+
+	private resolveBin(): string | null {
+		if (this._bin === undefined) this._bin = findCursorBinary();
+		return this._bin;
+	}
 
 	async isAvailable(): Promise<boolean> {
-		return findCursorBinary() !== null;
+		return this.resolveBin() !== null;
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
 
-		const bin = findCursorBinary();
+		const bin = this.resolveBin();
 		if (!bin) {
 			return {
 				success: false,
