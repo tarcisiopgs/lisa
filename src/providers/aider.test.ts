@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
 import { AiderProvider } from "./aider.js";
+import { spawnWithPty } from "./pty.js";
 
 vi.mock("./pty.js", () => ({
 	spawnWithPty: vi.fn(() => {
@@ -35,6 +36,7 @@ describe("AiderProvider", () => {
 	describe("run", () => {
 		afterEach(() => {
 			vi.unstubAllEnvs();
+			vi.mocked(spawnWithPty).mockClear();
 		});
 
 		it("fails fast with clear error when no API key is set", async () => {
@@ -76,6 +78,33 @@ describe("AiderProvider", () => {
 
 			expect(result.output).not.toContain("requires a direct LLM API key");
 			expect(result.success).toBe(true);
+		});
+
+		it("omits --model flag when no model specified (I-04)", async () => {
+			vi.stubEnv("OPENAI_API_KEY", "sk-test-key");
+
+			await new AiderProvider().run("do something", {
+				cwd: "/tmp",
+				logFile: "/tmp/test.log",
+				env: {},
+			});
+
+			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			expect(command).not.toContain("--model");
+		});
+
+		it("includes --model flag when model is specified (I-04)", async () => {
+			vi.stubEnv("OPENAI_API_KEY", "sk-test-key");
+
+			await new AiderProvider().run("do something", {
+				cwd: "/tmp",
+				logFile: "/tmp/test.log",
+				env: {},
+				model: "gpt-4o",
+			});
+
+			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			expect(command).toContain("--model gpt-4o");
 		});
 	});
 });
