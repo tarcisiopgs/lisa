@@ -48,6 +48,7 @@ describe("CodexProvider", () => {
 			const { execSync } = await import("node:child_process");
 			vi.mocked(execSync).mockReturnValue(Buffer.from(""));
 			expect(await new CodexProvider().isAvailable()).toBe(true);
+			expect(vi.mocked(execSync)).toHaveBeenCalledWith("which codex", expect.anything());
 		});
 
 		it("returns false when codex binary is not found", async () => {

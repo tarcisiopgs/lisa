@@ -119,7 +119,7 @@ describe("CursorProvider", () => {
 				env: {},
 			});
 
-			// execSync called once for "agent --version" only, not again in run()
+			// execSync called once for "which agent" only, not again in run()
 			expect(vi.mocked(execSync)).toHaveBeenCalledTimes(1);
 		});
 

@@ -13,7 +13,7 @@ export class CodexProvider implements Provider {
 
 	async isAvailable(): Promise<boolean> {
 		try {
-			execSync("codex --version", { stdio: "ignore" });
+			execSync("which codex", { stdio: "ignore" });
 			return true;
 		} catch {
 			return false;
