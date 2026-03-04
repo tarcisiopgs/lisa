@@ -22,8 +22,8 @@ describe("appendPrAttribution", () => {
 		];
 
 		mockExeca.mockImplementation((_cmd: string, args: string[]) => {
-			if (args[0] === "api" && args[1]?.includes("/issues/") && args[1]?.endsWith("/comments")) {
-				return Promise.resolve({ stdout: JSON.stringify(comments) });
+			if (args[0] === "api" && args.some((a: string) => a?.endsWith("/comments"))) {
+				return Promise.resolve({ stdout: comments.map((c) => JSON.stringify(c)).join("\n") });
 			}
 			if (args[0] === "api" && args[1] === "--method") {
 				return Promise.resolve({ stdout: "" });
@@ -41,7 +41,10 @@ describe("appendPrAttribution", () => {
 
 		// Should have fetched comments
 		const listCall = mockExeca.mock.calls.find(
-			(call) => call[0] === "gh" && call[1]?.[0] === "api" && call[1]?.[1]?.endsWith("/comments"),
+			(call) =>
+				call[0] === "gh" &&
+				call[1]?.[0] === "api" &&
+				call[1]?.some((a: string) => a?.endsWith("/comments")),
 		);
 		expect(listCall).toBeDefined();
 
@@ -75,8 +78,8 @@ describe("appendPrAttribution", () => {
 		];
 
 		mockExeca.mockImplementation((_cmd: string, args: string[]) => {
-			if (args[0] === "api" && args[1]?.includes("/issues/") && args[1]?.endsWith("/comments")) {
-				return Promise.resolve({ stdout: JSON.stringify(comments) });
+			if (args[0] === "api" && args.some((a: string) => a?.endsWith("/comments"))) {
+				return Promise.resolve({ stdout: comments.map((c) => JSON.stringify(c)).join("\n") });
 			}
 			if (args[0] === "pr" && args[1] === "view") {
 				return Promise.resolve({ stdout: JSON.stringify({ body: "## Summary" }) });
@@ -123,8 +126,8 @@ describe("appendPrAttribution", () => {
 		const comments = [{ id: 300, body: "🤖 Generated with Gemini CLI" }];
 
 		mockExeca.mockImplementation((_cmd: string, args: string[]) => {
-			if (args[0] === "api" && args[1]?.includes("/issues/") && args[1]?.endsWith("/comments")) {
-				return Promise.resolve({ stdout: JSON.stringify(comments) });
+			if (args[0] === "api" && args.some((a: string) => a?.endsWith("/comments"))) {
+				return Promise.resolve({ stdout: comments.map((c) => JSON.stringify(c)).join("\n") });
 			}
 			if (args[0] === "api" && args[1] === "--method") {
 				return Promise.reject(new Error("Delete failed"));
