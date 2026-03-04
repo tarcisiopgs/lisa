@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 
 const MAX_LOG_FILES = 20;
@@ -11,7 +11,14 @@ export function projectHash(cwd: string): string {
 }
 
 export function getCacheDir(cwd: string): string {
-	const base = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
+	let base: string;
+	if (process.env.XDG_CACHE_HOME) {
+		base = process.env.XDG_CACHE_HOME;
+	} else if (platform() === "darwin") {
+		base = join(homedir(), "Library", "Caches");
+	} else {
+		base = join(homedir(), ".cache");
+	}
 	return join(base, "lisa", projectHash(cwd));
 }
 

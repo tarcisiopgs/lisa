@@ -1,6 +1,25 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
 import { AiderProvider } from "./aider.js";
+
+vi.mock("./pty.js", () => ({
+	spawnWithPty: vi.fn(() => {
+		const proc = new EventEmitter() as NodeJS.EventEmitter & {
+			stdout: EventEmitter;
+			stderr: EventEmitter;
+			pid: number;
+			kill: () => void;
+		};
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		setImmediate(() => proc.emit("close", 0));
+		return { proc, isPty: false };
+	}),
+	stripAnsi: (s: string) => s,
+}));
 
 describe("AiderProvider", () => {
 	it("has name aider", () => {
@@ -19,7 +38,6 @@ describe("AiderProvider", () => {
 		});
 
 		it("fails fast with clear error when no API key is set", async () => {
-			// Ensure none of the known API key vars are set
 			for (const key of [
 				"OPENAI_API_KEY",
 				"ANTHROPIC_API_KEY",
@@ -46,14 +64,10 @@ describe("AiderProvider", () => {
 			expect(result.output).toContain("ANTHROPIC_API_KEY");
 		});
 
-		it("proceeds when OPENAI_API_KEY is set", async () => {
+		it("proceeds past API key check and spawns when OPENAI_API_KEY is set", async () => {
 			vi.stubEnv("OPENAI_API_KEY", "sk-test-key");
 
-			// We only verify it doesn't fail with the API key error — actual aider execution
-			// would fail in a test environment, but we don't want to test that here.
 			const provider = new AiderProvider();
-			// If it gets past the API key check, it will try to spawn aider and fail differently
-			// (not with the "requires a direct LLM API key" message)
 			const result = await provider.run("do something", {
 				cwd: "/tmp",
 				logFile: "/tmp/test.log",
@@ -61,6 +75,7 @@ describe("AiderProvider", () => {
 			});
 
 			expect(result.output).not.toContain("requires a direct LLM API key");
+			expect(result.success).toBe(true);
 		});
 	});
 });

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getOutputMode } from "../output/logger.js";
@@ -93,7 +93,7 @@ export class GooseProvider implements Provider {
 			};
 		} finally {
 			try {
-				unlinkSync(promptFile);
+				rmSync(tmpDir, { recursive: true, force: true });
 			} catch {}
 		}
 	}

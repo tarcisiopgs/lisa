@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -34,10 +34,12 @@ describe("projectHash", () => {
 });
 
 describe("getCacheDir", () => {
-	it("returns path under ~/.cache/lisa/<hash>", () => {
+	it("returns platform-appropriate cache path under lisa/<hash>", () => {
 		const dir = getCacheDir("/my/project");
 		const hash = projectHash("/my/project");
-		expect(dir).toBe(join(homedir(), ".cache", "lisa", hash));
+		const expectedBase =
+			platform() === "darwin" ? join(homedir(), "Library", "Caches") : join(homedir(), ".cache");
+		expect(dir).toBe(join(expectedBase, "lisa", hash));
 	});
 
 	it("respects XDG_CACHE_HOME", () => {
