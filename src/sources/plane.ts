@@ -223,7 +223,7 @@ export class PlaneSource implements Source {
 		);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
 		);
 
 		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
@@ -245,7 +245,7 @@ export class PlaneSource implements Source {
 
 		for (const issue of matching) {
 			const relations = await fetchAll<PlaneRelation>(
-				`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issue.id}/relations/`,
+				`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${issue.id}/relations/`,
 			);
 
 			// "blocked_by" means this issue is blocked by the related_issue
@@ -258,7 +258,7 @@ export class PlaneSource implements Source {
 			for (const blockerId of blockerIds) {
 				try {
 					const blocker = await planeGet<PlaneIssue>(
-						`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${blockerId}/`,
+						`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${blockerId}/`,
 					);
 					if (!doneStateIds.has(blocker.state)) {
 						activeBlockers.push(blockerId);
@@ -307,7 +307,7 @@ export class PlaneSource implements Source {
 		try {
 			const { workspaceSlug, projectId, issueId } = parseIssueId(id);
 			const issue = await planeGet<PlaneIssue>(
-				`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issueId}/`,
+				`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${issueId}/`,
 			);
 			const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${issue.id}`;
 			return {
@@ -325,7 +325,7 @@ export class PlaneSource implements Source {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 		const stateId = await resolveStateId(workspaceSlug, projectId, stateName);
 		await planePatch<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 			{ state: stateId },
 		);
 	}
@@ -333,7 +333,7 @@ export class PlaneSource implements Source {
 	async attachPullRequest(issueId: string, prUrl: string): Promise<void> {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 		await planePost<PlaneComment>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/comments/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/comments/`,
 			{ comment_html: `<p>Pull request: <a href="${prUrl}">${prUrl}</a></p>` },
 		);
 	}
@@ -355,7 +355,7 @@ export class PlaneSource implements Source {
 		);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
 		);
 
 		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
@@ -377,7 +377,7 @@ export class PlaneSource implements Source {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 
 		const issue = await planeGet<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 		);
 
 		const labels = await fetchLabels(workspaceSlug, projectId);
@@ -387,7 +387,7 @@ export class PlaneSource implements Source {
 
 		const updatedLabels = issue.labels.filter((lid) => lid !== labelObj.id);
 		await planePatch<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 			{ labels: updatedLabels },
 		);
 	}

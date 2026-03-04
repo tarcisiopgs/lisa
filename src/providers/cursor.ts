@@ -11,7 +11,7 @@ import { spawnWithPty, stripAnsi } from "./pty.js";
 function findCursorBinary(): string | null {
 	for (const bin of ["agent", "cursor-agent"]) {
 		try {
-			execSync(`${bin} --version`, { stdio: "ignore" });
+			execSync(`which ${bin}`, { stdio: "ignore" });
 			return bin;
 		} catch {}
 	}

@@ -50,6 +50,7 @@ describe("AiderProvider", () => {
 				"MISTRAL_API_KEY",
 				"DEEPSEEK_API_KEY",
 				"AZURE_API_KEY",
+				"XAI_API_KEY",
 			]) {
 				vi.stubEnv(key, "");
 			}
@@ -66,6 +67,19 @@ describe("AiderProvider", () => {
 			expect(result.output).toContain("ANTHROPIC_API_KEY");
 		});
 
+		it("proceeds past API key check when XAI_API_KEY is set", async () => {
+			vi.stubEnv("XAI_API_KEY", "xai-test-key");
+
+			const result = await new AiderProvider().run("do something", {
+				cwd: "/tmp",
+				logFile: "/tmp/test.log",
+				env: {},
+			});
+
+			expect(result.output).not.toContain("requires a direct LLM API key");
+			expect(result.success).toBe(true);
+		});
+
 		it("proceeds past API key check and spawns when OPENAI_API_KEY is set", async () => {
 			vi.stubEnv("OPENAI_API_KEY", "sk-test-key");
 
@@ -78,6 +92,20 @@ describe("AiderProvider", () => {
 
 			expect(result.output).not.toContain("requires a direct LLM API key");
 			expect(result.success).toBe(true);
+		});
+
+		it("uses --message-file instead of shell substitution", async () => {
+			vi.stubEnv("OPENAI_API_KEY", "sk-test-key");
+
+			await new AiderProvider().run("do something", {
+				cwd: "/tmp",
+				logFile: "/tmp/test.log",
+				env: {},
+			});
+
+			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			expect(command).toContain("--message-file");
+			expect(command).not.toContain("$(cat");
 		});
 
 		it("omits --model flag when no model specified (I-04)", async () => {

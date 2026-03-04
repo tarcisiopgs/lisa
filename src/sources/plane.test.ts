@@ -491,7 +491,7 @@ describe("PlaneSource", () => {
 
 			await source.updateStatus("my-workspace::project-uuid-1::issue-uuid-1", "In Progress");
 
-			expect(capturedUrl).toContain("/issues/issue-uuid-1/");
+			expect(capturedUrl).toContain("/work-items/issue-uuid-1/");
 			expect(capturedBody).toMatchObject({ state: "state-in-progress" });
 		});
 
@@ -551,7 +551,7 @@ describe("PlaneSource", () => {
 				if (
 					(init?.method === "GET" || !init?.method) &&
 					url.includes("/states/") &&
-					!url.includes("/issues/")
+					!url.includes("/work-items/")
 				) {
 					return Promise.resolve({
 						ok: true,
@@ -562,7 +562,7 @@ describe("PlaneSource", () => {
 				}
 
 				// updateStatus PATCH
-				if (init?.method === "PATCH" && url.includes("/issues/issue-uuid-1/")) {
+				if (init?.method === "PATCH" && url.includes("/work-items/issue-uuid-1/")) {
 					const body = JSON.parse(init.body as string);
 					// First PATCH is state update
 					if ("state" in body) {
@@ -583,7 +583,10 @@ describe("PlaneSource", () => {
 				}
 
 				// GET issue for removeLabel
-				if ((init?.method === "GET" || !init?.method) && url.includes("/issues/issue-uuid-1/")) {
+				if (
+					(init?.method === "GET" || !init?.method) &&
+					url.includes("/work-items/issue-uuid-1/")
+				) {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
@@ -596,7 +599,7 @@ describe("PlaneSource", () => {
 				if (
 					(init?.method === "GET" || !init?.method) &&
 					url.includes("/labels/") &&
-					!url.includes("/issues/")
+					!url.includes("/work-items/")
 				) {
 					return Promise.resolve({
 						ok: true,

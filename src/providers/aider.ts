@@ -20,6 +20,7 @@ const AIDER_API_KEY_ENV_VARS = [
 	"MISTRAL_API_KEY",
 	"DEEPSEEK_API_KEY",
 	"AZURE_API_KEY",
+	"XAI_API_KEY",
 ];
 
 export class AiderProvider implements Provider {
@@ -54,7 +55,7 @@ export class AiderProvider implements Provider {
 
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const command = `aider --message "$(cat '${promptFile}')" --yes-always ${modelFlag}`;
+			const command = `aider --message-file '${promptFile}' --yes-always ${modelFlag}`;
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
 				env: { ...process.env, ...opts.env },
