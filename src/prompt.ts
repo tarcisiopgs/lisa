@@ -541,14 +541,19 @@ ${generatorBlock}
 
 2. **Determine execution order**: If multiple repos are affected, decide the order. Repos that produce APIs, schemas, or shared libraries should come first. Repos that consume them should come later.
 
-3. **Write the plan**: Create \`${resolvedPlanPath}\` with JSON:
-   \`\`\`json
-   {
-     "steps": [
-       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 1 },
-       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 2 }
-     ]
-   }
+3. **Write the plan file to disk**: Use a bash command or file-write tool to write the plan to \`${resolvedPlanPath}\`.
+   **You MUST write the file to disk. Do NOT print the JSON to stdout or in a code block.**
+
+   The file must be valid JSON with this structure (replace angle-bracket placeholders with real values):
+   - \`repoPath\`: absolute path to the affected repository
+   - \`scope\`: concise English description of what to implement in that repo
+   - \`order\`: integer starting at 1 (lower = executes first)
+
+   Example bash command:
+   \`\`\`bash
+   cat > '${resolvedPlanPath}' << 'PLAN_EOF'
+   {"steps":[{"repoPath":"/absolute/path","scope":"description of work","order":1}]}
+   PLAN_EOF
    \`\`\`
 
 ## Rules
