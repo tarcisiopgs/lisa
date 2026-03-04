@@ -40,7 +40,7 @@
 		"prepare": "husky"
 	},
 	"dependencies": {
-		"@clack/prompts": "^1.0.1",
+		"@clack/prompts": "^1.1.0",
 		"citty": "^0.2.1",
 		"execa": "^9.6.1",
 		"ink": "^6.8.0",
@@ -56,7 +56,7 @@
 		"@vitest/coverage-v8": "^4.0.18",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
-		"lint-staged": "^16.3.1",
+		"lint-staged": "^16.3.2",
 		"tsup": "^8.5.1",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
