@@ -549,11 +549,9 @@ ${generatorBlock}
    - \`scope\`: concise English description of what to implement in that repo
    - \`order\`: integer starting at 1 (lower = executes first)
 
-   Example bash command:
+   Use your write_file tool, or a bash command such as:
    \`\`\`bash
-   cat > '${resolvedPlanPath}' << 'PLAN_EOF'
-   {"steps":[{"repoPath":"/absolute/path","scope":"description of work","order":1}]}
-   PLAN_EOF
+   printf '%s' '{"steps":[{"repoPath":"/absolute/path","scope":"description of work","order":1}]}' > '${resolvedPlanPath}'
    \`\`\`
 
 ## Rules
