@@ -1,11 +1,18 @@
-import { appendFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type ApiClientGenerator, analyzeProject, detectApiClientGenerator } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
-import { getPlanPath } from "../paths.js";
+
+function getWorkspacePlanPath(workspace: string, issueId: string): string {
+	const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
+	const dir = join(workspace, ".lisa");
+	mkdirSync(dir, { recursive: true });
+	return join(dir, `plan-${safe}.json`);
+}
+
 import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
@@ -39,7 +46,7 @@ export async function runWorktreeMultiRepoSession(
 	models: ModelSpec[],
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
-	const planPath = getPlanPath(workspace, issue.id);
+	const planPath = getWorkspacePlanPath(workspace, issue.id);
 
 	// Clean stale plan from a previous interrupted run
 	try {
