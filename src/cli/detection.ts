@@ -8,7 +8,7 @@ import type { PRPlatform, RepoConfig, SourceName } from "../types/index.js";
 
 export function getVersion(): string {
 	try {
-		const pkgPath = resolvePath(new URL(".", import.meta.url).pathname, "../../package.json");
+		const pkgPath = resolvePath(new URL(".", import.meta.url).pathname, "../package.json");
 		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
 		return pkg.version;
 	} catch {
