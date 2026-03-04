@@ -28,7 +28,8 @@ export class OpenCodeProvider implements Provider {
 		writeFileSync(promptFile, prompt, "utf-8");
 
 		try {
-			const command = `opencode run "$(cat '${promptFile}')"`;
+			const modelFlag = opts.model ? `--model ${opts.model}` : "";
+			const command = `opencode run ${modelFlag} "$(cat '${promptFile}')"`;
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
 				env: { ...process.env, ...opts.env },

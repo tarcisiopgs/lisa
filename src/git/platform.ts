@@ -59,7 +59,7 @@ export function buildPrCreateInstruction(
    REPO=$(git remote get-url origin | sed 's/.*bitbucket\\.org[:/][^/]*\\///;s/\\.git$//')
    BRANCH=$(git branch --show-current)
    curl -X POST \\
-     -H "Authorization: Bearer $BITBUCKET_TOKEN" \\
+     -H "Authorization: Basic $(printf '%s:%s' "$BITBUCKET_USERNAME" "$BITBUCKET_TOKEN" | base64)" \\
      -H "Content-Type: application/json" \\
      "https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO/pullrequests" \\
      --data "{\\"title\\":\\"<conventional-commit-title>\\",\\"description\\":\\"<markdown-summary>\\",\\"source\\":{\\"branch\\":{\\"name\\":\\"$BRANCH\\"}},\\"destination\\":{\\"branch\\":{\\"name\\":\\"${dest}\\"}}}"

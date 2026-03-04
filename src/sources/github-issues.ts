@@ -66,6 +66,8 @@ interface GitHubIssue {
 	labels: { name: string }[];
 	created_at: string;
 	state?: string;
+	// GitHub returns PRs mixed with issues; this field is present only on PRs
+	pull_request?: object;
 }
 
 interface GitHubPr {
@@ -169,7 +171,7 @@ export class GitHubIssuesSource implements Source {
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = await githubGet<GitHubIssue[]>(path);
+		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		if (issues.length === 0) return null;
 
 		// Check blocking relations parsed from issue body
@@ -345,7 +347,7 @@ export class GitHubIssuesSource implements Source {
 		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = await githubGet<GitHubIssue[]>(path);
+		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		return issues.map((issue) => ({
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,

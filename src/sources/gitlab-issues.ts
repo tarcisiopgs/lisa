@@ -88,9 +88,11 @@ export async function checkPrMerged(prUrl: string): Promise<boolean> {
 	}
 }
 
+// GitLab Issue Links API returns the linked issue's fields directly,
+// with link_type appended. There are no nested source/target objects.
 interface GitLabIssueLink {
-	source: { iid: number; state: string };
-	target: { iid: number; state: string };
+	iid: number;
+	state: string;
 	link_type: string;
 }
 
@@ -147,16 +149,13 @@ export class GitLabIssuesSource implements Source {
 
 			const activeBlockers = links
 				.filter((link) => {
-					// "is_blocked_by": this issue is the target, the source blocks it
+					// "is_blocked_by": the linked issue blocks this issue
 					if (link.link_type === "is_blocked_by") {
-						return link.source.state !== "closed";
+						return link.state !== "closed";
 					}
-					// "blocks": this issue is the source, the target is blocking it
-					// (when fetched from this issue's perspective, "blocks" means the *other* issue blocks this one
-					// only if this issue is the target)
 					return false;
 				})
-				.map((link) => link.source.iid);
+				.map((link) => link.iid);
 
 			if (activeBlockers.length === 0) {
 				unblocked.push(issue);

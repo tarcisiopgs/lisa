@@ -140,6 +140,9 @@ describe("createMergeRequest", () => {
 		expect(url).toContain("merge_requests");
 		expect(options.method).toBe("POST");
 		expect(options.headers).toMatchObject({ "PRIVATE-TOKEN": "test-token" });
+		const body = JSON.parse(options.body as string) as Record<string, unknown>;
+		expect(body.should_remove_source_branch).toBe(false);
+		expect(body).not.toHaveProperty("remove_source_branch");
 	});
 
 	it("throws when GITLAB_TOKEN is not set", async () => {

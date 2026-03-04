@@ -116,7 +116,7 @@ export async function createMergeRequest(opts: MergeRequestOptions): Promise<Mer
 			target_branch: opts.targetBranch,
 			title: opts.title,
 			description: opts.description,
-			remove_source_branch: false,
+			should_remove_source_branch: false,
 		}),
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	});

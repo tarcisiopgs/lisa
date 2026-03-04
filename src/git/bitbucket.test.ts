@@ -188,6 +188,24 @@ describe("createPullRequest", () => {
 			}),
 		).rejects.toThrow("Bitbucket API error (400)");
 	});
+
+	it("throws when API response is missing links.html.href", async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id: 1, links: {} }),
+		});
+
+		await expect(
+			createPullRequest({
+				workspace: "ws",
+				repoSlug: "repo",
+				sourceBranch: "feat/x",
+				destinationBranch: "main",
+				title: "title",
+				description: "desc",
+			}),
+		).rejects.toThrow("Bitbucket API response missing links.html.href");
+	});
 });
 
 describe("appendPrAttribution", () => {
@@ -206,7 +224,7 @@ describe("appendPrAttribution", () => {
 		mockFetch
 			.mockResolvedValueOnce({
 				ok: true,
-				json: async () => ({ description: "## Summary\n- Added feature" }),
+				json: async () => ({ description: "## Summary\n- Added feature", title: "feat: my pr" }),
 			})
 			.mockResolvedValueOnce({ ok: true });
 
@@ -214,9 +232,10 @@ describe("appendPrAttribution", () => {
 
 		const [, putOptions] = mockFetch.mock.calls[1] as [string, RequestInit];
 		expect(putOptions.method).toBe("PUT");
-		const body = JSON.parse(putOptions.body as string) as { description: string };
+		const body = JSON.parse(putOptions.body as string) as { description: string; title: string };
 		expect(body.description).toContain("lisa");
 		expect(body.description).toContain("Claude Code");
+		expect(body.title).toBe("feat: my pr");
 	});
 
 	it("is non-fatal when BITBUCKET_TOKEN is not set", async () => {
