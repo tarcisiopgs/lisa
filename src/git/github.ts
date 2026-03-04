@@ -115,9 +115,16 @@ async function deleteProviderComments(prUrl: string): Promise<void> {
 		const [, owner, repo, prNumber] = match;
 		const { stdout } = await execa("gh", [
 			"api",
+			"--paginate",
+			"--jq",
+			".[]",
 			`/repos/${owner}/${repo}/issues/${prNumber}/comments`,
 		]);
-		const comments = JSON.parse(stdout) as Array<{ id: number; body: string }>;
+		const comments = stdout
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line)) as Array<{ id: number; body: string }>;
 
 		for (const comment of comments) {
 			if (PROVIDER_ATTRIBUTION_RE.test(comment.body)) {
