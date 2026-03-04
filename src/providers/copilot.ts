@@ -30,7 +30,8 @@ export class CopilotProvider implements Provider {
 		try {
 			// --allow-all: bypass all tool/path/url permission prompts (non-interactive)
 			// -p: run prompt and exit (print mode)
-			const command = `copilot --allow-all -p "$(cat '${promptFile}')"`;
+			const modelFlag = opts.model ? `--model ${opts.model}` : "";
+			const command = `copilot --allow-all ${modelFlag} -p "$(cat '${promptFile}')"`;
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
 				env: { ...process.env, ...opts.env },

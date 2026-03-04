@@ -212,8 +212,8 @@ describe("GitLabIssuesSource", () => {
 				else if (url.includes("/issues/1/links"))
 					data = [
 						{
-							source: { iid: 99, state: "opened" },
-							target: { iid: 1, state: "opened" },
+							iid: 99,
+							state: "opened",
 							link_type: "is_blocked_by",
 						},
 					];
@@ -238,8 +238,8 @@ describe("GitLabIssuesSource", () => {
 				else if (url.includes("/links"))
 					data = [
 						{
-							source: { iid: 99, state: "opened" },
-							target: { iid: 1, state: "opened" },
+							iid: 99,
+							state: "opened",
 							link_type: "is_blocked_by",
 						},
 					];
@@ -263,8 +263,8 @@ describe("GitLabIssuesSource", () => {
 				else if (url.includes("/links"))
 					data = [
 						{
-							source: { iid: 99, state: "closed" },
-							target: { iid: 1, state: "opened" },
+							iid: 99,
+							state: "closed",
 							link_type: "is_blocked_by",
 						},
 					];
@@ -292,8 +292,8 @@ describe("GitLabIssuesSource", () => {
 				else if (url.includes("/issues/1/links"))
 					data = [
 						{
-							source: { iid: 99, state: "opened" },
-							target: { iid: 1, state: "opened" },
+							iid: 99,
+							state: "opened",
 							link_type: "is_blocked_by",
 						},
 					];

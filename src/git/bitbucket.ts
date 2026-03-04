@@ -116,7 +116,9 @@ export async function createPullRequest(opts: PullRequestOptions): Promise<PullR
 	}
 
 	const data = (await res.json()) as { id: number; links: { html: { href: string } } };
-	return { id: data.id, html_url: data.links.html.href };
+	const href = data?.links?.html?.href;
+	if (!href) throw new Error("Bitbucket API response missing links.html.href");
+	return { id: data.id, html_url: href };
 }
 
 export async function appendPrAttribution(prUrl: string, providerUsed: string): Promise<void> {
@@ -139,8 +141,9 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 		);
 		if (!getRes.ok) return;
 
-		const prData = (await getRes.json()) as { description: string };
+		const prData = (await getRes.json()) as { description: string; title: string };
 		const currentDescription = prData.description ?? "";
+		const currentTitle = prData.title ?? "";
 
 		const providerName = formatProviderName(providerUsed);
 		const attribution = `\n\n---\n🤖 Resolved by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerName}**`;
@@ -153,7 +156,7 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 				Authorization: authHeader,
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify({ description: newDescription }),
+			body: JSON.stringify({ description: newDescription, title: currentTitle }),
 			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
 	} catch {

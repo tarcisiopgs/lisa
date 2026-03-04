@@ -87,6 +87,26 @@ function extractStories(result: ShortcutStorySearchResult | ShortcutStory[]): Sh
 	return result.data ?? [];
 }
 
+function extractNext(result: ShortcutStorySearchResult | ShortcutStory[]): string | null {
+	if (Array.isArray(result)) return null;
+	return result.next ?? null;
+}
+
+async function searchStoriesAll(body: Record<string, unknown>): Promise<ShortcutStory[]> {
+	const all: ShortcutStory[] = [];
+	let next: string | null = null;
+	do {
+		const req = next ? { ...body, next } : body;
+		const result = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
+			"/api/v3/stories/search",
+			req,
+		);
+		all.push(...extractStories(result));
+		next = extractNext(result);
+	} while (next);
+	return all;
+}
+
 interface ShortcutComment {
 	id: number;
 	text: string;
@@ -168,15 +188,11 @@ export class ShortcutSource implements Source {
 		const seen = new Set<number>();
 		const allStories: ShortcutStory[] = [];
 		for (const stateId of stateIds) {
-			const searchResult = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
-				"/api/v3/stories/search",
-				{
-					workflow_state_id: stateId,
-					label_name: primaryLabel,
-					archived: false,
-				},
-			);
-			for (const story of extractStories(searchResult)) {
+			for (const story of await searchStoriesAll({
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			})) {
 				if (!seen.has(story.id)) {
 					seen.add(story.id);
 					allStories.push(story);
@@ -301,15 +317,11 @@ export class ShortcutSource implements Source {
 		const seen = new Set<number>();
 		const allStories: ShortcutStory[] = [];
 		for (const stateId of stateIds) {
-			const searchResult = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
-				"/api/v3/stories/search",
-				{
-					workflow_state_id: stateId,
-					label_name: primaryLabel,
-					archived: false,
-				},
-			);
-			for (const story of extractStories(searchResult)) {
+			for (const story of await searchStoriesAll({
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			})) {
 				if (!seen.has(story.id)) {
 					seen.add(story.id);
 					allStories.push(story);
