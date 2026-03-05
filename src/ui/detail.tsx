@@ -220,6 +220,16 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 					</Box>
 				))}
 
+			{/* Log file path */}
+			{card.logFile && (
+				<Box marginTop={0}>
+					<Text color="gray" dimColor>
+						{"LOG: "}
+					</Text>
+					<Text color="gray">{card.logFile}</Text>
+				</Box>
+			)}
+
 			{/* Decorative separator */}
 			<Box>
 				<Text color="yellow" dimColor>

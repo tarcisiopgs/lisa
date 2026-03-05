@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-
+import { describe, expect, it, vi } from "vitest";
+import type { LisaConfig, ProviderName } from "../types/index.js";
 import type { LoopOptions } from "./models.js";
-import { WATCH_POLL_INTERVAL_MS } from "./models.js";
+import { resolveModels, WATCH_POLL_INTERVAL_MS } from "./models.js";
 
 describe("LoopOptions", () => {
 	it("accepts concurrency field", () => {
@@ -80,6 +80,58 @@ describe("concurrency flag parsing", () => {
 		expect(Math.max(1, Number.parseInt("-1", 10) || 1)).toBe(1);
 		expect(Math.max(1, Number.parseInt("abc", 10) || 1)).toBe(1);
 		expect(Math.max(1, Number.parseInt("", 10) || 1)).toBe(1);
+	});
+});
+
+describe("resolveModels — provider-prefixed model warning", () => {
+	function makeConfig(provider: ProviderName, models: string[]): LisaConfig {
+		return {
+			provider,
+			provider_options: { [provider]: { models } },
+			source: "linear",
+			source_config: {
+				team: "",
+				project: "",
+				label: "",
+				pick_from: "",
+				in_progress: "",
+				done: "",
+			},
+			platform: "cli",
+			workflow: "worktree",
+			workspace: ".",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 0 },
+		} as LisaConfig;
+	}
+
+	it("warns when model name starts with provider name prefix", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("opencode", ["opencode/trinity-large-preview-free"]);
+		resolveModels(config);
+		const warnCalls = warnSpy.mock.calls.flat().join(" ");
+		expect(warnCalls).toContain("opencode/");
+		expect(warnCalls).toContain("trinity-large-preview-free");
+		warnSpy.mockRestore();
+	});
+
+	it("does not warn when model name uses a different prefix", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("opencode", ["openrouter/model-name"]);
+		resolveModels(config);
+		const warnCalls = warnSpy.mock.calls.flat().join(" ");
+		expect(warnCalls).not.toContain("starts with the provider name");
+		warnSpy.mockRestore();
+	});
+
+	it("does not warn for simple model names without slashes", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("claude", ["claude-sonnet-4-6"]);
+		resolveModels(config);
+		const warnCalls = warnSpy.mock.calls.flat().join(" ");
+		expect(warnCalls).not.toContain("starts with the provider name");
+		warnSpy.mockRestore();
 	});
 });
 

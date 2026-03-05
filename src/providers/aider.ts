@@ -2,11 +2,13 @@ import { execSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
 import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
+import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
 // Aider reads these env vars to authenticate with LLM providers.
 // OAuth-based auth (e.g. Gemini CLI) is not supported — a direct API key is required.
@@ -56,6 +58,16 @@ export class AiderProvider implements Provider {
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
 			const command = `aider --message-file '${promptFile}' --yes-always ${modelFlag}`;
+			logger.log(
+				`[aider] Running: aider --message-file --yes-always ${modelFlag || "(default model)"}`.trim(),
+			);
+			if (opts.issueId) {
+				kanbanEmitter.emit(
+					"issue:output",
+					opts.issueId,
+					`${`$ aider --message-file --yes-always ${modelFlag || "(default model)"}\n`.trim()}\n`,
+				);
+			}
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
 				env: { ...process.env, ...opts.env },
@@ -63,6 +75,7 @@ export class AiderProvider implements Provider {
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+			const sessionTimeout = createSessionTimeout(proc, opts.sessionTimeout);
 			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 
 			const chunks: string[] = [];
@@ -93,16 +106,23 @@ export class AiderProvider implements Provider {
 			const exitCode = await new Promise<number>((resolve) => {
 				proc.on("close", (code) => {
 					overseer?.stop();
+					sessionTimeout.stop();
 					resolve(code ?? 1);
 				});
 			});
 
-			if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
+			if (sessionTimeout.wasTimedOut()) {
+				chunks.push(TIMEOUT_MESSAGE);
+			} else if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
 
 			return {
-				success: exitCode === 0 && !overseer?.wasKilled() && !errorLoopDetector.wasKilled(),
+				success:
+					exitCode === 0 &&
+					!overseer?.wasKilled() &&
+					!errorLoopDetector.wasKilled() &&
+					!sessionTimeout.wasTimedOut(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};

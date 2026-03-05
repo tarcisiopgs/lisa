@@ -23,6 +23,7 @@ import { createProvider, runWithFallback } from "../providers/index.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch } from "./helpers.js";
 import {
 	cleanupManifest,
@@ -155,6 +156,7 @@ export async function runNativeWorktreeSession(
 		config.platform,
 	);
 	logger.initLogFile(logFile);
+	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
 
@@ -164,6 +166,7 @@ export async function runNativeWorktreeSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		sessionTimeout: config.loop.session_timeout,
 		useNativeWorktree: true,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
@@ -336,6 +339,7 @@ export async function runManualWorktreeSession(
 		manifestPath,
 	);
 	logger.initLogFile(logFile);
+	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 
@@ -345,6 +349,7 @@ export async function runManualWorktreeSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		sessionTimeout: config.loop.session_timeout,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
