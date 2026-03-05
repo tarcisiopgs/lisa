@@ -2,11 +2,13 @@ import { execSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
 import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
+import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
 export class CodexProvider implements Provider {
 	name = "codex" as const;
@@ -30,6 +32,17 @@ export class CodexProvider implements Provider {
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
 			const command = `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag} "$(cat '${promptFile}')"`;
+			logger.log(
+				`[codex] Running: codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag || "(default model)"}`.trim(),
+			);
+			if (opts.issueId) {
+				kanbanEmitter.emit(
+					"issue:output",
+					opts.issueId,
+					`$ codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag || "(default model)"}\n`.trim() +
+						"\n",
+				);
+			}
 
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
@@ -38,6 +51,7 @@ export class CodexProvider implements Provider {
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+			const sessionTimeout = createSessionTimeout(proc, opts.sessionTimeout);
 			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 
 			const chunks: string[] = [];
@@ -68,16 +82,23 @@ export class CodexProvider implements Provider {
 			const exitCode = await new Promise<number>((resolve) => {
 				proc.on("close", (code) => {
 					overseer?.stop();
+					sessionTimeout.stop();
 					resolve(code ?? 1);
 				});
 			});
 
-			if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
+			if (sessionTimeout.wasTimedOut()) {
+				chunks.push(TIMEOUT_MESSAGE);
+			} else if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
 
 			return {
-				success: exitCode === 0 && !overseer?.wasKilled() && !errorLoopDetector.wasKilled(),
+				success:
+					exitCode === 0 &&
+					!overseer?.wasKilled() &&
+					!errorLoopDetector.wasKilled() &&
+					!sessionTimeout.wasTimedOut(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};

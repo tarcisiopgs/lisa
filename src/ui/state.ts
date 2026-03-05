@@ -14,6 +14,7 @@ export interface KanbanCard {
 	prUrls: string[];
 	hasError?: boolean;
 	outputLog: string;
+	logFile?: string;
 	skipped?: boolean;
 	killed?: boolean;
 	pausedAt?: number;
@@ -215,6 +216,10 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			);
 		};
 
+		const onLogFile = (issueId: string, logFile: string) => {
+			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, logFile } : c)));
+		};
+
 		const onOutput = (issueId: string, text: string) => {
 			setCards((prev) =>
 				prev.map((c) => (c.id === issueId ? { ...c, outputLog: c.outputLog + text } : c)),
@@ -230,6 +235,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 		kanbanEmitter.on("issue:killed", onKilled);
 		kanbanEmitter.on("provider:paused", onProviderPaused);
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
+		kanbanEmitter.on("issue:log-file", onLogFile);
 		kanbanEmitter.on("issue:output", onOutput);
 
 		const onModelChanged = (model: string) => setModelInUse(model);
@@ -263,6 +269,7 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			kanbanEmitter.off("issue:killed", onKilled);
 			kanbanEmitter.off("provider:paused", onProviderPaused);
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
+			kanbanEmitter.off("issue:log-file", onLogFile);
 			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);

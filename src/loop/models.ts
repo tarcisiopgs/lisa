@@ -38,6 +38,18 @@ export function resolveModels(config: LisaConfig): ModelSpec[] {
 		}
 	}
 
+	// Warn about model names that look like provider-prefixed identifiers (e.g. "opencode/model-name")
+	// which may not be the format the provider CLI expects
+	for (const m of providerModels) {
+		if (m.includes("/") && m.startsWith(`${config.provider}/`)) {
+			logger.warn(
+				`Model "${m}" starts with the provider name "${config.provider}/". ` +
+					`Most provider CLIs expect just the model name (e.g. "${m.slice(config.provider.length + 1)}"). ` +
+					`If the provider fails silently, try removing the "${config.provider}/" prefix.`,
+			);
+		}
+	}
+
 	if (config.provider === "cursor") {
 		const hasAuto = providerModels.some((m: string) => m.toLowerCase() === "auto");
 		if (!hasAuto) {

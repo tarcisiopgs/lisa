@@ -10,6 +10,7 @@ import { runWithFallback } from "../providers/index.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
@@ -74,6 +75,7 @@ export async function runBranchSession(
 	);
 
 	logger.initLogFile(logFile);
+	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
 
@@ -83,6 +85,7 @@ export async function runBranchSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		sessionTimeout: config.loop.session_timeout,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);

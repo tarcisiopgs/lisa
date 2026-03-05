@@ -17,6 +17,7 @@ import { runWithFallback } from "../providers/index.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch } from "./helpers.js";
 import { extractPrUrlFromOutput, readManifestFile, readPlanFile } from "./manifest.js";
 import type { SessionResult } from "./result.js";
@@ -48,6 +49,7 @@ export async function runWorktreeMultiRepoSession(
 
 	// Phase 1: Planning — agent analyzes issue and produces execution plan
 	logger.initLogFile(logFile);
+	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
@@ -66,6 +68,7 @@ export async function runWorktreeMultiRepoSession(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		sessionTimeout: config.loop.session_timeout,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
@@ -255,6 +258,7 @@ export async function runMultiRepoStep(
 		guardrailsDir: workspace,
 		issueId: issue.id,
 		overseer: config.overseer,
+		sessionTimeout: config.loop.session_timeout,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);

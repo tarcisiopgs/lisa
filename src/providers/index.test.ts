@@ -121,6 +121,14 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("command not found")).toBe(true);
 	});
 
+	it("returns true for lisa-timeout errors", () => {
+		expect(
+			isEligibleForFallback(
+				"[lisa-timeout] Provider killed: exceeded session_timeout. Eligible for fallback.",
+			),
+		).toBe(true);
+	});
+
 	it("returns true for cursor free-plan errors", () => {
 		expect(isEligibleForFallback("Named models unavailable Free plans can only use Auto")).toBe(
 			true,

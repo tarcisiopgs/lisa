@@ -39,6 +39,7 @@ export interface LoopConfig {
 	cooldown: number;
 	max_sessions: number;
 	concurrency?: number;
+	session_timeout?: number; // seconds per provider run, 0 = disabled (default)
 }
 
 export interface OverseerConfig {
@@ -106,6 +107,7 @@ export interface RunOptions {
 	guardrailsDir?: string;
 	issueId?: string;
 	overseer?: OverseerConfig;
+	sessionTimeout?: number; // seconds per provider run, 0 = disabled
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
 	env?: Record<string, string>; // additional env vars to inject into the provider process
