@@ -121,6 +121,31 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		providerName = selected as ProviderName;
 	}
 
+	// Provider-specific setup hints
+	if (providerName === "goose") {
+		const gooseProvider = process.env.GOOSE_PROVIDER;
+		const gooseModel = process.env.GOOSE_MODEL;
+		if (!gooseProvider || !gooseModel) {
+			clack.log.warning(
+				`Goose requires two environment variables:\n\n` +
+					`  ${pc.bold("GOOSE_PROVIDER")}  e.g. ${pc.cyan("gemini-cli")} or ${pc.cyan("anthropic")}\n` +
+					`  ${pc.bold("GOOSE_MODEL")}     e.g. ${pc.cyan("gemini-2.5-pro")} or ${pc.cyan("claude-sonnet-4-5")}\n\n` +
+					`Add them to your shell profile and reload before running ${pc.cyan("lisa run")}.`,
+			);
+		}
+	} else if (providerName === "aider") {
+		clack.log.info(
+			`Aider requires a direct LLM API key in your environment.\n` +
+				`Set one of: ${pc.bold("GEMINI_API_KEY")}, ${pc.bold("OPENAI_API_KEY")}, ${pc.bold("ANTHROPIC_API_KEY")}, etc.\n` +
+				`Aider does not use OAuth or cached credentials.`,
+		);
+	} else if (providerName === "opencode") {
+		clack.log.info(
+			`OpenCode tip: if you have MCP entries in ${pc.cyan("~/.config/opencode/config.json")},\n` +
+				`remove them or set the file to ${pc.cyan("{}")} — MCP tools can cause OpenCode to hang.`,
+		);
+	}
+
 	let selectedModels: string[] = [];
 
 	let availableModels = providerModels[providerName];
@@ -323,15 +348,28 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
 		pickFrom = pickFromAnswer as string;
 
+		const isLabelBasedSource = source === "github-issues" || source === "gitlab-issues";
 		const inProgressAnswer = await clack.text({
-			message: "Move to which status while the agent is working?",
+			message: isLabelBasedSource
+				? "Which label to apply while the agent is working? (must differ from pick_from label)"
+				: "Move to which status while the agent is working?",
 			initialValue: initial?.source_config.in_progress ?? "In Progress",
+			placeholder: isLabelBasedSource ? "e.g. in-progress" : undefined,
 		});
 		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
 		inProgress = inProgressAnswer as string;
 
+		if (isLabelBasedSource && inProgress === pickFrom) {
+			clack.log.warning(
+				`"in_progress" label is the same as "pick_from" label ("${pickFrom}").\n` +
+					`This will cause Lisa to re-pick the issue on recovery. Consider using a different label.`,
+			);
+		}
+
 		const doneAnswer = await clack.text({
-			message: "Move to which status after the PR is created?",
+			message: isLabelBasedSource
+				? "Which label to apply after the PR is created?"
+				: "Move to which status after the PR is created?",
 			initialValue: initial?.source_config.done ?? "In Review",
 		});
 		if (clack.isCancel(doneAnswer)) return process.exit(0);

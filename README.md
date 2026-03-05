@@ -112,7 +112,7 @@ Set the tokens for your chosen source and PR platform:
 # PR platform
 GITHUB_TOKEN          # GitHub (platform: cli or token)
 GITLAB_TOKEN          # GitLab (platform: gitlab)
-BITBUCKET_TOKEN       # Bitbucket (platform: bitbucket)
+BITBUCKET_TOKEN       # Bitbucket app password (platform: bitbucket)
 BITBUCKET_USERNAME    # Bitbucket username
 
 # Issue sources
@@ -125,9 +125,18 @@ PLANE_BASE_URL        # optional, defaults to https://api.plane.so
 GITLAB_TOKEN          # source: gitlab-issues
 GITLAB_BASE_URL       # optional, defaults to https://gitlab.com
 GITHUB_TOKEN          # source: github-issues
-JIRA_BASE_URL         # source: jira
+JIRA_BASE_URL         # source: jira (e.g. https://yourorg.atlassian.net)
 JIRA_EMAIL
-JIRA_API_TOKEN
+JIRA_API_TOKEN        # generate at id.atlassian.com — expires, regenerate if 401
+
+# Goose provider
+GOOSE_PROVIDER        # e.g. gemini-cli or anthropic
+GOOSE_MODEL           # e.g. gemini-2.5-pro or claude-sonnet-4-5
+
+# Aider provider (one of)
+GEMINI_API_KEY
+OPENAI_API_KEY
+ANTHROPIC_API_KEY
 ```
 
 ---
@@ -195,6 +204,22 @@ overseer:
 validation:
   require_acceptance_criteria: true
 ```
+
+### Source-specific notes
+
+**GitHub Issues / GitLab Issues** — `pick_from`, `in_progress`, and `done` are **labels**, not statuses. Make sure `in_progress` differs from `pick_from`; using the same value causes Lisa to re-pick issues that are already being worked on.
+
+**Trello** — `team`, `pick_from`, `in_progress`, and `done` are list **names** (not IDs).
+
+**Jira** — `team` is your project **key** (e.g. `ENG`). `JIRA_API_TOKEN` is generated at [id.atlassian.com](https://id.atlassian.com) and expires — regenerate if you get 401 errors.
+
+**Goose** — requires `GOOSE_PROVIDER` and `GOOSE_MODEL` env vars. Run `goose configure` once if you prefer interactive setup.
+
+**Aider** — requires a direct LLM API key (`GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`). Does not support OAuth or cached credentials.
+
+**OpenCode** — if `~/.config/opencode/config.json` contains MCP entries, remove them or set the file to `{}` to prevent OpenCode from hanging on startup.
+
+---
 
 ### Workflow Modes
 
