@@ -129,10 +129,6 @@ JIRA_BASE_URL         # source: jira (e.g. https://yourorg.atlassian.net)
 JIRA_EMAIL
 JIRA_API_TOKEN        # generate at id.atlassian.com — expires, regenerate if 401
 
-# Goose provider
-GOOSE_PROVIDER        # e.g. gemini-cli or anthropic
-GOOSE_MODEL           # e.g. gemini-2.5-pro or claude-sonnet-4-5
-
 # Aider provider (one of)
 GEMINI_API_KEY
 OPENAI_API_KEY
@@ -213,7 +209,7 @@ validation:
 
 **Jira** — `team` is your project **key** (e.g. `ENG`). `JIRA_API_TOKEN` is generated at [id.atlassian.com](https://id.atlassian.com) and expires — regenerate if you get 401 errors.
 
-**Goose** — requires `GOOSE_PROVIDER` and `GOOSE_MODEL` env vars. Run `goose configure` once if you prefer interactive setup.
+**Goose** — `lisa init` asks which backend to use (gemini-cli, anthropic, openai, etc.) and saves it to config. No env vars needed. You can also set `GOOSE_PROVIDER` manually — it takes precedence over the config value.
 
 **Aider** — requires a direct LLM API key (`GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`). Does not support OAuth or cached credentials.
 

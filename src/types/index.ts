@@ -60,7 +60,9 @@ export interface LifecycleConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
-	provider_options?: Partial<Record<ProviderName, { model?: string; models?: string[] }>>;
+	provider_options?: Partial<
+		Record<ProviderName, { model?: string; models?: string[]; goose_provider?: string }>
+	>;
 	bell?: boolean;
 	source: SourceName;
 	source_config: SourceConfig;

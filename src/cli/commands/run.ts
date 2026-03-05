@@ -102,6 +102,14 @@ export const run = defineCommand({
 			label: args.label,
 			bell: args.bell,
 		});
+		// Inject Goose provider from config into process.env if not already set
+		if (merged.provider === "goose") {
+			const gooseProvider = merged.provider_options?.goose?.goose_provider;
+			if (gooseProvider && !process.env.GOOSE_PROVIDER) {
+				process.env.GOOSE_PROVIDER = gooseProvider;
+			}
+		}
+
 		// Apply lifecycle overrides from CLI flags
 		if (args.lifecycle || args["lifecycle-timeout"]) {
 			const lifecycleTimeout = args["lifecycle-timeout"]

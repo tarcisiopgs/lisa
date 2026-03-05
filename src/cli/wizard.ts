@@ -121,18 +121,25 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		providerName = selected as ProviderName;
 	}
 
-	// Provider-specific setup hints
+	// Provider-specific setup hints / interactive config
+	let gooseProvider: string | undefined;
 	if (providerName === "goose") {
-		const gooseProvider = process.env.GOOSE_PROVIDER;
-		const gooseModel = process.env.GOOSE_MODEL;
-		if (!gooseProvider || !gooseModel) {
-			clack.log.warning(
-				`Goose requires two environment variables:\n\n` +
-					`  ${pc.bold("GOOSE_PROVIDER")}  e.g. ${pc.cyan("gemini-cli")} or ${pc.cyan("anthropic")}\n` +
-					`  ${pc.bold("GOOSE_MODEL")}     e.g. ${pc.cyan("gemini-2.5-pro")} or ${pc.cyan("claude-sonnet-4-5")}\n\n` +
-					`Add them to your shell profile and reload before running ${pc.cyan("lisa run")}.`,
-			);
-		}
+		const gooseProviderAnswer = await clack.select({
+			message: "Which backend should Goose use?",
+			initialValue:
+				initial?.provider_options?.goose?.goose_provider ??
+				process.env.GOOSE_PROVIDER ??
+				"gemini-cli",
+			options: [
+				{ value: "gemini-cli", label: "Gemini CLI", hint: "requires Gemini CLI installed" },
+				{ value: "anthropic", label: "Anthropic", hint: "requires ANTHROPIC_API_KEY" },
+				{ value: "openai", label: "OpenAI", hint: "requires OPENAI_API_KEY" },
+				{ value: "google", label: "Google (direct)", hint: "requires GOOGLE_API_KEY" },
+				{ value: "ollama", label: "Ollama", hint: "local models" },
+			],
+		});
+		if (clack.isCancel(gooseProviderAnswer)) return process.exit(0);
+		gooseProvider = gooseProviderAnswer as string;
 	} else if (providerName === "aider") {
 		clack.log.info(
 			`Aider requires a direct LLM API key in your environment.\n` +
@@ -150,7 +157,21 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	let availableModels = providerModels[providerName];
 
-	if (providerName === "cursor") {
+	if (providerName === "goose" && gooseProvider) {
+		const gooseModelsByBackend: Record<string, string[]> = {
+			"gemini-cli": [
+				"gemini-2.5-pro",
+				"gemini-2.5-flash",
+				"gemini-2.0-flash",
+				"gemini-2.5-flash-lite",
+			],
+			anthropic: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
+			openai: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+			google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+			ollama: ["llama3.3", "qwen2.5-coder", "mistral"],
+		};
+		availableModels = gooseModelsByBackend[gooseProvider] ?? [];
+	} else if (providerName === "cursor") {
 		const isFree = await isCursorFreePlan();
 		if (isFree) {
 			availableModels = ["auto"];
@@ -441,7 +462,10 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		provider: providerName,
 		provider_options: {
 			...(initial?.provider_options || {}),
-			[providerName]: { models: selectedModels },
+			[providerName]: {
+				models: selectedModels,
+				...(gooseProvider ? { goose_provider: gooseProvider } : {}),
+			},
 		},
 		source: source as SourceName,
 		source_config: {
