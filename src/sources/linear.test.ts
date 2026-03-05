@@ -396,7 +396,7 @@ describe("LinearSource.addLabel", () => {
 						data: {
 							issueLabelCreate: {
 								success: true,
-								label: { id: "label-new-id", name: "needs-spec" },
+								issueLabel: { id: "label-new-id", name: "needs-spec" },
 							},
 						},
 					}),
