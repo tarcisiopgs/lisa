@@ -361,15 +361,17 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		if (clack.isCancel(projectAnswer)) return process.exit(0);
 		project = projectAnswer as string;
 
+		const isLabelBasedSource = source === "github-issues" || source === "gitlab-issues";
+
 		const pickFromAnswer = await clack.text({
-			message: "Pick up issues in which status?",
-			initialValue: initial?.source_config.pick_from ?? "Backlog",
-			placeholder: "e.g. Backlog, Todo",
+			message: isLabelBasedSource
+				? "Pick up issues in which state? (open, closed, or a label name)"
+				: "Pick up issues in which status?",
+			initialValue: initial?.source_config.pick_from ?? (isLabelBasedSource ? "open" : "Backlog"),
+			placeholder: isLabelBasedSource ? "e.g. open" : "e.g. Backlog, Todo",
 		});
 		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
 		pickFrom = pickFromAnswer as string;
-
-		const isLabelBasedSource = source === "github-issues" || source === "gitlab-issues";
 		const inProgressAnswer = await clack.text({
 			message: isLabelBasedSource
 				? "Which label to apply while the agent is working? (must differ from pick_from label)"

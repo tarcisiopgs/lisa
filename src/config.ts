@@ -22,7 +22,7 @@ const CONFIG_FILE = "config.yaml";
 
 const DEFAULT_CONFIG: LisaConfig = {
 	provider: "" as ProviderName,
-	provider_options: {} as Partial<Record<ProviderName, { model?: string; models?: string[] }>>,
+	provider_options: {} as LisaConfig["provider_options"],
 	source: "" as SourceName,
 	source_config: {
 		team: "",
@@ -141,9 +141,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			: undefined,
 		provider_options: {
 			...(DEFAULT_CONFIG.provider_options || {}),
-			...((parsed.provider_options ?? {}) as Partial<
-				Record<ProviderName, { model?: string; models?: string[] }>
-			>),
+			...((parsed.provider_options ?? {}) as LisaConfig["provider_options"]),
 		},
 	};
 

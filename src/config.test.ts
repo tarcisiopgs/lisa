@@ -222,6 +222,40 @@ repos:
 		const config = loadConfig(tmpDir);
 		expect(config.platform).toBe("bitbucket");
 	});
+
+	it("loads goose_provider from provider_options", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: goose
+provider_options:
+  goose:
+    models:
+      - gemini-2.5-pro
+    goose_provider: gemini-cli
+`,
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.provider_options?.goose?.goose_provider).toBe("gemini-cli");
+		expect(config.provider_options?.goose?.models).toEqual(["gemini-2.5-pro"]);
+	});
+
+	it("loads config without goose_provider when field is absent", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: goose
+provider_options:
+  goose:
+    models:
+      - gemini-2.5-pro
+`,
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.provider_options?.goose?.goose_provider).toBeUndefined();
+	});
 });
 
 describe("saveConfig", () => {
@@ -287,6 +321,38 @@ describe("saveConfig", () => {
 		const content = readFileSync(join(tmpDir, ".lisa", "config.yaml"), "utf-8");
 		expect(content).toContain("board: MyBoard");
 		expect(content).not.toContain("team:");
+	});
+
+	it("round-trips goose_provider through save and load", () => {
+		const config: LisaConfig = {
+			provider: "goose",
+			provider_options: {
+				goose: {
+					models: ["gemini-2.5-pro"],
+					goose_provider: "gemini-cli",
+				},
+			},
+			source: "linear",
+			source_config: {
+				team: "T",
+				project: "P",
+				label: "ready",
+				pick_from: "Todo",
+				in_progress: "In Progress",
+				done: "Done",
+			},
+			platform: "cli",
+			workflow: "worktree",
+			workspace: ".",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 0 },
+		};
+
+		saveConfig(config, tmpDir);
+		const loaded = loadConfig(tmpDir);
+		expect(loaded.provider_options?.goose?.goose_provider).toBe("gemini-cli");
+		expect(loaded.provider_options?.goose?.models).toEqual(["gemini-2.5-pro"]);
 	});
 });
 
