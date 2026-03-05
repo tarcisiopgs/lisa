@@ -414,20 +414,20 @@ export class LinearSource implements Source {
 
 		if (!teamLabel) {
 			const created = await gql<{
-				issueLabelCreate: { success: boolean; label: { id: string; name: string } | null };
+				issueLabelCreate: { success: boolean; issueLabel: { id: string; name: string } | null };
 			}>(
 				`mutation($teamId: String!, $name: String!) {
 					issueLabelCreate(input: { teamId: $teamId, name: $name }) {
 						success
-						label { id name }
+						issueLabel { id name }
 					}
 				}`,
 				{ teamId: issueData.issue.team.id, name: labelName },
 			);
 
-			if (created.issueLabelCreate.success && created.issueLabelCreate.label) {
+			if (created.issueLabelCreate.success && created.issueLabelCreate.issueLabel) {
 				logger.log(`Label "${labelName}" created automatically in team ${issueData.issue.team.id}`);
-				teamLabel = created.issueLabelCreate.label;
+				teamLabel = created.issueLabelCreate.issueLabel;
 			} else {
 				// Race condition: label may have been created by another process — refetch
 				const refetch = await gql<{
