@@ -189,6 +189,7 @@ repos:
 loop:
   cooldown: 10               # seconds between issues
   max_sessions: 0            # 0 = unlimited
+  session_timeout: 0         # seconds per provider run (0 = disabled)
 
 # Optional — kill stuck providers
 overseer:
@@ -224,6 +225,19 @@ validation:
 **Worktree** — Lisa creates an isolated git worktree per issue under `.worktrees/`. Your main checkout stays untouched. Cleaned up automatically after the PR is created.
 
 When `--concurrency` is greater than 1, worktree mode is enforced automatically.
+
+---
+
+### Session Timeout
+
+If a provider hangs (e.g. misconfigured model, network issue), Lisa can kill it after a configurable duration:
+
+```yaml
+loop:
+  session_timeout: 300  # kill provider after 5 minutes (0 = disabled, default)
+```
+
+When the timeout fires, the provider process is killed and the error is eligible for fallback — Lisa will try the next model in your chain. This is disabled by default so long-running sessions work uninterrupted.
 
 ---
 
