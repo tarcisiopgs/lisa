@@ -32,7 +32,7 @@ describe("fetchOpenCodeModels", () => {
 
 	it("filters out blank lines and lines without a slash", () => {
 		vi.mocked(execSync).mockReturnValue(
-			"\nanthropic/claude-sonnet-4-6\n\nsomegarbage\nopencode/kimi-k2\n",
+			"\nanthropic/claude-sonnet-4-6\n\nsomegarbage\nhttps://opencode.ai/docs\n/usr/local/bin/opencode\nopencode/kimi-k2\n",
 		);
 		const result = fetchOpenCodeModels();
 		expect(result).toEqual(["anthropic/claude-sonnet-4-6", "opencode/kimi-k2"]);

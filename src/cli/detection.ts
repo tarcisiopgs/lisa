@@ -104,10 +104,12 @@ export function fetchCursorModels(): string[] {
 export function fetchOpenCodeModels(): string[] {
 	try {
 		const raw = execSync("opencode models", { encoding: "utf-8", timeout: 10000 });
-		return raw
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
+		const clean = raw.replace(/\x1b\[[0-9;]*[mGKHFA-Z]/g, "");
+		return clean
 			.split("\n")
 			.map((l) => l.trim())
-			.filter((m) => m.length > 0 && m.includes("/"));
+			.filter((m) => /^[a-z0-9][\w.-]*\/.+/i.test(m));
 	} catch {
 		return [];
 	}
