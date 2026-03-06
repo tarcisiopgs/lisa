@@ -1,10 +1,6 @@
 # Lisa
 
 <p align="center">
-  <img src="assets/lisa.png" width="200" alt="Lisa" />
-</p>
-
-<p align="center">
   <strong>Label an issue. Walk away. Come back to a PR.</strong>
 </p>
 
