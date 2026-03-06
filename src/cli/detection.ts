@@ -104,41 +104,12 @@ export function fetchCursorModels(): string[] {
 export function fetchOpenCodeModels(): string[] {
 	try {
 		const raw = execSync("opencode models", { encoding: "utf-8", timeout: 10000 });
-
-		// Determine which providers the user has credentials for
-		const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
-		const hasGoogle = Boolean(
-			process.env.GEMINI_API_KEY ||
-				process.env.GOOGLE_API_KEY ||
-				process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-		);
-		const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
-		const hasCopilot = Boolean(process.env.GITHUB_COPILOT_API_KEY || process.env.GITHUB_TOKEN);
-		const hasGroq = Boolean(process.env.GROQ_API_KEY);
-		const hasMistral = Boolean(process.env.MISTRAL_API_KEY);
-		const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
-
-		return raw
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
+		const clean = raw.replace(/\x1b\[[0-9;]*[mGKHFA-Z]/g, "");
+		return clean
 			.split("\n")
 			.map((l) => l.trim())
-			.filter((m) => {
-				// Always include free OpenCode proprietary models
-				if (/^opencode\//.test(m)) return true;
-				// Provider-gated: only show if credentials are present
-				if (/^anthropic\/claude-(opus|sonnet|haiku)-4-\d+$/.test(m)) return hasAnthropic;
-				if (
-					/^google\/gemini-(3\.1-pro-preview|3-pro-preview|3-flash-preview|2\.5-(pro|flash|flash-lite))$/.test(
-						m,
-					)
-				)
-					return hasGoogle;
-				if (/^openai\//.test(m)) return hasOpenAI;
-				if (/^github-copilot\//.test(m)) return hasCopilot;
-				if (/^groq\//.test(m)) return hasGroq;
-				if (/^mistral\//.test(m)) return hasMistral;
-				if (/^deepseek\//.test(m)) return hasDeepSeek;
-				return false;
-			});
+			.filter((m) => /^[a-z0-9][\w.-]*\/.+/i.test(m));
 	} catch {
 		return [];
 	}
