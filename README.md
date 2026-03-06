@@ -5,14 +5,14 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif?v=2" alt="Lisa demo" width="800" />
-</p>
-
-<p align="center">
   <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/v/@tarcisiopgs/lisa.svg" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/dm/@tarcisiopgs/lisa.svg" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/node/v/%40tarcisiopgs%2Flisa" alt="Node.js version" />
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif?v=2" alt="Lisa demo" width="800" />
 </p>
 
 ---
