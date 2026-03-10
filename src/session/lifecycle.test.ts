@@ -255,10 +255,11 @@ describe("runLifecycle", () => {
 		expect(result.success).toBe(false);
 	});
 
-	it("auto mode (undefined lifecycle) delegates to startResources — port already running", async () => {
-		makeMockSocket({ connect: true });
+	it("undefined lifecycle defaults to skip — returns success without checking ports", async () => {
 		const result = await runLifecycle(mockInfra, undefined, "/tmp");
 		expect(result.success).toBe(true);
+		expect(result.env).toEqual({});
+		expect(vi.mocked(createConnection)).not.toHaveBeenCalled();
 	});
 
 	it("auto mode with timeout patches startup_timeout on all resources", async () => {
