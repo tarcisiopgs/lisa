@@ -47,8 +47,8 @@ services:
 		expect(resources).toHaveLength(1);
 		expect(resources[0]?.name).toBe("db");
 		expect(resources[0]?.check_port).toBe(5432);
-		expect(resources[0]?.up).toBe("docker compose up -d");
-		expect(resources[0]?.down).toBe("docker compose down");
+		expect(resources[0]?.up).toBe("docker compose up -d db");
+		expect(resources[0]?.down).toBe("docker compose stop db");
 		expect(resources[0]?.startup_timeout).toBe(30);
 	});
 
@@ -133,7 +133,7 @@ services:
 		expect(resources[0]?.name).toBe("db");
 	});
 
-	it("handles multiple services with port deduplication", () => {
+	it("handles multiple services — each gets service-specific commands", () => {
 		writeFileSync(
 			join(tmpDir, "docker-compose.yml"),
 			`
@@ -152,12 +152,11 @@ services:
 		const resources = discoverDockerCompose(tmpDir);
 		expect(resources).toHaveLength(2);
 		expect(resources[0]?.name).toBe("db");
-		expect(resources[0]?.up).toBe("docker compose up -d");
-		expect(resources[0]?.down).toBe("docker compose down");
-		// Second resource should have no-op up/down to avoid duplicate compose commands
+		expect(resources[0]?.up).toBe("docker compose up -d db");
+		expect(resources[0]?.down).toBe("docker compose stop db");
 		expect(resources[1]?.name).toBe("redis");
-		expect(resources[1]?.up).toBe("true");
-		expect(resources[1]?.down).toBe("true");
+		expect(resources[1]?.up).toBe("docker compose up -d redis");
+		expect(resources[1]?.down).toBe("docker compose stop redis");
 	});
 
 	it("skips services without ports", () => {
