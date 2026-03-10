@@ -166,9 +166,12 @@ describe("detectGitRepos", () => {
 		];
 		await detectGitRepos(existingRepos);
 
-		const call = vi.mocked(clack.multiselect).mock.calls[0]![0]!;
-		expect(call.initialValues).not.toContain("repo-a");
-		expect(call.initialValues).toContain("repo-b");
+		expect(vi.mocked(clack.multiselect)).toHaveBeenCalledWith(
+			expect.objectContaining({ initialValues: expect.arrayContaining(["repo-b"]) }),
+		);
+		expect(vi.mocked(clack.multiselect)).not.toHaveBeenCalledWith(
+			expect.objectContaining({ initialValues: expect.arrayContaining(["repo-a"]) }),
+		);
 	});
 
 	it("shows missing repos as disabled with hint", async () => {
@@ -188,12 +191,13 @@ describe("detectGitRepos", () => {
 		];
 		await detectGitRepos(existingRepos);
 
-		const call = vi.mocked(clack.multiselect).mock.calls[0]![0]!;
-		expect(call.options).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({ value: "repo-a", disabled: true, hint: "(not found on disk)" }),
-				expect.objectContaining({ value: "repo-b", disabled: false }),
-			]),
+		expect(vi.mocked(clack.multiselect)).toHaveBeenCalledWith(
+			expect.objectContaining({
+				options: expect.arrayContaining([
+					expect.objectContaining({ value: "repo-a", disabled: true, hint: "(not found on disk)" }),
+					expect.objectContaining({ value: "repo-b", disabled: false }),
+				]),
+			}),
 		);
 	});
 
