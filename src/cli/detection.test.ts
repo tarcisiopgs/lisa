@@ -1,8 +1,24 @@
 import { execSync } from "node:child_process";
+import type { Dirent } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import * as clack from "@clack/prompts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { detectPlatformFromRemoteUrl, fetchOpenCodeModels } from "./detection.js";
+import { detectGitRepos, detectPlatformFromRemoteUrl, fetchOpenCodeModels } from "./detection.js";
 
 vi.mock("node:child_process", () => ({ execSync: vi.fn() }));
+
+vi.mock("node:fs", () => ({
+	existsSync: vi.fn(),
+	readdirSync: vi.fn(),
+	readFileSync: vi.fn(() => JSON.stringify({ version: "0.0.0" })),
+}));
+
+vi.mock("@clack/prompts", () => ({
+	multiselect: vi.fn(),
+	log: { info: vi.fn() },
+	isCancel: vi.fn(() => false),
+	select: vi.fn(),
+}));
 
 describe("fetchOpenCodeModels", () => {
 	beforeEach(() => {
@@ -80,5 +96,152 @@ describe("detectPlatformFromRemoteUrl", () => {
 
 	it("returns null for unknown remote", () => {
 		expect(detectPlatformFromRemoteUrl("https://codeberg.org/org/repo.git")).toBeNull();
+	});
+});
+
+describe("detectGitRepos", () => {
+	const cwd = process.cwd();
+
+	function fakeDir(name: string): Dirent {
+		return { name, isDirectory: () => true } as unknown as Dirent;
+	}
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		vi.mocked(clack.isCancel).mockReturnValue(false);
+		vi.mocked(execSync).mockReturnValue("");
+	});
+
+	it("returns empty array when current dir is a git repo", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => String(p) === `${cwd}/.git`);
+		const result = await detectGitRepos();
+		expect(result).toEqual([]);
+		expect(clack.multiselect).not.toHaveBeenCalled();
+	});
+
+	it("returns empty array when no subdirectory git repos found and no existing repos", async () => {
+		vi.mocked(existsSync).mockReturnValue(false);
+		vi.mocked(readdirSync).mockReturnValue([]);
+		const result = await detectGitRepos();
+		expect(result).toEqual([]);
+		expect(clack.multiselect).not.toHaveBeenCalled();
+	});
+
+	it("pre-selects existing repos that are still on disk", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => {
+			const s = String(p);
+			if (s === `${cwd}/.git`) return false;
+			return s.endsWith("/.git");
+		});
+		vi.mocked(readdirSync).mockReturnValue([
+			fakeDir("repo-a"),
+			fakeDir("repo-b"),
+		] as unknown as ReturnType<typeof readdirSync>);
+		vi.mocked(clack.multiselect).mockResolvedValue(["repo-a"]);
+
+		const existingRepos = [{ name: "repo-a", path: "./repo-a", match: "", base_branch: "" }];
+		await detectGitRepos(existingRepos);
+
+		expect(clack.multiselect).toHaveBeenCalledWith(
+			expect.objectContaining({
+				initialValues: ["repo-a"],
+			}),
+		);
+	});
+
+	it("does not include missing repos in initialValues", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => {
+			const s = String(p);
+			if (s === `${cwd}/.git`) return false;
+			return s.includes("repo-b") && s.endsWith("/.git");
+		});
+		vi.mocked(readdirSync).mockReturnValue([fakeDir("repo-b")] as unknown as ReturnType<
+			typeof readdirSync
+		>);
+		vi.mocked(clack.multiselect).mockResolvedValue(["repo-b"]);
+
+		const existingRepos = [
+			{ name: "repo-a", path: "./repo-a", match: "", base_branch: "" },
+			{ name: "repo-b", path: "./repo-b", match: "", base_branch: "" },
+		];
+		await detectGitRepos(existingRepos);
+
+		const call = vi.mocked(clack.multiselect).mock.calls[0]![0]!;
+		expect(call.initialValues).not.toContain("repo-a");
+		expect(call.initialValues).toContain("repo-b");
+	});
+
+	it("shows missing repos as disabled with hint", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => {
+			const s = String(p);
+			if (s === `${cwd}/.git`) return false;
+			return s.includes("repo-b") && s.endsWith("/.git");
+		});
+		vi.mocked(readdirSync).mockReturnValue([fakeDir("repo-b")] as unknown as ReturnType<
+			typeof readdirSync
+		>);
+		vi.mocked(clack.multiselect).mockResolvedValue(["repo-b"]);
+
+		const existingRepos = [
+			{ name: "repo-a", path: "./repo-a", match: "", base_branch: "" },
+			{ name: "repo-b", path: "./repo-b", match: "", base_branch: "" },
+		];
+		await detectGitRepos(existingRepos);
+
+		const call = vi.mocked(clack.multiselect).mock.calls[0]![0]!;
+		expect(call.options).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ value: "repo-a", disabled: true, hint: "(not found on disk)" }),
+				expect.objectContaining({ value: "repo-b", disabled: false }),
+			]),
+		);
+	});
+
+	it("does not include missing repos in returned result", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => {
+			const s = String(p);
+			if (s === `${cwd}/.git`) return false;
+			return s.includes("repo-b") && s.endsWith("/.git");
+		});
+		vi.mocked(readdirSync).mockReturnValue([fakeDir("repo-b")] as unknown as ReturnType<
+			typeof readdirSync
+		>);
+		vi.mocked(clack.multiselect).mockResolvedValue(["repo-b"]);
+
+		const existingRepos = [{ name: "repo-a", path: "./repo-a", match: "", base_branch: "" }];
+		const result = await detectGitRepos(existingRepos);
+
+		expect(result.map((r) => r.path)).not.toContain("./repo-a");
+	});
+
+	it("shows prompt with only-disabled options when all configured repos are missing", async () => {
+		vi.mocked(existsSync).mockReturnValue(false);
+		vi.mocked(readdirSync).mockReturnValue([]);
+		vi.mocked(clack.multiselect).mockResolvedValue([]);
+
+		const existingRepos = [{ name: "repo-a", path: "./repo-a", match: "", base_branch: "" }];
+		const result = await detectGitRepos(existingRepos);
+
+		expect(clack.multiselect).toHaveBeenCalled();
+		expect(result).toEqual([]);
+	});
+
+	it("preserves match and base_branch from existing config for re-selected repos", async () => {
+		vi.mocked(existsSync).mockImplementation((p) => {
+			const s = String(p);
+			if (s === `${cwd}/.git`) return false;
+			return s.endsWith("/.git");
+		});
+		vi.mocked(readdirSync).mockReturnValue([fakeDir("repo-a")] as unknown as ReturnType<
+			typeof readdirSync
+		>);
+		vi.mocked(clack.multiselect).mockResolvedValue(["repo-a"]);
+
+		const existingRepos = [
+			{ name: "repo-a", path: "./repo-a", match: "AUTH:", base_branch: "develop" },
+		];
+		const result = await detectGitRepos(existingRepos);
+
+		expect(result[0]).toMatchObject({ path: "./repo-a", match: "AUTH:", base_branch: "develop" });
 	});
 });

@@ -194,7 +194,7 @@ export async function verifyPlatformCredential(platform: PRPlatform): Promise<vo
 	}
 }
 
-export async function detectGitRepos(): Promise<RepoConfig[]> {
+export async function detectGitRepos(existingRepos: RepoConfig[] = []): Promise<RepoConfig[]> {
 	const cwd = process.cwd();
 
 	// If current directory is a git repo, no sub-repos needed
@@ -209,22 +209,45 @@ export async function detectGitRepos(): Promise<RepoConfig[]> {
 		.filter((e) => e.isDirectory() && existsSync(join(cwd, e.name, ".git")))
 		.map((e) => e.name);
 
-	if (gitDirs.length === 0) {
+	// Extract dir names from existing config (path is always "./dir-name")
+	const existingDirs = existingRepos.map((r) => r.path.replace(/^\.\//, ""));
+
+	// Repos in config that no longer exist on disk
+	const missingDirs = existingDirs.filter((d) => !gitDirs.includes(d));
+
+	// Nothing to show — no repos on disk and nothing configured
+	if (gitDirs.length === 0 && missingDirs.length === 0) {
 		return [];
 	}
 
+	// Build options: detected repos first, then missing ones as disabled
+	const options = [
+		...gitDirs.map((dir) => ({ value: dir, label: dir, disabled: false })),
+		...missingDirs.map((dir) => ({
+			value: dir,
+			label: dir,
+			hint: "(not found on disk)",
+			disabled: true,
+		})),
+	];
+
+	// Pre-select existing repos that still exist on disk
+	const initialValues = existingDirs.filter((d) => gitDirs.includes(d));
+
 	const selected = await clack.multiselect({
 		message: "Multiple git repositories found — which ones should Lisa work on?",
-		options: gitDirs.map((dir) => ({ value: dir, label: dir })),
+		options,
+		initialValues,
 	});
 
 	if (clack.isCancel(selected)) return process.exit(0);
 
+	// Only return repos that are on disk (disabled ones can't be selected)
 	return (selected as string[]).map((dir) => ({
 		name: getGitRepoName(join(cwd, dir)) ?? dir,
 		path: `./${dir}`,
-		match: "",
-		base_branch: "",
+		match: existingRepos.find((r) => r.path === `./${dir}`)?.match ?? "",
+		base_branch: existingRepos.find((r) => r.path === `./${dir}`)?.base_branch ?? "",
 	}));
 }
 
