@@ -193,6 +193,11 @@ overseer:
   check_interval: 30         # seconds between git status checks
   stuck_threshold: 300       # seconds without changes before killing
 
+# Optional — Docker infrastructure management (disabled by default)
+lifecycle:
+  mode: auto           # "auto" = start/stop services, "skip" = disabled (default), "validate-only" = fail if not running
+  timeout: 30          # seconds per service to wait on startup
+
 # Optional — skip issues without acceptance criteria
 validation:
   require_acceptance_criteria: true
