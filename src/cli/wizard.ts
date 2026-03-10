@@ -2,6 +2,7 @@ import { resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
 import pc from "picocolors";
 import { saveConfig } from "../config.js";
+import { isGhCliAvailable } from "../git/github.js";
 import { ensureWorktreeGitignore } from "../git/worktree.js";
 import { getAllProvidersWithAvailability } from "../providers/index.js";
 import { getTemplateById, getTemplates, templateToPartialConfig } from "../templates.js";
@@ -212,48 +213,77 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		selectedModels = (modelSelection as string[]) ?? [];
 	}
 
+	const ghCliAvailable = await isGhCliAvailable();
 	const source = await clack.select({
 		message: "Where do your issues come from?",
 		initialValue: initial?.source,
-		options: [
-			{ value: "linear", label: "Linear", apiHint: "GraphQL API", envVars: ["LINEAR_API_KEY"] },
-			{
-				value: "trello",
-				label: "Trello",
-				apiHint: "REST API",
-				envVars: ["TRELLO_API_KEY", "TRELLO_TOKEN"],
-			},
-			{
-				value: "github-issues",
-				label: "GitHub Issues",
-				apiHint: "REST API",
-				envVars: ["GITHUB_TOKEN"],
-			},
-			{
-				value: "gitlab-issues",
-				label: "GitLab Issues",
-				apiHint: "REST API",
-				envVars: ["GITLAB_TOKEN"],
-			},
-			{ value: "plane", label: "Plane", apiHint: "REST API", envVars: ["PLANE_API_TOKEN"] },
-			{
-				value: "shortcut",
-				label: "Shortcut",
-				apiHint: "REST API",
-				envVars: ["SHORTCUT_API_TOKEN"],
-			},
-			{
-				value: "jira",
-				label: "Jira",
-				apiHint: "REST API",
-				envVars: ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"],
-			},
-		].map(({ value, label, apiHint, envVars }) => {
-			const missing = envVars.filter((v) => !process.env[v]);
+		options: (
+			[
+				{
+					value: "linear",
+					label: "Linear",
+					apiHint: "GraphQL API",
+					envVars: ["LINEAR_API_KEY"],
+					ghCliFallback: false,
+				},
+				{
+					value: "trello",
+					label: "Trello",
+					apiHint: "REST API",
+					envVars: ["TRELLO_API_KEY", "TRELLO_TOKEN"],
+					ghCliFallback: false,
+				},
+				{
+					value: "github-issues",
+					label: "GitHub Issues",
+					apiHint: "REST API",
+					envVars: ["GITHUB_TOKEN"],
+					ghCliFallback: true,
+				},
+				{
+					value: "gitlab-issues",
+					label: "GitLab Issues",
+					apiHint: "REST API",
+					envVars: ["GITLAB_TOKEN"],
+					ghCliFallback: false,
+				},
+				{
+					value: "plane",
+					label: "Plane",
+					apiHint: "REST API",
+					envVars: ["PLANE_API_TOKEN"],
+					ghCliFallback: false,
+				},
+				{
+					value: "shortcut",
+					label: "Shortcut",
+					apiHint: "REST API",
+					envVars: ["SHORTCUT_API_TOKEN"],
+					ghCliFallback: false,
+				},
+				{
+					value: "jira",
+					label: "Jira",
+					apiHint: "REST API",
+					envVars: ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"],
+					ghCliFallback: false,
+				},
+			] as const
+		).map(({ value, label, apiHint, envVars, ghCliFallback }) => {
+			let missing = envVars.filter((v) => !process.env[v]);
+			if (ghCliFallback && ghCliAvailable) {
+				missing = missing.filter((v) => v !== "GITHUB_TOKEN");
+			}
+			const usingGhCli = ghCliFallback && ghCliAvailable && !process.env.GITHUB_TOKEN;
 			return {
 				value,
 				label,
-				hint: missing.length > 0 ? `missing: ${missing.join(", ")}` : apiHint,
+				hint:
+					missing.length > 0
+						? `missing: ${missing.join(", ")}`
+						: usingGhCli
+							? "via gh CLI"
+							: apiHint,
 				disabled: missing.length > 0,
 			};
 		}),
