@@ -193,8 +193,8 @@ export async function startResources(
 /**
  * Run lifecycle management according to the configured mode.
  *
- * - "auto" (default): starts resources via startResources, applies optional timeout override
- * - "skip": returns success immediately without touching resources
+ * - "skip" (default): returns success immediately without touching resources
+ * - "auto": starts resources via startResources, applies optional timeout override
  * - "validate-only": checks ports via isPortInUse; returns failure if any resource is not running
  */
 export async function runLifecycle(
@@ -202,7 +202,7 @@ export async function runLifecycle(
 	lifecycle: LifecycleConfig | undefined,
 	baseCwd: string,
 ): Promise<StartResourcesResult> {
-	const mode = lifecycle?.mode ?? "auto";
+	const mode = lifecycle?.mode ?? "skip";
 
 	if (mode === "skip") {
 		return { success: true, env: {} };

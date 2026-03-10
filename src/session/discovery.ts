@@ -103,22 +103,10 @@ export function discoverDockerCompose(cwd: string): ResourceConfig[] {
 		resources.push({
 			name: serviceName,
 			check_port: hostPort,
-			up: "docker compose up -d",
-			down: "docker compose down",
+			up: `docker compose up -d ${serviceName}`,
+			down: `docker compose stop ${serviceName}`,
 			startup_timeout: 30,
 		});
-	}
-
-	// Deduplicate up/down commands: if multiple services share the same compose file,
-	// only the first resource should run up/down; the rest just check their port.
-	if (resources.length > 1) {
-		for (let i = 1; i < resources.length; i++) {
-			const r = resources[i];
-			if (r) {
-				r.up = "true"; // no-op — first resource already started compose
-				r.down = "true"; // no-op — first resource will stop compose
-			}
-		}
 	}
 
 	return resources;
