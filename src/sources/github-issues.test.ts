@@ -1,3 +1,4 @@
+import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	checkPrMerged,
@@ -6,6 +7,10 @@ import {
 	parseGitHubIssueNumber,
 	parseGitHubPrUrl,
 } from "./github-issues.js";
+
+vi.mock("execa", () => ({
+	execa: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -237,9 +242,12 @@ describe("GitHubIssuesSource", () => {
 			expect(capturedUrl).toContain("state=open");
 		});
 
-		it("throws if GITHUB_TOKEN is not set", async () => {
+		it("throws if GITHUB_TOKEN is not set and gh CLI is unavailable", async () => {
 			delete process.env.GITHUB_TOKEN;
-			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow("GITHUB_TOKEN must be set");
+			vi.mocked(execa).mockRejectedValueOnce(new Error("gh: command not found") as never);
+			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow(
+				"GitHub authentication required",
+			);
 		});
 
 		it("throws on API error", async () => {
@@ -720,5 +728,95 @@ describe("checkPrMerged (GitHub)", () => {
 		});
 		await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
 		expect(capturedUrl).toContain("/repos/my-org/my-repo/pulls/42");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// gh CLI token fallback
+// ---------------------------------------------------------------------------
+
+describe("gh CLI token fallback", () => {
+	let source: GitHubIssuesSource;
+
+	beforeEach(() => {
+		source = new GitHubIssuesSource();
+		delete process.env.GITHUB_TOKEN;
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		delete process.env.GITHUB_TOKEN;
+		vi.restoreAllMocks();
+	});
+
+	it("uses token from gh auth token when GITHUB_TOKEN is not set", async () => {
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "gh-cli-token-abc" } as never);
+
+		let capturedAuthHeader = "";
+		global.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+			capturedAuthHeader = (init?.headers as Record<string, string>)?.Authorization ?? "";
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => [],
+				text: async () => "[]",
+			});
+		});
+
+		await source.fetchNextIssue({
+			team: "my-org/my-repo",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "in-progress",
+			done: "done",
+		});
+
+		expect(vi.mocked(execa)).toHaveBeenCalledWith("gh", ["auth", "token"]);
+		expect(capturedAuthHeader).toBe("Bearer gh-cli-token-abc");
+	});
+
+	it("throws when GITHUB_TOKEN is not set and gh CLI is unavailable", async () => {
+		vi.mocked(execa).mockRejectedValueOnce(new Error("gh: command not found") as never);
+
+		global.fetch = vi.fn();
+
+		await expect(
+			source.fetchNextIssue({
+				team: "my-org/my-repo",
+				project: "",
+				label: "ready",
+				pick_from: "",
+				in_progress: "in-progress",
+				done: "done",
+			}),
+		).rejects.toThrow("GitHub authentication required");
+	});
+
+	it("prefers GITHUB_TOKEN over gh CLI when both are available", async () => {
+		process.env.GITHUB_TOKEN = "env-token-xyz";
+
+		let capturedAuthHeader = "";
+		global.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+			capturedAuthHeader = (init?.headers as Record<string, string>)?.Authorization ?? "";
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => [],
+				text: async () => "[]",
+			});
+		});
+
+		await source.fetchNextIssue({
+			team: "my-org/my-repo",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "in-progress",
+			done: "done",
+		});
+
+		expect(vi.mocked(execa)).not.toHaveBeenCalled();
+		expect(capturedAuthHeader).toBe("Bearer env-token-xyz");
 	});
 });

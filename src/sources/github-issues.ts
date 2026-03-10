@@ -1,3 +1,4 @@
+import { execa } from "execa";
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
@@ -9,9 +10,19 @@ const PRIORITY_LABELS = ["p1", "p2", "p3"];
 // Matches "depends on #N", "blocked by #N", case-insensitive, supports multiple formats
 const DEPENDENCY_PATTERN = /(?:depends\s+on|blocked\s+by)\s+#(\d+)/gi;
 
-function getAuthHeaders(): Record<string, string> {
-	const token = process.env.GITHUB_TOKEN;
-	if (!token) throw new Error("GITHUB_TOKEN must be set");
+async function getToken(): Promise<string> {
+	if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+	try {
+		const { stdout } = await execa("gh", ["auth", "token"]);
+		if (stdout.trim()) return stdout.trim();
+	} catch {
+		// gh CLI not available or not authenticated
+	}
+	throw new Error("GitHub authentication required: set GITHUB_TOKEN or run `gh auth login`");
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+	const token = await getToken();
 	return {
 		Authorization: `Bearer ${token}`,
 		Accept: "application/vnd.github+json",
@@ -22,7 +33,7 @@ function getAuthHeaders(): Record<string, string> {
 async function githubFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const url = `${API_URL}${path}`;
 	const headers: Record<string, string> = {
-		...getAuthHeaders(),
+		...(await getAuthHeaders()),
 		"Content-Type": "application/json",
 	};
 
