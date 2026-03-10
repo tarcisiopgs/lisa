@@ -451,7 +451,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	const workflow = workflowAnswer as WorkflowMode;
 
 	// Auto-detect repos
-	const repos = await detectGitRepos();
+	const repos = await detectGitRepos(initial?.repos ?? []);
 
 	// Ask for base branch
 	let baseBranch = "main";
