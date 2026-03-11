@@ -155,11 +155,16 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
 	// sidebar width (28) + sidebar border (2) = 30
 	const SIDEBAR_TOTAL_WIDTH = 30;
-	// Header: ~6 rows, footer: ~2 rows, border: ~2 rows
-	const bodyRows = Math.max(1, terminalRows - 10);
 
 	// Available content width: total - sidebar(30) - border(2) - paddingX(2)
 	const maxLineWidth = Math.max(1, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
+
+	// Header overhead: border(2) + ID row(1) + title(1) + separator(1) + log header(1) = 6
+	// Plus conditional rows: log file path(1), PR URLs (N)
+	const prCount = card.prUrls.length > 0 ? card.prUrls.length : 0;
+	const logFileRow = card.logFile ? 1 : 0;
+	const headerOverhead = 6 + prCount + logFileRow;
+	const bodyRows = Math.max(1, terminalRows - headerOverhead);
 
 	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
 	const startLine = Math.max(0, lines.length - bodyRows - logScrollOffset);
@@ -243,10 +248,10 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				</Box>
 			</Box>
 
-			{/* Header row 2: title */}
+			{/* Header row 2: title (truncated to single line) */}
 			<Box marginTop={0}>
-				<Text color="white" bold>
-					{card.title}
+				<Text color="white" bold wrap="truncate">
+					{truncateLine(card.title, maxLineWidth)}
 				</Text>
 			</Box>
 
@@ -257,17 +262,18 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 						<Text color="yellow" dimColor>
 							{card.prUrls.length === 1 ? "PR: " : `PR ${i + 1}: `}
 						</Text>
-						<Text color="yellow">{hyperlink(url, url)}</Text>
+						<Text color="yellow" wrap="truncate">
+							{hyperlink(url, truncateLine(url, maxLineWidth - 5))}
+						</Text>
 					</Box>
 				))}
 
-			{/* Log file path */}
+			{/* Log file path (truncated to single line) */}
 			{card.logFile && (
 				<Box marginTop={0}>
-					<Text color="gray" dimColor>
-						{"LOG: "}
+					<Text color="gray" dimColor wrap="truncate">
+						{`LOG: ${truncateLine(card.logFile, maxLineWidth - 5)}`}
 					</Text>
-					<Text color="gray">{card.logFile}</Text>
 				</Box>
 			)}
 
@@ -299,7 +305,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 			</Box>
 
 			{/* Log body */}
-			<Box flexGrow={1} flexDirection="column" overflow="hidden">
+			<Box height={bodyRows} flexDirection="column" overflow="hidden">
 				{card.outputLog.length === 0 ? (
 					<Box flexDirection="row" marginTop={1}>
 						<Text color="yellow">
