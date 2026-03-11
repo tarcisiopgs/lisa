@@ -18,11 +18,11 @@ Persist Kanban card state across process restarts so that completed work remains
 - **Backlog cards** remain in "Backlog" across restarts.
 - **In-progress cards at the time of kill:**
   - If `prUrls.length > 0` → promoted to "Done" on next load.
-  - If `prUrls.length === 0` → demoted to "Backlog", `startedAt` cleared, `hasError`/`killed`/`skipped` all reset to `false` (the process was interrupted, not errored).
+  - If `prUrls.length === 0` → demoted to "Backlog", `startedAt` cleared, `hasError`/`killed`/`skipped` all reset to `false`, `outputLogTail` cleared (the process was interrupted, not errored; showing stale output for a pending card would be confusing).
 - **State never auto-clears.** Accumulates indefinitely across all runs on the same project. Manual cleanup only (by deleting `kanban-state.json`). No eviction policy — this is intentional; the Done column is a historical record.
 - **Output log:** only the last 100 lines are persisted. Full in-memory log is reconstructed from tail on hydration.
 - **Merge polling:** when hydrating Done cards with `prUrls.length > 0` and `merged !== true`, merge polling is restarted in `useKanbanState` so the merged badge stays live.
-- **TUI-only:** `KanbanPersistence` is only instantiated when TUI mode is active. Headless runs do not write or read `kanban-state.json`.
+- **TUI-only:** `KanbanPersistence` is only instantiated when TUI mode is active and not in demo mode (i.e., `isTTY && !args.demo`). Headless runs and demo mode do not write or read `kanban-state.json`.
 
 ## Architecture
 
@@ -145,7 +145,10 @@ Only executed when TUI mode is active:
 5. render(<KanbanApp initialCards={initialCards} />)
 ```
 
-**Shutdown:** `persistence.stop()` is called in `signals.ts` (or the loop's SIGINT handler in `loop/index.ts`) **directly before `process.exit(0)`**, not inside any React component lifecycle. This guarantees the synchronous `writeFileSync` in `stop()` executes before the process exits, regardless of the 250ms Ink cleanup window.
+**Shutdown:** `persistence.stop()` is called **directly before `process.exit(0)`** in `signals.ts`, after the 250ms Ink cleanup `await`. It must not be called inside the `tui:exit` handler or any React lifecycle — those run before the 250ms window and cannot guarantee the synchronous `writeFileSync` completes before the process exits. The shutdown sequence is:
+```
+kill providers → revert issues → emit tui:exit → await 250ms → persistence.stop() → process.exit(0)
+```
 
 ### `useKanbanState`
 
@@ -169,9 +172,13 @@ export function useKanbanState(
 
 The existing `onQueued` guard (`if (prev.some((c) => c.id === issue.id)) return prev`) already prevents duplicates when the loop re-emits `issue:queued` for cards already loaded from the persisted state. No changes needed.
 
+**Re-issue in watch mode:** if an issue that was previously `done` is moved back to backlog in the source and the loop picks it up again, `issue:queued` is deduplicated. When `issue:started` is emitted for that card, the existing `onStarted` handler moves it to `in_progress` and resets its `prUrls`. `KanbanPersistence` mirrors this transition, clearing the prior Done state. This is correct behavior — the card is being worked again.
+
+**`stopMergePolling` key note:** the existing code in `state.ts` has a pre-existing inconsistency where the cleanup loop calls `stopMergePolling(issueId)` but `activePolls` is keyed by `prUrl`. This is out of scope for this feature — the hydration merge polling path uses `startMergePolling(issueId, prUrl)` consistently and does not worsen the issue.
+
 ### Shutdown flush
 
-`persistence.stop()` is called in the `tui:exit` / SIGINT handler to perform a synchronous final flush before the process exits.
+`persistence.stop()` is called **directly before `process.exit(0)`** in `signals.ts`, after the 250ms Ink cleanup `await`. See the `loop/index.ts` section above for the full sequence.
 
 ## Files Changed
 
