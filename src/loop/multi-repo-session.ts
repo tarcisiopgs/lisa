@@ -1,6 +1,6 @@
 import { appendFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type ApiClientGenerator, analyzeProject, detectApiClientGenerator } from "../context.js";
+import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -54,15 +54,7 @@ export async function runWorktreeMultiRepoSession(
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	// Detect API client generators in each repo for planning context
-	const repoGenerators = new Map<string, ApiClientGenerator>();
-	for (const repo of config.repos) {
-		const absPath = resolve(workspace, repo.path);
-		const gen = detectApiClientGenerator(absPath);
-		if (gen) repoGenerators.set(repo.name, gen);
-	}
-
-	const planPrompt = buildPlanningPrompt(issue, config, planPath, repoGenerators);
+	const planPrompt = buildPlanningPrompt(issue, config, planPath);
 	const planResult = await runWithFallback(models, planPrompt, {
 		logFile,
 		cwd: workspace,

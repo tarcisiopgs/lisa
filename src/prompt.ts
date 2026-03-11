@@ -1,11 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-	type ApiClientGenerator,
-	formatProjectContext,
-	type ProjectContext,
-	type ProjectEnvironment,
-} from "./context.js";
+import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
 import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
 import type { StackTool } from "./session/discovery.js";
@@ -151,32 +146,6 @@ This project uses **${testRunner}** as its test runner.
 `;
 }
 
-function buildApiClientInstructions(projectContext?: ProjectContext): string {
-	if (!projectContext?.apiClientGenerator) return "";
-
-	const gen = projectContext.apiClientGenerator;
-	const runCmd = gen.customScript ? `npm run ${gen.customScript}` : gen.command;
-
-	let inputNote = "";
-	if (gen.inputSource.type === "url") {
-		inputNote = `- The generator reads from a live API at \`${gen.inputSource.url}\`. Ensure the API server is running before generating.\n`;
-	} else if (gen.inputSource.type === "file") {
-		inputNote = `- The generator reads from a spec file at \`${gen.inputSource.path}\`. Ensure this file is up to date.\n`;
-	}
-
-	const outputNote = gen.outputDir
-		? `- Import generated types and functions from \`${gen.outputDir}\`.\n`
-		: "";
-
-	return `
-**API Client Generation — ${gen.name}:**
-This project uses **${gen.name}** to generate type-safe API clients.
-- Do NOT write API fetch/request code manually. Use the generated clients.
-- After making API changes, run \`${runCmd}\` to regenerate clients.
-${inputNote}${outputNote}- If generated client code already exists, inspect it to understand the available functions and types before writing new code.
-`;
-}
-
 function buildSpecWarningBlock(warning?: string): string {
 	if (!warning) return "";
 	return `\n> **Warning — incomplete spec:** ${warning}\n> Proceed using reasonable assumptions based on the title and description.\n> If the issue is genuinely too ambiguous to implement, STOP and explain what is missing.\n`;
@@ -282,7 +251,7 @@ function buildWorktreePrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -378,7 +347,7 @@ function buildBranchPrompt(
 			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -456,7 +425,7 @@ export function buildNativeWorktreePrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
@@ -524,12 +493,7 @@ ${readmeBlock}
 ${buildRulesSection(projectContext?.environment)}`;
 }
 
-export function buildPlanningPrompt(
-	issue: Issue,
-	config: LisaConfig,
-	planPath?: string,
-	repoGenerators?: Map<string, ApiClientGenerator>,
-): string {
+export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?: string): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
@@ -538,25 +502,6 @@ export function buildPlanningPrompt(
 			return `- **${r.name}**: \`${absPath}\` (base branch: \`${r.base_branch}\`)`;
 		})
 		.join("\n");
-
-	const generatorBlock =
-		repoGenerators && repoGenerators.size > 0
-			? `\n## API Client Generators Detected\n\nThe following repositories use API client generators to produce type-safe API clients:\n\n${[
-					...repoGenerators.entries(),
-				]
-					.map(([repoName, gen]) => {
-						const inputDesc =
-							gen.inputSource.type === "url"
-								? `input from URL \`${gen.inputSource.url}\``
-								: gen.inputSource.type === "file"
-									? `input from file \`${gen.inputSource.path}\``
-									: "unknown input source";
-						return `- **${repoName}**: Uses **${gen.name}**, ${inputDesc}`;
-					})
-					.join(
-						"\n",
-					)}\n\n**Ordering rule**: Repositories that SERVE APIs (backends) must execute BEFORE repositories that CONSUME them (frontends with generators). The frontend step scope should include running the generator command after backend APIs are available.\n`
-			: "";
 
 	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
 
@@ -577,7 +522,7 @@ ${issue.description}
 ## Available Repositories
 
 ${repoBlock}
-${generatorBlock}
+
 ## Instructions
 
 1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
@@ -630,7 +575,7 @@ export function buildScopedImplementPrompt(
 	platform: PRPlatform = "cli",
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
