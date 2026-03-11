@@ -2,6 +2,7 @@ import * as clack from "@clack/prompts";
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig } from "../../config.js";
+import { getCachedUpdateInfo } from "../../version.js";
 import { runConfigWizard } from "../wizard.js";
 
 export const init = defineCommand({
@@ -13,6 +14,14 @@ export const init = defineCommand({
 			);
 			process.exit(1);
 		}
+
+		const updateInfo = getCachedUpdateInfo();
+		if (updateInfo) {
+			clack.log.warning(
+				`Update available: ${pc.dim(updateInfo.currentVersion)} → ${pc.green(pc.bold(updateInfo.latestVersion))}\n  Run ${pc.cyan("npm i -g @tarcisiopgs/lisa")} to update`,
+			);
+		}
+
 		if (configExists()) {
 			const existing = loadConfig();
 			clack.log.info(

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Box, Text } from "ink";
+import type { UpdateInfo } from "../version.js";
 
 interface SidebarProps {
 	provider: string;
@@ -12,6 +13,7 @@ interface SidebarProps {
 	paused?: boolean;
 	hasInProgress?: boolean;
 	hasPrUrl?: boolean;
+	updateInfo?: UpdateInfo | null;
 }
 
 export function Sidebar({
@@ -24,6 +26,7 @@ export function Sidebar({
 	paused = false,
 	hasInProgress = false,
 	hasPrUrl = false,
+	updateInfo = null,
 }: SidebarProps) {
 	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
@@ -147,6 +150,24 @@ export function Sidebar({
 			</Box>
 
 			<Box flexGrow={1} />
+
+			{/* Update notification */}
+			{updateInfo && (
+				<Box flexDirection="column" marginBottom={1}>
+					<Text color="yellow">{"────────────────────────"}</Text>
+					<Box marginTop={1} flexDirection="column">
+						<Text color="green" bold>
+							UPDATE AVAILABLE
+						</Text>
+						<Text dimColor>
+							{updateInfo.currentVersion}
+							{" → "}
+							<Text color="green">{updateInfo.latestVersion}</Text>
+						</Text>
+						<Text dimColor>npm i -g @tarcisiopgs/lisa</Text>
+					</Box>
+				</Box>
+			)}
 
 			<Text color="yellow">{"────────────────────────"}</Text>
 

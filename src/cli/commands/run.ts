@@ -3,9 +3,10 @@ import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig, mergeWithFlags } from "../../config.js";
 import { runDemoLoop, runLoop } from "../../loop/index.js";
-import { banner, setOutputMode } from "../../output/logger.js";
+import { banner, setOutputMode, updateNotice } from "../../output/logger.js";
 import { createKanbanPersistence } from "../../session/kanban-persistence.js";
 import type { LifecycleMode, PRPlatform, ProviderName, SourceName } from "../../types/index.js";
+import { getCachedUpdateInfo } from "../../version.js";
 import { getMissingEnvVars } from "../detection.js";
 
 export const run = defineCommand({
@@ -60,6 +61,12 @@ export const run = defineCommand({
 		setOutputMode(isTTY ? "tui" : "default");
 
 		banner(); // no-op in tui mode since outputMode !== "default"
+
+		// Show update notification in default (non-TUI) mode
+		const updateInfo = getCachedUpdateInfo();
+		if (updateInfo) {
+			updateNotice(updateInfo);
+		}
 
 		if (args.demo) {
 			if (isTTY) {

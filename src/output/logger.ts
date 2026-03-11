@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import pc from "picocolors";
+import type { UpdateInfo } from "../version.js";
 
 export type OutputMode = "default" | "tui";
 
@@ -79,4 +80,23 @@ export function banner(): void {
 	console.log(pc.yellow(`\n  ┌${border}┐`));
 	console.log(pc.yellow(`  │`) + pc.bold(pc.white(title)) + pc.yellow("│"));
 	console.log(pc.yellow(`  └${border}┘\n`));
+}
+
+export function updateNotice(update: UpdateInfo): void {
+	if (outputMode !== "default") return;
+
+	const msg = `Update available ${pc.dim(update.currentVersion)} → ${pc.green(pc.bold(update.latestVersion))}`;
+	const cmd = `Run ${pc.cyan("npm i -g @tarcisiopgs/lisa")} to update`;
+	const lines = [msg, cmd];
+	// Compute max visible width (strip ANSI for measurement)
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
+	const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+	const maxLen = Math.max(...lines.map((l) => strip(l).length));
+	const pad = (s: string) => s + " ".repeat(maxLen - strip(s).length);
+
+	console.log(pc.yellow(`  ┌${"─".repeat(maxLen + 2)}┐`));
+	for (const line of lines) {
+		console.log(pc.yellow("  │ ") + pad(line) + pc.yellow(" │"));
+	}
+	console.log(pc.yellow(`  └${"─".repeat(maxLen + 2)}┘\n`));
 }

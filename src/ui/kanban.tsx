@@ -2,6 +2,7 @@ import { Box, useApp, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { resetTitle, startSpinner, stopSpinner } from "../output/terminal.js";
 import type { LisaConfig } from "../types/index.js";
+import { getCachedUpdateInfo, type UpdateInfo } from "../version.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
 import { Sidebar } from "./sidebar.js";
@@ -27,6 +28,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 	const [paused, setPaused] = useState(false);
 	const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+	const [updateInfo] = useState<UpdateInfo | null>(() => getCachedUpdateInfo());
 
 	// Set the initial model based on config
 	useEffect(() => {
@@ -205,6 +207,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				paused={paused}
 				hasInProgress={hasInProgress}
 				hasPrUrl={hasPrUrl}
+				updateInfo={updateInfo}
 			/>
 			{activeView === "board" || !selectedCard ? (
 				<Board

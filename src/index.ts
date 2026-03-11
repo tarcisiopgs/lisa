@@ -8,4 +8,9 @@ process.on("unhandledRejection", () => {
 
 import { runCli } from "./cli/index.js";
 
+// Fire update check early (non-blocking, cached for 24h)
+import("./cli/detection.js").then(({ getVersion }) =>
+	import("./version.js").then(({ checkForUpdate }) => checkForUpdate(getVersion())),
+);
+
 runCli();
