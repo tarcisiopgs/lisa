@@ -6,11 +6,13 @@ import {
 	analyzeProject,
 	detectApiClientGenerator,
 	detectCodeTools,
+	detectConfigFiles,
 	detectEnvironment,
 	detectQualityScripts,
 	detectTestPattern,
 	formatProjectContext,
 	generateProjectTree,
+	type ProjectContext,
 } from "./context.js";
 
 describe("detectQualityScripts", () => {
@@ -540,6 +542,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toBe("");
 	});
@@ -555,6 +558,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("## Project Context");
 		expect(result).toContain("### Quality Scripts");
@@ -575,6 +579,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Test Patterns");
 		expect(result).toContain("colocated next to source files");
@@ -594,6 +599,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Code Tools");
 		expect(result).toContain("**Biome** (config: `biome.json`)");
@@ -608,6 +614,7 @@ describe("formatProjectContext", () => {
 			projectTree: "src/\n  index.ts\npackage.json",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Structure");
 		expect(result).toContain("src/");
@@ -626,6 +633,7 @@ describe("formatProjectContext", () => {
 			projectTree: "src/\npackage.json",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Quality Scripts");
 		expect(result).toContain("### Test Patterns");
@@ -645,6 +653,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("tests are in a separate directory");
 	});
@@ -661,6 +670,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("top-level test() calls");
 	});
@@ -677,6 +687,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("mixed (describe/it and test())");
 	});
@@ -689,6 +700,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "cli",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Environment");
 		expect(result).toContain("CLI (Node.js)");
@@ -703,6 +715,7 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "mobile",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Environment");
 		expect(result).toContain("Mobile");
@@ -717,6 +730,7 @@ describe("formatProjectContext", () => {
 				projectTree: "",
 				environment: env,
 				apiClientGenerator: null,
+				configFiles: [],
 			});
 			expect(result).not.toContain("### Project Environment");
 		}
@@ -736,6 +750,7 @@ describe("formatProjectContext", () => {
 				outputDir: "./src/api",
 				command: "npx orval",
 			},
+			configFiles: [],
 		});
 		expect(result).toContain("### API Client Generator");
 		expect(result).toContain("**Orval**");
@@ -757,6 +772,7 @@ describe("formatProjectContext", () => {
 				inputSource: { type: "file", path: "./openapi.yaml" },
 				command: "npx kubb generate",
 			},
+			configFiles: [],
 		});
 		expect(result).toContain("### API Client Generator");
 		expect(result).toContain("**Kubb**");
@@ -777,6 +793,7 @@ describe("formatProjectContext", () => {
 				command: "npx orval",
 				customScript: "generate:api",
 			},
+			configFiles: [],
 		});
 		expect(result).toContain("Custom script: `npm run generate:api`");
 	});
@@ -789,8 +806,39 @@ describe("formatProjectContext", () => {
 			projectTree: "",
 			environment: "unknown",
 			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).not.toContain("### API Client Generator");
+	});
+
+	it("includes config files section when present", () => {
+		const ctx: ProjectContext = {
+			qualityScripts: [],
+			testPattern: null,
+			codeTools: [],
+			projectTree: "",
+			environment: "unknown",
+			apiClientGenerator: null,
+			configFiles: ["prisma/schema.prisma", "biome.json"],
+		};
+		const result = formatProjectContext(ctx);
+		expect(result).toContain("### Config Files Detected");
+		expect(result).toContain("`prisma/schema.prisma`");
+		expect(result).toContain("`biome.json`");
+	});
+
+	it("omits config files section when empty", () => {
+		const ctx: ProjectContext = {
+			qualityScripts: [],
+			testPattern: null,
+			codeTools: [],
+			projectTree: "",
+			environment: "unknown",
+			apiClientGenerator: null,
+			configFiles: [],
+		};
+		const result = formatProjectContext(ctx);
+		expect(result).not.toContain("Config Files Detected");
 	});
 });
 
@@ -979,5 +1027,49 @@ describe("detectApiClientGenerator", () => {
 			type: "url",
 			url: "http://localhost:3000/api-docs",
 		});
+	});
+});
+
+describe("detectConfigFiles", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-ctx-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("returns empty array when no known config files present", () => {
+		expect(detectConfigFiles(tmpDir)).toEqual([]);
+	});
+
+	it("detects prisma schema", () => {
+		mkdirSync(join(tmpDir, "prisma"));
+		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "");
+		expect(detectConfigFiles(tmpDir)).toContain("prisma/schema.prisma");
+	});
+
+	it("detects drizzle config", () => {
+		writeFileSync(join(tmpDir, "drizzle.config.ts"), "");
+		expect(detectConfigFiles(tmpDir)).toContain("drizzle.config.ts");
+	});
+
+	it("detects biome.json", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		expect(detectConfigFiles(tmpDir)).toContain("biome.json");
+	});
+
+	it("detects multiple files", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		writeFileSync(join(tmpDir, "drizzle.config.ts"), "");
+		const files = detectConfigFiles(tmpDir);
+		expect(files).toContain("biome.json");
+		expect(files).toContain("drizzle.config.ts");
+	});
+
+	it("does not include non-existent files", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		const files = detectConfigFiles(tmpDir);
+		expect(files).not.toContain("drizzle.config.ts");
 	});
 });

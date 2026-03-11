@@ -41,6 +41,7 @@ export interface ProjectContext {
 	projectTree: string;
 	environment: ProjectEnvironment;
 	apiClientGenerator: ApiClientGenerator | null;
+	configFiles: string[];
 }
 
 const QUALITY_SCRIPT_NAMES = new Set([
@@ -68,6 +69,74 @@ const IGNORED_DIRS = new Set([
 	".lisa",
 ]);
 
+const CONFIG_FILE_PATTERNS: string[] = [
+	// ORM / migrations
+	"prisma/schema.prisma",
+	"drizzle.config.ts",
+	"drizzle.config.js",
+	"drizzle.config.mjs",
+	"data-source.ts",
+	"ormconfig.ts",
+	"ormconfig.js",
+	".sequelizerc",
+	"alembic.ini",
+	"flyway.conf",
+	"liquibase.properties",
+	// API codegen
+	"orval.config.ts",
+	"orval.config.js",
+	"orval.config.mjs",
+	"kubb.config.ts",
+	"kubb.config.js",
+	"kubb.config.mjs",
+	"codegen.ts",
+	"codegen.js",
+	"codegen.yml",
+	"codegen.yaml",
+	"openapi-ts.config.ts",
+	"openapi-ts.config.js",
+	"openapi-ts.config.mjs",
+	"openapitools.json",
+	"swagger-codegen-config.json",
+	"buf.yaml",
+	"buf.gen.yaml",
+	// Linters / formatters
+	"biome.json",
+	"biome.jsonc",
+	".eslintrc",
+	".eslintrc.js",
+	".eslintrc.cjs",
+	".eslintrc.json",
+	".eslintrc.yml",
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.ts",
+	".prettierrc",
+	".prettierrc.json",
+	".prettierrc.js",
+	"prettier.config.js",
+	// Language / project markers
+	"go.mod",
+	"Cargo.toml",
+	"Gemfile",
+	"pubspec.yaml",
+	"pyproject.toml",
+	"requirements.txt",
+	"composer.json",
+	"Makefile",
+	"justfile",
+];
+
+export function detectConfigFiles(cwd: string): string[] {
+	return CONFIG_FILE_PATTERNS.filter((pattern) => {
+		const parts = pattern.split("/");
+		if (parts.length === 2) {
+			return existsSync(join(cwd, parts[0]!, parts[1]!));
+		}
+		return existsSync(join(cwd, pattern));
+	});
+}
+
 export function analyzeProject(cwd: string): ProjectContext {
 	return {
 		qualityScripts: detectQualityScripts(cwd),
@@ -76,6 +145,7 @@ export function analyzeProject(cwd: string): ProjectContext {
 		projectTree: generateProjectTree(cwd),
 		environment: detectEnvironment(cwd),
 		apiClientGenerator: detectApiClientGenerator(cwd),
+		configFiles: detectConfigFiles(cwd),
 	};
 }
 
@@ -539,6 +609,11 @@ export function formatProjectContext(ctx: ProjectContext): string {
 			.map((s) => `- \`${s.name}\`: \`${s.command}\``)
 			.join("\n");
 		sections.push(`### Quality Scripts\n\n${scriptLines}`);
+	}
+
+	if (ctx.configFiles.length > 0) {
+		const fileLines = ctx.configFiles.map((f) => `- \`${f}\``).join("\n");
+		sections.push(`### Config Files Detected\n\n${fileLines}`);
 	}
 
 	if (ctx.testPattern) {

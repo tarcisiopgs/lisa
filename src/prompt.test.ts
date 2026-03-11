@@ -623,6 +623,7 @@ function makeProjectContext(overrides?: Partial<ProjectContext>): ProjectContext
 		projectTree: "src/\n  index.ts\npackage.json",
 		environment: "unknown",
 		apiClientGenerator: null,
+		configFiles: [],
 		...overrides,
 	};
 }
