@@ -7,6 +7,7 @@ import {
 	discoverEnvFile,
 	discoverInfra,
 	discoverSetupCommands,
+	discoverStackTools,
 } from "./discovery.js";
 
 vi.mock("../output/logger.js", () => ({
@@ -420,5 +421,201 @@ services:
 		expect(infra).toBeNull();
 		// But .env should have been copied
 		expect(existsSync(join(tmpDir, ".env"))).toBe(true);
+	});
+});
+
+describe("discoverStackTools", () => {
+	it("returns empty array when no tools detected", () => {
+		expect(discoverStackTools(tmpDir)).toEqual([]);
+	});
+
+	it("detects Prisma", () => {
+		mkdirSync(join(tmpDir, "prisma"), { recursive: true });
+		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "generator client {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "prisma",
+			category: "orm",
+			language: "typescript",
+			configFile: "prisma/schema.prisma",
+			infraCommand: "npx prisma db push",
+		});
+		expect(tools[0]?.manualHint).toContain("prisma/migrations/");
+	});
+
+	it("detects Drizzle", () => {
+		writeFileSync(join(tmpDir, "drizzle.config.ts"), "export default {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "drizzle",
+			category: "orm",
+			language: "typescript",
+			infraCommand: "npx drizzle-kit push",
+		});
+	});
+
+	it("detects TypeORM via data-source.ts", () => {
+		writeFileSync(join(tmpDir, "data-source.ts"), "export const AppDataSource = {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "typeorm", configFile: "data-source.ts" });
+	});
+
+	it("detects Sequelize via .sequelizerc", () => {
+		writeFileSync(join(tmpDir, ".sequelizerc"), "module.exports = {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "sequelize" });
+	});
+
+	it("detects Rails", () => {
+		writeFileSync(join(tmpDir, "Gemfile"), 'gem "rails"');
+		mkdirSync(join(tmpDir, "db", "migrate"), { recursive: true });
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "rails",
+			category: "orm",
+			language: "ruby",
+			infraCommand: "bundle exec rails db:migrate",
+		});
+	});
+
+	it("detects Django", () => {
+		writeFileSync(join(tmpDir, "manage.py"), "#!/usr/bin/env python");
+		mkdirSync(join(tmpDir, "myapp", "migrations"), { recursive: true });
+		writeFileSync(join(tmpDir, "myapp", "migrations", "__init__.py"), "");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "django",
+			category: "orm",
+			language: "python",
+		});
+	});
+
+	it("detects Alembic", () => {
+		writeFileSync(join(tmpDir, "alembic.ini"), "[alembic]");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "alembic", language: "python" });
+	});
+
+	it("detects Laravel", () => {
+		writeFileSync(join(tmpDir, "artisan"), "#!/usr/bin/env php");
+		mkdirSync(join(tmpDir, "database", "migrations"), { recursive: true });
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "laravel",
+			category: "orm",
+			language: "php",
+		});
+	});
+
+	it("detects Flyway via flyway.conf", () => {
+		writeFileSync(join(tmpDir, "flyway.conf"), "flyway.url=jdbc:...");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "flyway", language: "java" });
+	});
+
+	it("detects Liquibase", () => {
+		writeFileSync(join(tmpDir, "liquibase.properties"), "url=jdbc:...");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "liquibase", language: "java" });
+	});
+
+	it("detects Goose via go.mod", () => {
+		writeFileSync(
+			join(tmpDir, "go.mod"),
+			"module example.com\nrequire github.com/pressly/goose v3",
+		);
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "goose", language: "go" });
+	});
+
+	it("detects golang-migrate via go.mod", () => {
+		writeFileSync(
+			join(tmpDir, "go.mod"),
+			"module example.com\nrequire github.com/golang-migrate/migrate v4",
+		);
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "golang-migrate", language: "go" });
+	});
+
+	it("detects Orval", () => {
+		writeFileSync(join(tmpDir, "orval.config.ts"), "export default {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({
+			name: "orval",
+			category: "api-codegen",
+			infraCommand: "npx orval",
+		});
+	});
+
+	it("detects Kubb", () => {
+		writeFileSync(join(tmpDir, "kubb.config.ts"), "export default {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "kubb", category: "api-codegen" });
+	});
+
+	it("detects GraphQL Codegen", () => {
+		writeFileSync(join(tmpDir, "codegen.ts"), "export default {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "graphql-codegen", category: "api-codegen" });
+	});
+
+	it("detects Protobuf via buf.yaml", () => {
+		writeFileSync(join(tmpDir, "buf.yaml"), "version: v1");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(1);
+		expect(tools[0]).toMatchObject({ name: "protobuf", category: "other" });
+	});
+
+	it("detects multiple tools", () => {
+		mkdirSync(join(tmpDir, "prisma"), { recursive: true });
+		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "generator client {}");
+		writeFileSync(join(tmpDir, "orval.config.ts"), "export default {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools).toHaveLength(2);
+		expect(tools.map((t) => t.name)).toEqual(["prisma", "orval"]);
+	});
+
+	it("enriches manual hint with existing migration files", () => {
+		mkdirSync(join(tmpDir, "prisma", "migrations", "0001_init"), { recursive: true });
+		writeFileSync(
+			join(tmpDir, "prisma", "migrations", "0001_init", "migration.sql"),
+			"CREATE TABLE...",
+		);
+		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "generator client {}");
+
+		const tools = discoverStackTools(tmpDir);
+		expect(tools[0]?.manualHint).toContain("0001_init");
 	});
 });

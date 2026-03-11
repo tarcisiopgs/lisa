@@ -5,10 +5,15 @@ import { appendPlatformAttribution } from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
-import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
+import {
+	buildImplementPrompt,
+	buildStackInstructions,
+	detectPackageManager,
+	detectTestRunner,
+} from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
-import { discoverInfra } from "../session/discovery.js";
-import { runLifecycle, stopResources } from "../session/lifecycle.js";
+import { discoverInfra, discoverStackTools } from "../session/discovery.js";
+import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
@@ -39,30 +44,26 @@ export async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 
-	// Start infrastructure resources if auto-discovered
+	// Detect stack tools and infrastructure
+	const stackTools = discoverStackTools(workspace);
 	const infra = discoverInfra(workspace);
 	let lifecycleEnv: Record<string, string> = {};
+	let lifecycleSuccess = true;
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const started = await runLifecycle(infra, config.lifecycle, workspace);
 		stopSpinner();
+		lifecycleSuccess = started.success;
 		if (!started.success) {
-			logger.error(`Lifecycle startup failed for ${issue.id}. Aborting session.`);
-			return {
-				success: false,
-				providerUsed: models[0]?.provider ?? "claude",
-				prUrls: [],
-				fallback: {
-					success: false,
-					output: "",
-					duration: 0,
-					providerUsed: models[0]?.provider ?? "claude",
-					attempts: [],
-				},
-			};
+			logger.warn(
+				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,
+			);
 		}
 		lifecycleEnv = started.env;
 	}
+	const lifecycleMode = config.lifecycle?.mode ?? "skip";
+	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
+	const stackBlock = buildStackInstructions(stackTools, infraStatus);
 
 	const prompt = buildImplementPrompt(
 		issue,
@@ -74,12 +75,13 @@ export async function runBranchSession(
 		manifestPath,
 	);
 
+	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
 
-	const result = await runWithFallback(models, prompt, {
+	const result = await runWithFallback(models, fullPrompt, {
 		logFile,
 		cwd: workspace,
 		guardrailsDir: workspace,

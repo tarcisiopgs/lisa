@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LifecycleConfig } from "../types/index.js";
 import type { InfraConfig } from "./discovery.js";
-import { allocatePort, isPortInUse, runLifecycle, waitForPort } from "./lifecycle.js";
+import {
+	allocatePort,
+	isPortInUse,
+	resolveInfraStatus,
+	runLifecycle,
+	waitForPort,
+} from "./lifecycle.js";
 
 // Mock node:net for port checking
 vi.mock("node:net", () => ({
@@ -287,5 +293,27 @@ describe("runLifecycle", () => {
 		expect(result.success).toBe(true);
 		// The function should have taken the timeout-patch path and succeeded
 		// (port was already in use so startResources returned success immediately)
+	});
+});
+
+describe("resolveInfraStatus", () => {
+	it("returns unavailable for skip mode", () => {
+		expect(resolveInfraStatus("skip", { success: true })).toBe("unavailable");
+	});
+
+	it("returns available for auto mode with success", () => {
+		expect(resolveInfraStatus("auto", { success: true })).toBe("available");
+	});
+
+	it("returns unavailable for auto mode with failure", () => {
+		expect(resolveInfraStatus("auto", { success: false })).toBe("unavailable");
+	});
+
+	it("returns available for validate-only mode with success", () => {
+		expect(resolveInfraStatus("validate-only", { success: true })).toBe("available");
+	});
+
+	it("returns unavailable for validate-only mode with failure", () => {
+		expect(resolveInfraStatus("validate-only", { success: false })).toBe("unavailable");
 	});
 });

@@ -2,7 +2,15 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { resolve } from "node:path";
 import * as logger from "../output/logger.js";
-import type { LifecycleConfig } from "../types/index.js";
+import type { LifecycleConfig, LifecycleMode } from "../types/index.js";
+
+export type InfraStatus = "available" | "unavailable";
+
+export function resolveInfraStatus(mode: LifecycleMode, result: { success: boolean }): InfraStatus {
+	if (mode === "skip") return "unavailable";
+	return result.success ? "available" : "unavailable";
+}
+
 import type { InfraConfig, ResourceConfig } from "./discovery.js";
 
 interface ManagedResource {

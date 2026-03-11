@@ -9,9 +9,11 @@ import {
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
+	buildStackInstructions,
 	detectTestRunner,
 	extractReadmeHeadings,
 } from "./prompt.js";
+import type { StackTool } from "./session/discovery.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
@@ -1047,5 +1049,62 @@ describe("planning prompt with API generators", () => {
 		});
 		const prompt = buildPlanningPrompt(makeIssue(), config);
 		expect(prompt).not.toContain("API Client Generators Detected");
+	});
+});
+
+describe("buildStackInstructions", () => {
+	const prisma: StackTool = {
+		name: "prisma",
+		category: "orm",
+		language: "typescript",
+		configFile: "prisma/schema.prisma",
+		infraCommand: "npx prisma db push",
+		manualHint: "Create migration files manually in `prisma/migrations/`.",
+	};
+
+	const orval: StackTool = {
+		name: "orval",
+		category: "api-codegen",
+		language: "typescript",
+		configFile: "orval.config.ts",
+		infraCommand: "npx orval",
+		manualHint: "Create TypeScript types manually based on the OpenAPI spec.",
+	};
+
+	it("returns empty string when no tools", () => {
+		expect(buildStackInstructions([], "available")).toBe("");
+		expect(buildStackInstructions([], "unavailable")).toBe("");
+	});
+
+	it("generates infra-available instructions", () => {
+		const result = buildStackInstructions([prisma], "available");
+		expect(result).toContain("## Resource Generation");
+		expect(result).toContain("Infrastructure services are running");
+		expect(result).toContain("npx prisma db push");
+		expect(result).not.toContain("Do NOT run");
+	});
+
+	it("generates infra-unavailable instructions", () => {
+		const result = buildStackInstructions([prisma], "unavailable");
+		expect(result).toContain("## Resource Generation");
+		expect(result).toContain("not running");
+		expect(result).toContain("Do NOT run `npx prisma db push`");
+		expect(result).toContain("Create migration files manually");
+	});
+
+	it("includes multiple tools", () => {
+		const result = buildStackInstructions([prisma, orval], "unavailable");
+		expect(result).toContain("### Prisma (ORM)");
+		expect(result).toContain("### Orval (API Codegen)");
+	});
+
+	it("capitalizes tool name in heading", () => {
+		const result = buildStackInstructions([prisma], "available");
+		expect(result).toContain("### Prisma (ORM)");
+	});
+
+	it("labels api-codegen category correctly", () => {
+		const result = buildStackInstructions([orval], "available");
+		expect(result).toContain("### Orval (API Codegen)");
 	});
 });
