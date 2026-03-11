@@ -223,9 +223,19 @@ export function useKanbanState(
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, logFile } : c)));
 		};
 
+		const MAX_OUTPUT_SIZE = 200_000; // ~200 KB cap per issue
 		const onOutput = (issueId: string, text: string) => {
 			setCards((prev) =>
-				prev.map((c) => (c.id === issueId ? { ...c, outputLog: c.outputLog + text } : c)),
+				prev.map((c) => {
+					if (c.id !== issueId) return c;
+					let newLog = c.outputLog + text;
+					if (newLog.length > MAX_OUTPUT_SIZE) {
+						// Trim from the front, preserving line boundaries
+						const trimAt = newLog.indexOf("\n", newLog.length - MAX_OUTPUT_SIZE);
+						newLog = trimAt !== -1 ? newLog.slice(trimAt + 1) : newLog.slice(-MAX_OUTPUT_SIZE);
+					}
+					return { ...c, outputLog: newLog };
+				}),
 			);
 		};
 

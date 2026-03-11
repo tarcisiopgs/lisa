@@ -43,6 +43,42 @@ function hyperlink(url: string, text: string): string {
 	return `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
 }
 
+/** Strip ANSI escape sequences (CSI, OSC, charset) and carriage returns. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — must match ESC, BEL control chars in ANSI sequences
+const ANSI_CSI = /\x1b\[[0-9;]*[A-Za-z]/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — must match ESC + BEL in OSC sequences
+const ANSI_OSC = /\x1b\][^\x07]*\x07/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — must match ESC in charset sequences
+const ANSI_CHARSET = /\x1b\([A-Z]/g;
+
+function stripAnsi(str: string): string {
+	return str
+		.replace(ANSI_CSI, "")
+		.replace(ANSI_OSC, "")
+		.replace(ANSI_CHARSET, "")
+		.replace(/\r/g, "");
+}
+
+/** Truncate a line to at most maxWidth visible characters. */
+function truncateLine(line: string, maxWidth: number): string {
+	const clean = stripAnsi(line);
+	if (clean.length <= maxWidth) return clean;
+	return `${clean.slice(0, maxWidth - 1)}…`;
+}
+
+/**
+ * Pre-process raw provider output into display lines.
+ * Handles \r\n, standalone \r (progress bars), and strips ANSI.
+ */
+function processOutputLines(raw: string): string[] {
+	const normalized = raw.replace(/\r\n/g, "\n");
+	return normalized.split("\n").map((line) => {
+		// \r within a line means "overwrite from start" — keep last segment
+		const parts = line.split("\r");
+		return parts[parts.length - 1] ?? "";
+	});
+}
+
 function logLineColor(line: string): string {
 	if (/\berror\b|✖/i.test(line)) return "red";
 	if (/\bwarn(ing)?\b/i.test(line)) return "yellow";
@@ -117,12 +153,20 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	});
 
 	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
+	// sidebar width (28) + sidebar border (2) = 30
+	const SIDEBAR_TOTAL_WIDTH = 30;
 	// Header: ~6 rows, footer: ~2 rows, border: ~2 rows
 	const bodyRows = Math.max(1, terminalRows - 10);
 
-	const lines = card.outputLog.split("\n");
+	// Available content width: total - sidebar(30) - border(2) - paddingX(2)
+	const maxLineWidth = Math.max(1, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
+
+	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
 	const startLine = Math.max(0, lines.length - bodyRows - logScrollOffset);
-	const visibleLines = lines.slice(startLine, startLine + bodyRows);
+	const visibleLines = useMemo(
+		() => lines.slice(startLine, startLine + bodyRows).map((l) => truncateLine(l, maxLineWidth)),
+		[lines, startLine, bodyRows, maxLineWidth],
+	);
 
 	const status = statusLabel(card.column, card.hasError, card.killed, card.skipped, card.merged);
 
@@ -139,9 +183,6 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	) {
 		elapsedDisplay = formatElapsed(card.finishedAt - card.startedAt);
 	}
-
-	// sidebar width (28) + sidebar border (2) = 30
-	const SIDEBAR_TOTAL_WIDTH = 30; // 28 (width) + 2 (borderStyle="single")
 
 	// Decorative separator: ╠═══...═══╣ — memoized, only recomputed on terminal resize
 	const separator = useMemo(() => {
@@ -273,7 +314,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 						const color = logLineColor(line);
 						return (
 							// biome-ignore lint/suspicious/noArrayIndexKey: log lines have no stable key
-							<Text key={i} color={color} dimColor={color === "white"}>
+							<Text key={i} color={color} dimColor={color === "white"} wrap="truncate">
 								{line}
 							</Text>
 						);
