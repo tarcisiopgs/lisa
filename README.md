@@ -1,11 +1,18 @@
 # Lisa
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Lisa demo" />
+  <strong>Label an issue. Walk away. Come back to a PR.</strong>
 </p>
 
 <p align="center">
-  <strong>Label an issue. Walk away. Come back to a PR.</strong>
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/v/@tarcisiopgs/lisa.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@tarcisiopgs/lisa"><img src="https://img.shields.io/npm/dm/@tarcisiopgs/lisa.svg" alt="npm downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/node/v/%40tarcisiopgs%2Flisa" alt="Node.js version" />
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Lisa demo" />
 </p>
 
 <p align="center">
