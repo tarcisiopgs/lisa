@@ -24,7 +24,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	const workspace = resolve(config.workspace);
 	const concurrency = opts.concurrency;
 
-	installSignalHandlers();
+	installSignalHandlers(opts.onBeforeExit);
 
 	// Prepare system cache directory and migrate legacy artifacts
 	ensureCacheDir(workspace);
