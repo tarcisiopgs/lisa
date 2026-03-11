@@ -224,7 +224,7 @@ function buildWorktreePrompt(
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
-		: "`.lisa-manifest.json` in the **current directory**";
+		: "`.lisa/manifests/default.json` in the **current directory**";
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -402,7 +402,7 @@ export function buildNativeWorktreePrompt(
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
-		: "`.lisa-manifest.json` in the **current directory**";
+		: "`.lisa/manifests/default.json` in the **current directory**";
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -616,7 +616,7 @@ ${readmeBlock}
 
 5. ${buildPrCreateInstruction(platform, prBase)}
 ${trackerStep}
-7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa-manifest.json` in the **current directory**"} with JSON:
+7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa/manifests/default.json` in the **current directory**"} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`

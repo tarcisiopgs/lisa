@@ -5,7 +5,7 @@ import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
-import { getPlanPath } from "../paths.js";
+import { getManifestPath, getPlanPath } from "../paths.js";
 import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
@@ -236,7 +236,7 @@ export async function runMultiRepoStep(
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers can access it
-	const manifestPath = join(worktreePath, ".lisa-manifest.json");
+	const manifestPath = getManifestPath(worktreePath, issue.id);
 	const prompt = buildScopedImplementPrompt(
 		issue,
 		step,

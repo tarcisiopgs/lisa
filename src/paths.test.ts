@@ -74,36 +74,36 @@ describe("getGuardrailsPath", () => {
 });
 
 describe("getManifestPath", () => {
-	it("returns manifest.json under cache dir when no issueId", () => {
+	it("returns default.json under .lisa/manifests/ when no issueId", () => {
 		const path = getManifestPath("/my/project");
-		expect(path).toBe(join(getCacheDir("/my/project"), "manifest.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "manifests", "default.json"));
 	});
 
-	it("returns per-issue manifest path when issueId is provided", () => {
+	it("returns issueId.json under .lisa/manifests/ when issueId is provided", () => {
 		const path = getManifestPath("/my/project", "INT-123");
-		expect(path).toBe(join(getCacheDir("/my/project"), "manifest-INT-123.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "manifests", "INT-123.json"));
 	});
 
 	it("sanitizes special characters in issueId", () => {
 		const path = getManifestPath("/my/project", "ORG/PROJ#42");
-		expect(path).toBe(join(getCacheDir("/my/project"), "manifest-ORG_PROJ_42.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "manifests", "ORG_PROJ_42.json"));
 	});
 });
 
 describe("getPlanPath", () => {
-	it("returns plan.json under cache dir when no issueId", () => {
+	it("returns default.json under .lisa/plans/ when no issueId", () => {
 		const path = getPlanPath("/my/project");
-		expect(path).toBe(join(getCacheDir("/my/project"), "plan.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "plans", "default.json"));
 	});
 
-	it("returns per-issue plan path when issueId is provided", () => {
+	it("returns issueId.json under .lisa/plans/ when issueId is provided", () => {
 		const path = getPlanPath("/my/project", "INT-456");
-		expect(path).toBe(join(getCacheDir("/my/project"), "plan-INT-456.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "plans", "INT-456.json"));
 	});
 
 	it("sanitizes special characters in issueId", () => {
 		const path = getPlanPath("/my/project", "ORG/PROJ#99");
-		expect(path).toBe(join(getCacheDir("/my/project"), "plan-ORG_PROJ_99.json"));
+		expect(path).toBe(join("/my/project", ".lisa", "plans", "ORG_PROJ_99.json"));
 	});
 });
 

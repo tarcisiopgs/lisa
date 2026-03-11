@@ -1,10 +1,11 @@
 import { appendFileSync, unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
+import { getManifestPath } from "../paths.js";
 import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
@@ -25,7 +26,7 @@ export async function runBranchSession(
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 	// Manifest written within the workspace so all providers can access it (branch mode is sequential)
-	const manifestPath = join(workspace, ".lisa-manifest.json");
+	const manifestPath = getManifestPath(workspace, issue.id);
 
 	// Clean any stale manifest from a previous interrupted run
 	try {

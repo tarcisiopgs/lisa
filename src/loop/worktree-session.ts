@@ -316,7 +316,7 @@ export async function runManualWorktreeSession(
 
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
-	const manifestPath = join(worktreePath, ".lisa-manifest.json");
+	const manifestPath = getManifestPath(worktreePath, issue.id);
 	const prompt = buildImplementPrompt(
 		issue,
 		config,

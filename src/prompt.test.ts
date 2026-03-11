@@ -350,15 +350,14 @@ describe("buildImplementPrompt", () => {
 				undefined,
 				undefined,
 				undefined,
-				"/path/to/worktree/.lisa-manifest.json",
+				"/path/to/worktree/.lisa/manifests/INT-100.json",
 			);
-			expect(prompt).toContain("/path/to/worktree/.lisa-manifest.json");
+			expect(prompt).toContain("/path/to/worktree/.lisa/manifests/INT-100.json");
 		});
 
-		it("falls back to cache-dir manifest when no manifestPath provided in worktree mode", () => {
+		it("falls back to default manifest when no manifestPath provided in worktree mode", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
-			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
-			expect(prompt).toContain("manifest.json");
+			expect(prompt).toContain(".lisa/manifests/default.json");
 		});
 
 		it("uses explicit manifestPath in branch mode when provided", () => {
@@ -369,15 +368,14 @@ describe("buildImplementPrompt", () => {
 				undefined,
 				undefined,
 				undefined,
-				"/workspace/.lisa-manifest.json",
+				"/workspace/.lisa/manifests/INT-100.json",
 			);
-			expect(prompt).toContain("/workspace/.lisa-manifest.json");
+			expect(prompt).toContain("/workspace/.lisa/manifests/INT-100.json");
 		});
 
-		it("falls back to cache-dir manifest when no manifestPath provided in branch mode", () => {
+		it("falls back to default manifest when no manifestPath provided in branch mode", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
-			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
-			expect(prompt).toContain("manifest.json");
+			expect(prompt).toContain(".lisa/manifests/default.json");
 		});
 	});
 });
@@ -398,7 +396,7 @@ describe("buildNativeWorktreePrompt", () => {
 
 	it("includes manifest instructions", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).toContain(".lisa-manifest.json");
+		expect(prompt).toContain(".lisa/manifests/default.json");
 	});
 
 	it("writes manifest to manifestPath when provided", () => {
@@ -482,7 +480,7 @@ describe("buildPlanningPrompt", () => {
 
 	it("mentions plan file path", () => {
 		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
-		expect(prompt).toContain("plan.json");
+		expect(prompt).toContain(".lisa/plans/default.json");
 	});
 
 	it("describes JSON structure with steps", () => {
@@ -497,14 +495,14 @@ describe("buildPlanningPrompt", () => {
 		const prompt = buildPlanningPrompt(
 			makeIssue(),
 			multiRepoConfig,
-			"/workspace/.lisa-plan-INT_100.json",
+			"/workspace/.lisa/plans/INT_100.json",
 		);
-		expect(prompt).toContain("/workspace/.lisa-plan-INT_100.json");
+		expect(prompt).toContain("/workspace/.lisa/plans/INT_100.json");
 	});
 
-	it("falls back to cache-dir plan path when no planPath provided", () => {
+	it("falls back to default plan path when no planPath provided", () => {
 		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
-		expect(prompt).toContain("plan.json");
+		expect(prompt).toContain(".lisa/plans/default.json");
 	});
 });
 
@@ -554,7 +552,7 @@ describe("buildScopedImplementPrompt", () => {
 
 	it("includes manifest instructions", () => {
 		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
-		expect(prompt).toContain(".lisa-manifest.json");
+		expect(prompt).toContain(".lisa/manifests/default.json");
 	});
 
 	it("includes test instructions when provided", () => {

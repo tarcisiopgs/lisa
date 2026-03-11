@@ -31,11 +31,10 @@ export function getGuardrailsPath(cwd: string): string {
 }
 
 export function getManifestPath(cwd: string, issueId?: string): string {
-	if (issueId) {
-		const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
-		return join(getCacheDir(cwd), `manifest-${safe}.json`);
-	}
-	return join(getCacheDir(cwd), "manifest.json");
+	// Manifest is written by the AI agent, so it must live inside the workspace
+	// to avoid sandbox permission issues (e.g. OpenCode auto-rejects external dirs)
+	const safe = issueId ? issueId.replace(/[^a-zA-Z0-9_-]/g, "_") : "default";
+	return join(cwd, ".lisa", "manifests", `${safe}.json`);
 }
 
 export function getPrCachePath(cwd: string): string {
@@ -43,11 +42,10 @@ export function getPrCachePath(cwd: string): string {
 }
 
 export function getPlanPath(cwd: string, issueId?: string): string {
-	if (issueId) {
-		const safe = issueId.replace(/[^a-zA-Z0-9_-]/g, "_");
-		return join(getCacheDir(cwd), `plan-${safe}.json`);
-	}
-	return join(getCacheDir(cwd), "plan.json");
+	// Plan is written by the AI agent, so it must live inside the workspace
+	// to avoid sandbox permission issues (e.g. OpenCode auto-rejects external dirs)
+	const safe = issueId ? issueId.replace(/[^a-zA-Z0-9_-]/g, "_") : "default";
+	return join(cwd, ".lisa", "plans", `${safe}.json`);
 }
 
 export function getKanbanStatePath(cwd: string): string {
