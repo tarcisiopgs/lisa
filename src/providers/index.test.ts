@@ -159,6 +159,35 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("connection timed out")).toBe(true);
 		expect(isEligibleForFallback("Timeout: request took too long")).toBe(true);
 	});
+
+	it("returns true for OOM and process crash errors", () => {
+		expect(
+			isEligibleForFallback(
+				"FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
+			),
+		).toBe(true);
+		expect(
+			isEligibleForFallback(
+				"FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed",
+			),
+		).toBe(true);
+		expect(isEligibleForFallback("out of memory")).toBe(true);
+		expect(isEligibleForFallback("Segmentation fault: 11")).toBe(true);
+		expect(isEligibleForFallback("signal: SIGKILL")).toBe(true);
+		expect(isEligibleForFallback("signal: SIGABRT")).toBe(true);
+		expect(isEligibleForFallback("signal: SIGSEGV")).toBe(true);
+	});
+
+	it("returns true for signal exit codes (> 128)", () => {
+		// Exit code 134 = SIGABRT (128 + 6), 137 = SIGKILL (128 + 9), 139 = SIGSEGV (128 + 11)
+		expect(isEligibleForFallback("", 134)).toBe(true);
+		expect(isEligibleForFallback("", 137)).toBe(true);
+		expect(isEligibleForFallback("", 139)).toBe(true);
+		// Normal non-zero exit codes should NOT be eligible by exit code alone
+		expect(isEligibleForFallback("", 1)).toBe(false);
+		expect(isEligibleForFallback("", 2)).toBe(false);
+		expect(isEligibleForFallback("", 128)).toBe(false);
+	});
 });
 
 describe("isCompleteProviderExhaustion", () => {

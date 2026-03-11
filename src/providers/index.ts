@@ -83,10 +83,23 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/named models unavailable/i,
 	/free plans can only use/i,
 	/empty commit/i,
+	// Process crash patterns (OOM, fatal errors, signals)
+	/heap.*out of memory/i,
+	/out of memory/i,
+	/FATAL ERROR/,
+	/allocation failed/i,
+	/segmentation fault/i,
+	/\bSIGKILL\b/,
+	/\bSIGABRT\b/,
+	/\bSIGSEGV\b/,
 ];
 
-export function isEligibleForFallback(output: string): boolean {
-	return ELIGIBLE_ERROR_PATTERNS.some((pattern) => pattern.test(output));
+export function isEligibleForFallback(output: string, exitCode?: number): boolean {
+	if (ELIGIBLE_ERROR_PATTERNS.some((pattern) => pattern.test(output))) return true;
+	// Exit codes > 128 indicate the process was killed by a signal (e.g. OOM killer,
+	// SIGSEGV, SIGABRT). These are infrastructure crashes, not task-quality failures.
+	if (exitCode !== undefined && exitCode > 128) return true;
+	return false;
 }
 
 /**
@@ -158,7 +171,7 @@ export async function runWithFallback(
 			});
 		}
 
-		const eligible = isEligibleForFallback(result.output);
+		const eligible = isEligibleForFallback(result.output, result.exitCode);
 		attempts.push({
 			provider: spec.provider,
 			model: spec.model,

@@ -122,6 +122,7 @@ export interface RunResult {
 	success: boolean;
 	output: string;
 	duration: number;
+	exitCode?: number;
 }
 
 export interface Provider {

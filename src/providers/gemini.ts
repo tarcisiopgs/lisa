@@ -61,6 +61,7 @@ export class GeminiProvider implements Provider {
 			const outputStall = createOutputStallDetector(proc, opts.outputStallTimeout);
 
 			const chunks: string[] = [];
+			const stderrChunks: string[] = [];
 
 			proc.stdout?.on("data", (chunk: Buffer) => {
 				const raw = chunk.toString();
@@ -81,6 +82,7 @@ export class GeminiProvider implements Provider {
 				const raw = chunk.toString();
 				const text = isPty ? stripAnsi(raw) : raw;
 				if (getOutputMode() !== "tui") process.stderr.write(raw);
+				stderrChunks.push(text);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}
@@ -103,15 +105,23 @@ export class GeminiProvider implements Provider {
 				chunks.push(STUCK_MESSAGE);
 			}
 
+			// Include stderr in output when the process failed so that crash
+			// messages (OOM, segfault, etc.) are visible to fallback classification
+			const success =
+				exitCode === 0 &&
+				!overseer?.wasKilled() &&
+				!errorLoopDetector.wasKilled() &&
+				!outputStall.wasKilled() &&
+				!sessionTimeout.wasTimedOut();
+			if (!success && stderrChunks.length > 0) {
+				chunks.push("\n[stderr]\n", ...stderrChunks);
+			}
+
 			return {
-				success:
-					exitCode === 0 &&
-					!overseer?.wasKilled() &&
-					!errorLoopDetector.wasKilled() &&
-					!outputStall.wasKilled() &&
-					!sessionTimeout.wasTimedOut(),
+				success,
 				output: chunks.join(""),
 				duration: Date.now() - start,
+				exitCode,
 			};
 		} catch (err) {
 			return {
