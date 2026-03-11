@@ -55,25 +55,16 @@ export function Column({
 	const visibleCount = calcVisibleCount(terminalRows);
 	const cardWidth = calcCardWidth(terminalCols);
 
-	// Sort merged cards to the bottom (only affects done column in practice)
-	const sortedCards = [...cards].sort((a, b) => {
-		if (a.merged && !b.merged) return 1;
-		if (!a.merged && b.merged) return -1;
-		return 0;
-	});
-
+	// Cards arrive pre-sorted from the parent (kanban.tsx) — no re-sorting here.
 	let scrollOffset = 0;
 	if (activeCardIndex >= visibleCount) {
 		scrollOffset = activeCardIndex - visibleCount + 1;
 	}
-	scrollOffset = Math.max(
-		0,
-		Math.min(scrollOffset, Math.max(0, sortedCards.length - visibleCount)),
-	);
+	scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, cards.length - visibleCount)));
 
-	const visibleCards = sortedCards.slice(scrollOffset, scrollOffset + visibleCount);
+	const visibleCards = cards.slice(scrollOffset, scrollOffset + visibleCount);
 	const hiddenAbove = scrollOffset;
-	const hiddenBelow = Math.max(0, sortedCards.length - scrollOffset - visibleCount);
+	const hiddenBelow = Math.max(0, cards.length - scrollOffset - visibleCount);
 
 	const borderColor = isFocused ? "yellow" : "gray";
 	const headerColor = isFocused ? "yellow" : "white";

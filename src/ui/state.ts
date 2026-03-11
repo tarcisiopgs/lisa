@@ -20,6 +20,7 @@ export interface KanbanCard {
 	pausedAt?: number;
 	pauseAccumulated?: number;
 	merged?: boolean;
+	queueOrder?: number;
 }
 
 const MERGE_POLL_INTERVAL_MS = 60_000;
@@ -108,9 +109,17 @@ export function useKanbanState(
 		const onQueued = (issue: Issue) => {
 			setCards((prev) => {
 				if (prev.some((c) => c.id === issue.id)) return prev;
+				const maxOrder = prev.reduce((max, c) => Math.max(max, c.queueOrder ?? 0), 0);
 				return [
 					...prev,
-					{ id: issue.id, title: issue.title, column: "backlog", prUrls: [], outputLog: "" },
+					{
+						id: issue.id,
+						title: issue.title,
+						column: "backlog",
+						prUrls: [],
+						outputLog: "",
+						queueOrder: maxOrder + 1,
+					},
 				];
 			});
 		};

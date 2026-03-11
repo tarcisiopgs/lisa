@@ -47,18 +47,18 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		};
 	}, [exit]);
 
-	const backlog = cards.filter((c) => c.column === "backlog");
-	const inProgress = cards.filter((c) => c.column === "in_progress");
-	const hasInProgress = inProgress.length > 0;
+	// Backlog: priority order (queueOrder), error cards sink to the bottom
+	const backlog = [...cards.filter((c) => c.column === "backlog")].sort((a, b) => {
+		if (a.hasError && !b.hasError) return 1;
+		if (!a.hasError && b.hasError) return -1;
+		return (a.queueOrder ?? 0) - (b.queueOrder ?? 0);
+	});
 
-	// Sort merged cards to the bottom — must match Column display order so that
-	// activeCardIndex maps to the correct card when the user presses Enter.
-	const sortMergedToBottom = <T extends { merged?: boolean }>(arr: T[]): T[] =>
-		[...arr].sort((a, b) => {
-			if (a.merged && !b.merged) return 1;
-			if (!a.merged && b.merged) return -1;
-			return 0;
-		});
+	// In Progress: ordered by execution start time (earliest first)
+	const inProgress = [...cards.filter((c) => c.column === "in_progress")].sort(
+		(a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0),
+	);
+	const hasInProgress = inProgress.length > 0;
 
 	// Animate the terminal tab title based on kanban state
 	useEffect(() => {
@@ -72,7 +72,12 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		}
 		return () => resetTitle();
 	}, [inProgress, workComplete]);
-	const done = sortMergedToBottom(cards.filter((c) => c.column === "done"));
+	// Done: most recently finished on top, merged cards sink to the bottom
+	const done = [...cards.filter((c) => c.column === "done")].sort((a, b) => {
+		if (a.merged && !b.merged) return 1;
+		if (!a.merged && b.merged) return -1;
+		return (b.finishedAt ?? 0) - (a.finishedAt ?? 0);
+	});
 	const columnCards = [backlog, inProgress, done];
 
 	// When the selected card changes column, sync the kanban cursor to its new position
