@@ -3,7 +3,7 @@ import { resetTitle, stopSpinner } from "../output/terminal.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { activeCleanups, activeProviderPids, isShuttingDown, setShuttingDown } from "./state.js";
 
-export function installSignalHandlers(): void {
+export function installSignalHandlers(onBeforeExit?: () => void): void {
 	const cleanup = async (signal: string): Promise<void> => {
 		if (isShuttingDown()) {
 			logger.warn("Force exiting...");
@@ -49,6 +49,7 @@ export function installSignalHandlers(): void {
 		if (hasTUI) {
 			await new Promise((resolve) => setTimeout(resolve, 250));
 		}
+		onBeforeExit?.();
 		process.exit(0);
 	};
 

@@ -210,14 +210,15 @@ class KanbanPersistence {
 	private updateCard(id: string, patch: Partial<PersistedCard>): void {
 		const idx = this.state.cards.findIndex((c) => c.id === id);
 		if (idx !== -1) {
-			this.state.cards[idx] = { ...this.state.cards[idx], ...patch };
+			const existing = this.state.cards[idx] as PersistedCard;
+			this.state.cards[idx] = { ...existing, ...patch };
 		}
 	}
 
 	private appendOutput(id: string, text: string): void {
 		const idx = this.state.cards.findIndex((c) => c.id === id);
 		if (idx === -1) return;
-		const card = this.state.cards[idx];
+		const card = this.state.cards[idx] as PersistedCard;
 		const newLines = text.split("\n");
 		const combined = [...card.outputLogTail, ...newLines];
 		card.outputLogTail = combined.slice(-OUTPUT_TAIL_LINES);
