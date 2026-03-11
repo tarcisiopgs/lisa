@@ -156,11 +156,21 @@ export const run = defineCommand({
 		}
 
 		let onBeforeExit: (() => void) | undefined;
+		let persistedCards:
+			| Array<{
+					id: string;
+					column: string;
+					hasError?: boolean;
+					skipped?: boolean;
+					killed?: boolean;
+			  }>
+			| undefined;
 
 		if (isTTY) {
 			const workspace = resolve(merged.workspace);
 			const persistence = createKanbanPersistence(workspace);
 			const initialCards = persistence.load();
+			persistedCards = initialCards;
 			persistence.start();
 			onBeforeExit = () => persistence.stop();
 
@@ -178,6 +188,7 @@ export const run = defineCommand({
 			issueId: args.issue,
 			concurrency,
 			onBeforeExit,
+			initialCards: persistedCards,
 		});
 	},
 });

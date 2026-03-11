@@ -162,6 +162,11 @@ class KanbanPersistence {
 			this.scheduleFlush();
 		});
 
+		on("issue:reconcile-remove", (issueId: string) => {
+			this.removeCard(issueId);
+			this.scheduleFlush();
+		});
+
 		on("issue:log-file", (issueId: string, logFile: string) => {
 			this.updateCard(issueId, { logFile });
 			this.scheduleFlush();
@@ -199,6 +204,10 @@ class KanbanPersistence {
 		const dir = dirname(this.statePath);
 		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 		writeFileSync(this.statePath, JSON.stringify(this.state));
+	}
+
+	private removeCard(id: string): void {
+		this.state.cards = this.state.cards.filter((c) => c.id !== id);
 	}
 
 	private upsertCard(id: string, title: string): void {

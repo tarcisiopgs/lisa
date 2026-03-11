@@ -37,11 +37,11 @@ describe("createOutputStallDetector", () => {
 		expect(proc.killCalls).toHaveLength(0);
 	});
 
-	it("uses default timeout (120s) when undefined", async () => {
+	it("uses default timeout (300s) when undefined", async () => {
 		const proc = makeMockProc();
 		const handle = createOutputStallDetector(proc, undefined);
 
-		await vi.advanceTimersByTimeAsync(119_999);
+		await vi.advanceTimersByTimeAsync(299_999);
 		expect(handle.wasKilled()).toBe(false);
 
 		await vi.advanceTimersByTimeAsync(1);

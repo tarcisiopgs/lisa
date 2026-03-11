@@ -229,6 +229,10 @@ export function useKanbanState(
 			);
 		};
 
+		const onReconcileRemove = (issueId: string) => {
+			setCards((prev) => prev.filter((c) => c.id !== issueId));
+		};
+
 		kanbanEmitter.on("issue:queued", onQueued);
 		kanbanEmitter.on("issue:started", onStarted);
 		kanbanEmitter.on("issue:done", onDone);
@@ -236,6 +240,7 @@ export function useKanbanState(
 		kanbanEmitter.on("issue:reverted", onReverted);
 		kanbanEmitter.on("issue:skipped", onSkipped);
 		kanbanEmitter.on("issue:killed", onKilled);
+		kanbanEmitter.on("issue:reconcile-remove", onReconcileRemove);
 		kanbanEmitter.on("provider:paused", onProviderPaused);
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:log-file", onLogFile);
@@ -270,6 +275,7 @@ export function useKanbanState(
 			kanbanEmitter.off("issue:reverted", onReverted);
 			kanbanEmitter.off("issue:skipped", onSkipped);
 			kanbanEmitter.off("issue:killed", onKilled);
+			kanbanEmitter.off("issue:reconcile-remove", onReconcileRemove);
 			kanbanEmitter.off("provider:paused", onProviderPaused);
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:log-file", onLogFile);

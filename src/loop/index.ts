@@ -50,10 +50,25 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		await recoverOrphanIssues(source, config);
 	}
 
-	// Pre-populate kanban backlog when TUI is active
+	// Pre-populate kanban backlog and reconcile stale cards when TUI is active
 	if (kanbanEmitter.listenerCount("issue:queued") > 0) {
 		try {
 			const allIssues = await source.listIssues(config.source_config);
+			const activeIssueIds = new Set(allIssues.map((i) => i.id));
+
+			// Reconcile: remove cards that failed/errored but are no longer in the source queue
+			// (e.g., already resolved externally, label removed, or merged)
+			if (opts.initialCards) {
+				for (const card of opts.initialCards) {
+					if (card.column === "backlog" && (card.hasError || card.skipped || card.killed)) {
+						if (!activeIssueIds.has(card.id)) {
+							kanbanEmitter.emit("issue:reconcile-remove", card.id);
+							logger.log(`Reconciled ${card.id}: no longer in source queue — removed from kanban`);
+						}
+					}
+				}
+			}
+
 			for (const issue of allIssues) {
 				kanbanEmitter.emit("issue:queued", issue);
 			}

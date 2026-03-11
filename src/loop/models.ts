@@ -9,6 +9,13 @@ export interface LoopOptions {
 	issueId?: string;
 	concurrency: number;
 	onBeforeExit?: () => void;
+	initialCards?: Array<{
+		id: string;
+		column: string;
+		hasError?: boolean;
+		skipped?: boolean;
+		killed?: boolean;
+	}>;
 }
 
 export const WATCH_POLL_INTERVAL_MS = 60_000;
