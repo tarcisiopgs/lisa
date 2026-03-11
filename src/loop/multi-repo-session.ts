@@ -48,77 +48,95 @@ export async function runWorktreeMultiRepoSession(
 	const workspace = resolve(config.workspace);
 	const planPath = getPlanPath(workspace, issue.id);
 
-	// Clean stale plan from a previous interrupted run
-	cleanupPlanFile(planPath);
-
-	// Phase 1: Planning — agent analyzes issue and produces execution plan
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
-	startSpinner(`${issue.id} \u2014 analyzing issue...`);
-	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	const globalContextMd = readContext(workspace);
-	const planPrompt = buildPlanningPrompt(issue, config, planPath, globalContextMd);
-	const planResult = await runWithFallback(models, planPrompt, {
-		logFile,
-		cwd: workspace,
-		guardrailsDir: workspace,
-		issueId: issue.id,
-		overseer: config.overseer,
-		sessionTimeout: config.loop.session_timeout,
-		outputStallTimeout: config.loop.output_stall_timeout,
-		onProcess: (pid) => {
-			activeProviderPids.set(issue.id, pid);
-		},
-		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-	});
-	stopSpinner();
+	// Phase 1: Planning — reuse existing plan or generate a new one
+	const cachedPlan = readPlanFile(planPath);
+	let planProviderUsed: string = models[0]?.provider ?? "claude";
+	let planFallback: FallbackResult | null = null;
 
-	try {
-		appendFileSync(
-			logFile,
-			`\n${"=".repeat(80)}\nPlanning phase — provider: ${planResult.providerUsed}\n${planResult.output}\n`,
+	let sortedSteps: PlanStep[];
+	if (cachedPlan?.steps && cachedPlan.steps.length > 0) {
+		// Reuse plan from a previous failed attempt (avoids redundant planning)
+		sortedSteps = [...cachedPlan.steps].sort((a, b) => a.order - b.order);
+		logger.ok(
+			`Reusing cached plan for ${issue.id}: ${sortedSteps.length} step(s) — ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
 		);
-	} catch {}
+	} else {
+		startSpinner(`${issue.id} \u2014 analyzing issue...`);
+		logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	if (!planResult.success) {
-		logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
-		cleanupPlanFile(planPath);
-		activeProviderPids.delete(issue.id);
-		return {
-			success: false,
-			providerUsed: planResult.providerUsed,
-			prUrls: [],
-			fallback: planResult,
-		};
+		const globalContextMd = readContext(workspace);
+		const planPrompt = buildPlanningPrompt(issue, config, planPath, globalContextMd);
+		const planResult = await runWithFallback(models, planPrompt, {
+			logFile,
+			cwd: workspace,
+			guardrailsDir: workspace,
+			issueId: issue.id,
+			overseer: config.overseer,
+			sessionTimeout: config.loop.session_timeout,
+			outputStallTimeout: config.loop.output_stall_timeout,
+			onProcess: (pid) => {
+				activeProviderPids.set(issue.id, pid);
+			},
+			shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+		});
+		stopSpinner();
+		planProviderUsed = planResult.providerUsed;
+		planFallback = planResult;
+
+		try {
+			appendFileSync(
+				logFile,
+				`\n${"=".repeat(80)}\nPlanning phase — provider: ${planResult.providerUsed}\n${planResult.output}\n`,
+			);
+		} catch {}
+
+		if (!planResult.success) {
+			logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
+			cleanupPlanFile(planPath);
+			activeProviderPids.delete(issue.id);
+			return {
+				success: false,
+				providerUsed: planResult.providerUsed,
+				prUrls: [],
+				fallback: planResult,
+			};
+		}
+
+		const plan = readPlanFile(planPath);
+		if (!plan?.steps || plan.steps.length === 0) {
+			logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
+			cleanupPlanFile(planPath);
+			activeProviderPids.delete(issue.id);
+			return {
+				success: false,
+				providerUsed: planResult.providerUsed,
+				prUrls: [],
+				fallback: planResult,
+			};
+		}
+
+		sortedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
+		logger.ok(
+			`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
+		);
 	}
 
-	// Read execution plan from within the workspace (accessible to all providers)
-	const plan = readPlanFile(planPath);
-	if (!plan?.steps || plan.steps.length === 0) {
-		logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
-		cleanupPlanFile(planPath);
-		activeProviderPids.delete(issue.id);
-		return {
-			success: false,
-			providerUsed: planResult.providerUsed,
-			prUrls: [],
-			fallback: planResult,
-		};
-	}
-
-	// Sort steps by order
-	const sortedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
-	logger.ok(
-		`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
-	);
-	cleanupPlanFile(planPath);
+	const defaultFallback: FallbackResult = planFallback ?? {
+		success: true,
+		output: "",
+		duration: 0,
+		providerUsed: planProviderUsed,
+		attempts: [],
+	};
 
 	// Phase 2: Sequential implementation — one session per repo step
 	const prUrls: string[] = [];
 	const previousResults: PreviousStepResult[] = [];
-	let lastFallback: FallbackResult = planResult;
-	let lastProvider: string = planResult.providerUsed;
+	let lastFallback: FallbackResult = defaultFallback;
+	let lastProvider: string = planProviderUsed;
 
 	for (const [i, step] of sortedSteps.entries()) {
 		const stepNum = i + 1;
@@ -163,6 +181,8 @@ export async function runWorktreeMultiRepoSession(
 	}
 
 	activeProviderPids.delete(issue.id);
+	// Clean up plan only on success — failed sessions reuse the cached plan on retry
+	cleanupPlanFile(planPath);
 	logger.ok(`Session ${session} complete for ${issue.id} — ${prUrls.length} PR(s) created`);
 	return { success: true, providerUsed: lastProvider, prUrls, fallback: lastFallback };
 }
