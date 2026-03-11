@@ -33,7 +33,12 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 
 	if (!opts.dryRun) {
 		const contextLogFile = join(workspace, ".lisa", "context-generation.log");
-		await ensureWorkspaceContext(config, models, workspace, contextLogFile);
+		// Run context generation in the background — never block the main loop
+		ensureWorkspaceContext(config, models, workspace, contextLogFile).catch((err) => {
+			logger.warn(
+				`Background context generation failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		});
 	}
 
 	logger.log(
