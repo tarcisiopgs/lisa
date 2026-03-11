@@ -41,6 +41,9 @@ export async function runConcurrentLoop(
 	let consecutiveFetchErrors = 0;
 	const MAX_CONSECUTIVE_FETCH_ERRORS = 3;
 	const activeWorkers = new Map<string, Promise<void>>();
+	const claimedIssueIds = new Set<string>();
+	let consecutiveExhaustions = 0;
+	const MAX_CONSECUTIVE_EXHAUSTIONS = 3;
 
 	const processIssue = async (issue: Issue, session: number): Promise<void> => {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
@@ -120,11 +123,20 @@ export async function runConcurrentLoop(
 			!userSkippedSet.has(issue.id) &&
 			isCompleteProviderExhaustion(sessionResult.fallback.attempts)
 		) {
-			exhausted = true;
-			logger.error(
-				"All providers exhausted due to infrastructure issues. " +
-					"Fix your provider configuration and restart lisa.",
-			);
+			consecutiveExhaustions++;
+			if (consecutiveExhaustions >= MAX_CONSECUTIVE_EXHAUSTIONS) {
+				exhausted = true;
+				logger.error(
+					"All providers exhausted due to infrastructure issues. " +
+						"Fix your provider configuration and restart lisa.",
+				);
+			} else {
+				logger.warn(
+					`Provider exhausted for ${issue.id} (${consecutiveExhaustions}/${MAX_CONSECUTIVE_EXHAUSTIONS}). Continuing with next issue.`,
+				);
+			}
+		} else if (sessionResult.success) {
+			consecutiveExhaustions = 0;
 		}
 
 		// Cleanup per-issue state
@@ -133,6 +145,7 @@ export async function runConcurrentLoop(
 		providerPausedSet.delete(issue.id);
 		activeProviderPids.delete(issue.id);
 		activeCleanups.delete(issue.id);
+		claimedIssueIds.delete(issue.id);
 	};
 
 	while (!noMoreIssues && !exhausted) {
@@ -165,6 +178,13 @@ export async function runConcurrentLoop(
 				} else {
 					await sleep(config.loop.cooldown * 1000);
 				}
+				break;
+			}
+
+			// Skip issues already claimed by another worker (race between fetch and status update)
+			if (issue && claimedIssueIds.has(issue.id)) {
+				logger.log(`Issue ${issue.id} already claimed by another worker. Skipping.`);
+				sessionCounter--;
 				break;
 			}
 
@@ -205,6 +225,7 @@ export async function runConcurrentLoop(
 			}
 
 			const session = sessionCounter;
+			claimedIssueIds.add(issue.id);
 			const promise = processIssue(issue, session).finally(() => {
 				activeWorkers.delete(issue.id);
 			});

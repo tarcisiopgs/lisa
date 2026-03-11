@@ -74,6 +74,22 @@ export async function handleSessionResult(
 		} catch (err) {
 			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
 		}
+
+		// Remove label so the issue is not picked up again automatically
+		if (!opts.issueId) {
+			const labelToRemove = getRemoveLabel(config.source_config);
+			if (labelToRemove) {
+				try {
+					await source.removeLabel(issue.id, labelToRemove);
+					logger.ok(`Removed label "${labelToRemove}" from ${issue.id} to prevent retry`);
+				} catch (err) {
+					logger.warn(
+						`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}
+		}
+
 		activeCleanups.delete(issue.id);
 		return false;
 	}

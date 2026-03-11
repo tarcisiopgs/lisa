@@ -39,6 +39,8 @@ export async function runSequentialLoop(
 	let completedCount = 0;
 	let consecutiveFetchErrors = 0;
 	const MAX_CONSECUTIVE_FETCH_ERRORS = 3;
+	let consecutiveExhaustions = 0;
+	const MAX_CONSECUTIVE_EXHAUSTIONS = 3;
 
 	while (true) {
 		session++;
@@ -249,18 +251,26 @@ export async function runSequentialLoop(
 			break;
 		}
 
-		// Check for provider exhaustion
+		// Check for provider exhaustion — only stop after consecutive failures
 		if (
 			!sessionResult.success &&
 			!userKilledSet.has(issue.id) &&
 			!userSkippedSet.has(issue.id) &&
 			isCompleteProviderExhaustion(sessionResult.fallback.attempts)
 		) {
-			logger.error(
-				"All providers exhausted due to infrastructure issues (quota, plan limits, or not installed). " +
-					"Fix your provider configuration and restart lisa.",
+			consecutiveExhaustions++;
+			if (consecutiveExhaustions >= MAX_CONSECUTIVE_EXHAUSTIONS) {
+				logger.error(
+					"All providers exhausted due to infrastructure issues (quota, plan limits, or not installed). " +
+						"Fix your provider configuration and restart lisa.",
+				);
+				break;
+			}
+			logger.warn(
+				`Provider exhausted for ${issue.id} (${consecutiveExhaustions}/${MAX_CONSECUTIVE_EXHAUSTIONS}). Continuing with next issue.`,
 			);
-			break;
+		} else if (sessionResult.success) {
+			consecutiveExhaustions = 0;
 		}
 
 		// Clean per-issue flags
