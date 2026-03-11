@@ -20,6 +20,7 @@ import {
 	detectTestRunner,
 } from "../prompt.js";
 import { createProvider, runWithFallback } from "../providers/index.js";
+import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
@@ -114,6 +115,7 @@ export async function runNativeWorktreeSession(
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(repoPath);
 	const projectContext = analyzeProject(repoPath);
+	const repoContextMd = readContext(repoPath);
 
 	const workspace = resolve(config.workspace);
 
@@ -146,6 +148,7 @@ export async function runNativeWorktreeSession(
 		projectContext,
 		getManifestPath(workspace, issue.id),
 		config.platform,
+		repoContextMd,
 	);
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
@@ -291,6 +294,7 @@ export async function runManualWorktreeSession(
 	}
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
+	const repoContextMd = readContext(repoPath);
 
 	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
@@ -320,6 +324,7 @@ export async function runManualWorktreeSession(
 		projectContext,
 		worktreePath,
 		manifestPath,
+		repoContextMd,
 	);
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);

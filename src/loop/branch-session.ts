@@ -7,6 +7,7 @@ import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
+import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
@@ -38,6 +39,7 @@ export async function runBranchSession(
 	}
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
+	const repoContextMd = readContext(workspace);
 
 	// Detect infrastructure
 	const infra = discoverInfra(workspace);
@@ -64,6 +66,7 @@ export async function runBranchSession(
 		projectContext,
 		workspace,
 		manifestPath,
+		repoContextMd,
 	);
 
 	logger.initLogFile(logFile);

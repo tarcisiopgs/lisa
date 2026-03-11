@@ -211,6 +211,7 @@ export async function runMultiRepoStep(
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
+	const repoContextMd = readContext(repoPath);
 
 	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
@@ -247,6 +248,7 @@ export async function runMultiRepoStep(
 		manifestPath,
 		worktreePath,
 		config.platform,
+		repoContextMd,
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
