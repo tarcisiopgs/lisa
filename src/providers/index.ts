@@ -79,6 +79,7 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/command not found/i,
 	/lisa-overseer/i,
 	/lisa-timeout/i,
+	/lisa-stall/i,
 	/named models unavailable/i,
 	/free plans can only use/i,
 	/empty commit/i,

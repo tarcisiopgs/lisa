@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
-import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
+import {
+	createErrorLoopDetector,
+	createOutputStallDetector,
+	STALL_MESSAGE,
+	STUCK_MESSAGE,
+	startOverseer,
+} from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
@@ -72,6 +78,7 @@ export class CursorProvider implements Provider {
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
 			const sessionTimeout = createSessionTimeout(proc, opts.sessionTimeout);
 			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
+			const outputStall = createOutputStallDetector(proc, opts.outputStallTimeout);
 
 			const chunks: string[] = [];
 
@@ -79,6 +86,7 @@ export class CursorProvider implements Provider {
 				const raw = chunk.toString();
 				const text = isPty ? stripAnsi(raw) : raw;
 				errorLoopDetector.check(text);
+				outputStall.reset();
 				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
 					kanbanEmitter.emit("issue:output", opts.issueId, raw);
@@ -102,12 +110,15 @@ export class CursorProvider implements Provider {
 				proc.on("close", (code) => {
 					overseer?.stop();
 					sessionTimeout.stop();
+					outputStall.stop();
 					resolve(code ?? 1);
 				});
 			});
 
 			if (sessionTimeout.wasTimedOut()) {
 				chunks.push(TIMEOUT_MESSAGE);
+			} else if (outputStall.wasKilled()) {
+				chunks.push(STALL_MESSAGE);
 			} else if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
@@ -117,6 +128,7 @@ export class CursorProvider implements Provider {
 					exitCode === 0 &&
 					!overseer?.wasKilled() &&
 					!errorLoopDetector.wasKilled() &&
+					!outputStall.wasKilled() &&
 					!sessionTimeout.wasTimedOut(),
 				output: chunks.join(""),
 				duration: Date.now() - start,

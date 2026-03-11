@@ -81,6 +81,7 @@ export async function runBranchSession(
 		issueId: issue.id,
 		overseer: config.overseer,
 		sessionTimeout: config.loop.session_timeout,
+		outputStallTimeout: config.loop.output_stall_timeout,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
