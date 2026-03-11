@@ -131,7 +131,7 @@ export async function runWithFallback(
 
 		const result = await provider.run(fullPrompt, { ...opts, model: spec.model });
 
-		if (result.success) {
+		if (result.success || opts.earlySuccess?.()) {
 			attempts.push({
 				provider: spec.provider,
 				model: spec.model,

@@ -115,6 +115,7 @@ export interface RunOptions {
 	env?: Record<string, string>; // additional env vars to inject into the provider process
 	onProcess?: (pid: number) => void; // called when the provider spawns its child process
 	shouldAbort?: () => boolean; // checked between fallback attempts to stop the chain early
+	earlySuccess?: () => boolean; // if true after a failed attempt, treat the run as successful (e.g. plan file already written)
 }
 
 export interface RunResult {

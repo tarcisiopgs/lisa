@@ -81,6 +81,10 @@ export async function runWorktreeMultiRepoSession(
 				activeProviderPids.set(issue.id, pid);
 			},
 			shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+			earlySuccess: () => {
+				const p = readPlanFile(planPath);
+				return !!(p?.steps && p.steps.length > 0);
+			},
 		});
 		stopSpinner();
 		planProviderUsed = planResult.providerUsed;
@@ -93,8 +97,16 @@ export async function runWorktreeMultiRepoSession(
 			);
 		} catch {}
 
-		if (!planResult.success) {
-			logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
+		// Agent may exit with non-zero code but still write a valid plan (e.g.,
+		// PTY EOF signal or timeout after the file was already flushed). Check the
+		// plan file before considering the attempt failed.
+		const plan = readPlanFile(planPath);
+		if (!plan?.steps || plan.steps.length === 0) {
+			if (!planResult.success) {
+				logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
+			} else {
+				logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
+			}
 			cleanupPlanFile(planPath);
 			activeProviderPids.delete(issue.id);
 			return {
@@ -105,17 +117,10 @@ export async function runWorktreeMultiRepoSession(
 			};
 		}
 
-		const plan = readPlanFile(planPath);
-		if (!plan?.steps || plan.steps.length === 0) {
-			logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
-			cleanupPlanFile(planPath);
-			activeProviderPids.delete(issue.id);
-			return {
-				success: false,
-				providerUsed: planResult.providerUsed,
-				prUrls: [],
-				fallback: planResult,
-			};
+		if (!planResult.success) {
+			logger.warn(
+				`Planning provider exited with error but plan file was written for ${issue.id}. Proceeding.`,
+			);
 		}
 
 		sortedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
