@@ -56,6 +56,7 @@ export function buildImplementPrompt(
 	projectContext?: ProjectContext,
 	cwd?: string,
 	manifestPath?: string,
+	repoContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
@@ -70,6 +71,7 @@ export function buildImplementPrompt(
 			resolvedManifestPath,
 			cwd,
 			config.platform,
+			repoContextMd,
 		);
 	}
 
@@ -81,6 +83,7 @@ export function buildImplementPrompt(
 		projectContext,
 		resolvedManifestPath,
 		cwd,
+		repoContextMd,
 	);
 }
 
@@ -173,6 +176,11 @@ If an update is needed, modify only the affected sections. Keep the existing sty
 `;
 }
 
+export function buildContextMdBlock(content: string | null | undefined): string {
+	if (!content?.trim()) return "";
+	return `\n## Project Conventions\n\n${content.trim()}\n`;
+}
+
 export function buildDependencyContext(dep: DependencyContext): string {
 	const fileList =
 		dep.changedFiles.length > 0
@@ -202,6 +210,7 @@ function buildWorktreePrompt(
 	manifestPath?: string,
 	cwd?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const apiClientBlock = "";
@@ -211,6 +220,7 @@ function buildWorktreePrompt(
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -232,7 +242,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -281,6 +291,7 @@ function buildBranchPrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
+	repoContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -307,6 +318,7 @@ function buildBranchPrompt(
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -321,7 +333,7 @@ Do NOT use interactive skills, ask clarifying questions, or wait for user input.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -376,6 +388,7 @@ export function buildNativeWorktreePrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const apiClientBlock = "";
@@ -385,6 +398,7 @@ export function buildNativeWorktreePrompt(
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -406,7 +420,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -446,7 +460,12 @@ ${readmeBlock}
 ${buildRulesSection(projectContext?.environment)}`;
 }
 
-export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?: string): string {
+export function buildPlanningPrompt(
+	issue: Issue,
+	config: LisaConfig,
+	planPath?: string,
+	globalContextMd?: string | null,
+): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
@@ -457,6 +476,7 @@ export function buildPlanningPrompt(issue: Issue, config: LisaConfig, planPath?:
 		.join("\n");
 
 	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
+	const globalContextBlock = buildContextMdBlock(globalContextMd ?? null);
 
 	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
 
@@ -475,7 +495,7 @@ ${issue.description}
 ## Available Repositories
 
 ${repoBlock}
-
+${globalContextBlock}
 ## Instructions
 
 1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
@@ -526,6 +546,7 @@ export function buildScopedImplementPrompt(
 	manifestPath?: string,
 	cwd?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
 	const apiClientBlock = "";
@@ -535,6 +556,7 @@ export function buildScopedImplementPrompt(
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
 	const previousBlock =
@@ -560,7 +582,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:

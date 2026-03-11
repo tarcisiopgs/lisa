@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectContext } from "./context.js";
 import {
+	buildContextMdBlock,
 	buildDependencyContext,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -768,6 +769,22 @@ describe("buildDependencyContext", () => {
 	it("handles empty changed files", () => {
 		const ctx = buildDependencyContext(makeDependency({ changedFiles: [] }));
 		expect(ctx).toContain("no files detected");
+	});
+});
+
+describe("buildContextMdBlock", () => {
+	it("returns empty string when content is null", () => {
+		expect(buildContextMdBlock(null)).toBe("");
+	});
+
+	it("returns empty string when content is empty string", () => {
+		expect(buildContextMdBlock("")).toBe("");
+	});
+
+	it("wraps content in a Project Conventions section", () => {
+		const result = buildContextMdBlock("## Stack\n- Use pnpm run generate");
+		expect(result).toContain("## Project Conventions");
+		expect(result).toContain("## Stack\n- Use pnpm run generate");
 	});
 });
 

@@ -14,6 +14,7 @@ import {
 	type PreviousStepResult,
 } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
+import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
 import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
@@ -53,7 +54,8 @@ export async function runWorktreeMultiRepoSession(
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	const planPrompt = buildPlanningPrompt(issue, config, planPath);
+	const globalContextMd = readContext(workspace);
+	const planPrompt = buildPlanningPrompt(issue, config, planPath, globalContextMd);
 	const planResult = await runWithFallback(models, planPrompt, {
 		logFile,
 		cwd: workspace,
