@@ -184,3 +184,104 @@ describe("KanbanPersistence.load()", () => {
 		expect(card.skipped).toBe(false);
 	});
 });
+
+describe("KanbanPersistence.start() — event handling", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-persistence-test-"));
+	});
+
+	afterEach(() => {
+		// Remove any lingering listeners from persistence instances that weren't stopped
+		kanbanEmitter.removeAllListeners();
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("upserts card on issue:queued", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X1", title: "Fix bug" });
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards).toHaveLength(1);
+		expect(saved.cards[0]).toMatchObject({ id: "X1", column: "backlog" });
+	});
+
+	it("moves card to in_progress on issue:started", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X2", title: "Add feature" });
+		kanbanEmitter.emit("issue:started", "X2");
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards[0].column).toBe("in_progress");
+		expect(saved.cards[0].startedAt).toBeDefined();
+	});
+
+	it("moves card to done with prUrls on issue:done", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X3", title: "Ship it" });
+		kanbanEmitter.emit("issue:done", "X3", ["https://github.com/x/y/pull/42"]);
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards[0]).toMatchObject({
+			column: "done",
+			prUrls: ["https://github.com/x/y/pull/42"],
+		});
+	});
+
+	it("sets merged on issue:merged", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X4", title: "Merged" });
+		kanbanEmitter.emit("issue:merged", "X4");
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards[0].merged).toBe(true);
+	});
+
+	it("moves card to backlog with hasError on issue:reverted", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X5", title: "Err" });
+		kanbanEmitter.emit("issue:started", "X5");
+		kanbanEmitter.emit("issue:reverted", "X5");
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards[0]).toMatchObject({ column: "backlog", hasError: true });
+	});
+
+	it("caps outputLogTail at 100 lines", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X6", title: "Big output" });
+		for (let i = 0; i < 150; i++) {
+			kanbanEmitter.emit("issue:output", "X6", `line${i}\n`);
+		}
+		p.stop();
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards[0].outputLogTail.length).toBeLessThanOrEqual(100);
+	});
+
+	it("stop() flushes synchronously before debounce fires", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X7", title: "Sync flush" });
+		// Stop immediately — don't wait for 500ms debounce
+		p.stop();
+		expect(existsSync(getKanbanStatePath(tmpDir))).toBe(true);
+	});
+
+	it("stop() removes event listeners so further events are ignored", () => {
+		const p = createKanbanPersistence(tmpDir);
+		p.start();
+		kanbanEmitter.emit("issue:queued", { id: "X8", title: "Before stop" });
+		p.stop();
+		// Emit after stop — should not update the file with new data
+		kanbanEmitter.emit("issue:queued", { id: "X9", title: "After stop" });
+		const saved = JSON.parse(readFileSync(getKanbanStatePath(tmpDir), "utf-8"));
+		expect(saved.cards.some((c: { id: string }) => c.id === "X9")).toBe(false);
+	});
+});
