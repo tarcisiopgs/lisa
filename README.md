@@ -1,7 +1,7 @@
 # Lisa
 
 <p align="center">
-  <img src="assets/lisa.png" width="200" alt="Lisa" />
+  <img src="assets/demo.gif" alt="Lisa demo" />
 </p>
 
 <p align="center">
