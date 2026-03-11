@@ -12,6 +12,7 @@ import type {
 	ProviderName,
 	RunOptions,
 } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { AiderProvider } from "./aider.js";
 import { ClaudeProvider } from "./claude.js";
 import { CodexProvider } from "./codex.js";
@@ -124,6 +125,8 @@ export async function runWithFallback(
 		if (opts.shouldAbort?.()) {
 			break;
 		}
+
+		kanbanEmitter.emit("provider:model-changed", spec.model ?? spec.provider);
 
 		const provider = createProvider(spec.provider);
 		const available = await provider.isAvailable();

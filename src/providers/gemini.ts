@@ -49,9 +49,17 @@ export class GeminiProvider implements Provider {
 					`$ gemini --yolo ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
 				);
 			}
+			// Increase Node.js heap limit to 8 GB to prevent OOM crashes when
+			// Gemini CLI indexes large workspaces. Preserves any existing NODE_OPTIONS.
+			const existingNodeOpts = process.env.NODE_OPTIONS ?? "";
+			const heapFlag = "--max-old-space-size=8192";
+			const nodeOptions = existingNodeOpts.includes("max-old-space-size")
+				? existingNodeOpts
+				: `${existingNodeOpts} ${heapFlag}`.trim();
+
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				env: { ...process.env, ...opts.env },
+				env: { ...process.env, ...opts.env, NODE_OPTIONS: nodeOptions },
 			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
