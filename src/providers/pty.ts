@@ -18,8 +18,15 @@ const ANSI_REGEX = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07]*\x07|\([A-Z0-9]|[A-Z])/g
  * Strip ANSI escape sequences and normalize PTY line endings.
  * Used to clean output for logging and result collection.
  */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: required for stripping ^D (EOF) leaked by PTY
+const CTRL_D_REGEX = /\x04/g;
+
 export function stripAnsi(text: string): string {
-	return text.replace(ANSI_REGEX, "").replace(/\r\n/g, "\n").replace(/\r/g, "");
+	return text
+		.replace(ANSI_REGEX, "")
+		.replace(CTRL_D_REGEX, "")
+		.replace(/\r\n/g, "\n")
+		.replace(/\r/g, "");
 }
 
 /**
@@ -31,14 +38,19 @@ export function stripAnsi(text: string): string {
  */
 export function buildPtyArgs(command: string, os?: NodeJS.Platform): PtySpawnArgs | null {
 	const currentOs = os ?? platform();
+	// Redirect the child's stdin from /dev/null so that when `script` forwards
+	// EOF (^D) from its own closed stdin to the PTY master, the child process
+	// doesn't receive it (its stdin is /dev/null, not the PTY slave).
+	// stdout/stderr still go through the PTY slave, so isatty(1) remains true.
+	const wrappedCommand = `${command} < /dev/null`;
 	if (currentOs === "darwin") {
 		// -q: quiet (no "Script started" message)
 		// -F: flush output after each write (real-time streaming)
-		return { file: "script", args: ["-qF", "/dev/null", "sh", "-c", command] };
+		return { file: "script", args: ["-qF", "/dev/null", "sh", "-c", wrappedCommand] };
 	}
 	if (currentOs === "linux") {
 		// -q: quiet, -e: return child exit code, -f: flush output
-		return { file: "script", args: ["-qef", "-c", command, "/dev/null"] };
+		return { file: "script", args: ["-qef", "-c", wrappedCommand, "/dev/null"] };
 	}
 	return null;
 }

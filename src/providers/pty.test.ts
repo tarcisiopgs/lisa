@@ -76,7 +76,7 @@ describe("buildPtyArgs", () => {
 		const result = buildPtyArgs("echo hello", "darwin");
 		expect(result).toEqual({
 			file: "script",
-			args: ["-qF", "/dev/null", "sh", "-c", "echo hello"],
+			args: ["-qF", "/dev/null", "sh", "-c", "echo hello < /dev/null"],
 		});
 	});
 
@@ -84,7 +84,7 @@ describe("buildPtyArgs", () => {
 		const result = buildPtyArgs("echo hello", "linux");
 		expect(result).toEqual({
 			file: "script",
-			args: ["-qef", "-c", "echo hello", "/dev/null"],
+			args: ["-qef", "-c", "echo hello < /dev/null", "/dev/null"],
 		});
 	});
 
@@ -99,13 +99,13 @@ describe("buildPtyArgs", () => {
 	it("preserves complex commands with shell substitutions", () => {
 		const cmd = `claude -p "$(cat '/tmp/lisa-xxx/prompt.md')"`;
 		const result = buildPtyArgs(cmd, "darwin");
-		expect(result?.args[result.args.length - 1]).toBe(cmd);
+		expect(result?.args[result.args.length - 1]).toBe(`${cmd} < /dev/null`);
 	});
 
 	it("preserves commands with special characters", () => {
 		const cmd = `aider --message "$(cat '/tmp/prompt.md')" --yes-always --model gpt-4`;
 		const result = buildPtyArgs(cmd, "linux");
-		expect(result?.args[2]).toBe(cmd);
+		expect(result?.args[2]).toBe(`${cmd} < /dev/null`);
 	});
 });
 
