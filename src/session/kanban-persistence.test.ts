@@ -45,7 +45,7 @@ describe("KanbanPersistence.load()", () => {
 
 		const cards = p.load();
 		expect(cards).toEqual([]);
-		expect(existsSync(path + ".bak")).toBe(true);
+		expect(existsSync(`${path}.bak`)).toBe(true);
 		expect(existsSync(path)).toBe(false);
 	});
 
