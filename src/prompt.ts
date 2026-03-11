@@ -1,64 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-	type ApiClientGenerator,
-	formatProjectContext,
-	type ProjectContext,
-	type ProjectEnvironment,
-} from "./context.js";
+import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
 import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
-import type { StackTool } from "./session/discovery.js";
-import type { InfraStatus } from "./session/lifecycle.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
-
-const CATEGORY_LABELS: Record<StackTool["category"], string> = {
-	orm: "ORM",
-	"api-codegen": "API Codegen",
-	other: "Tool",
-};
-
-function capitalize(s: string): string {
-	return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-export function buildStackInstructions(tools: StackTool[], status: InfraStatus): string {
-	if (tools.length === 0) return "";
-
-	const sections: string[] = [];
-
-	for (const tool of tools) {
-		const label = CATEGORY_LABELS[tool.category];
-		const heading = `### ${capitalize(tool.name)} (${label})`;
-
-		if (status === "available") {
-			const lines = [heading];
-			if (tool.infraCommand) {
-				lines.push(`- Run \`${tool.infraCommand}\` to apply changes`);
-			}
-			sections.push(lines.join("\n"));
-		} else {
-			const lines = [heading];
-			if (tool.infraCommand) {
-				lines.push(
-					`- Do NOT run \`${tool.infraCommand}\` — infrastructure services are not available`,
-				);
-			}
-			lines.push(`- ${tool.manualHint}`);
-			sections.push(lines.join("\n"));
-		}
-	}
-
-	const intro =
-		status === "available"
-			? "Infrastructure services are running. Use the following commands to generate resources:"
-			: "The following tools were detected but infrastructure services are not running.\nCreate resources manually following project conventions:";
-
-	return `\n## Resource Generation\n\n${intro}\n\n${sections.join("\n\n")}\n`;
-}
 
 export function detectPackageManager(cwd: string): PackageManager {
 	if (existsSync(join(cwd, "bun.lockb")) || existsSync(join(cwd, "bun.lock"))) return "bun";
@@ -108,6 +56,7 @@ export function buildImplementPrompt(
 	projectContext?: ProjectContext,
 	cwd?: string,
 	manifestPath?: string,
+	repoContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
@@ -122,6 +71,7 @@ export function buildImplementPrompt(
 			resolvedManifestPath,
 			cwd,
 			config.platform,
+			repoContextMd,
 		);
 	}
 
@@ -133,6 +83,7 @@ export function buildImplementPrompt(
 		projectContext,
 		resolvedManifestPath,
 		cwd,
+		repoContextMd,
 	);
 }
 
@@ -148,32 +99,6 @@ This project uses **${testRunner}** as its test runner.
 - Tests should cover the main functionality, edge cases, and error scenarios.
 - Run \`${testCmd}\` and ensure ALL tests pass before committing.
 - Do NOT skip writing tests — the PR will be blocked if tests are missing or failing.
-`;
-}
-
-function buildApiClientInstructions(projectContext?: ProjectContext): string {
-	if (!projectContext?.apiClientGenerator) return "";
-
-	const gen = projectContext.apiClientGenerator;
-	const runCmd = gen.customScript ? `npm run ${gen.customScript}` : gen.command;
-
-	let inputNote = "";
-	if (gen.inputSource.type === "url") {
-		inputNote = `- The generator reads from a live API at \`${gen.inputSource.url}\`. Ensure the API server is running before generating.\n`;
-	} else if (gen.inputSource.type === "file") {
-		inputNote = `- The generator reads from a spec file at \`${gen.inputSource.path}\`. Ensure this file is up to date.\n`;
-	}
-
-	const outputNote = gen.outputDir
-		? `- Import generated types and functions from \`${gen.outputDir}\`.\n`
-		: "";
-
-	return `
-**API Client Generation — ${gen.name}:**
-This project uses **${gen.name}** to generate type-safe API clients.
-- Do NOT write API fetch/request code manually. Use the generated clients.
-- After making API changes, run \`${runCmd}\` to regenerate clients.
-${inputNote}${outputNote}- If generated client code already exists, inspect it to understand the available functions and types before writing new code.
 `;
 }
 
@@ -251,6 +176,11 @@ If an update is needed, modify only the affected sections. Keep the existing sty
 `;
 }
 
+export function buildContextMdBlock(content: string | null | undefined): string {
+	if (!content?.trim()) return "";
+	return `\n## Project Conventions\n\n${content.trim()}\n`;
+}
+
 export function buildDependencyContext(dep: DependencyContext): string {
 	const fileList =
 		dep.changedFiles.length > 0
@@ -280,15 +210,17 @@ function buildWorktreePrompt(
 	manifestPath?: string,
 	cwd?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -310,7 +242,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -359,6 +291,7 @@ function buildBranchPrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	cwd?: string,
+	repoContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -378,13 +311,14 @@ function buildBranchPrompt(
 			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
@@ -399,7 +333,7 @@ Do NOT use interactive skills, ask clarifying questions, or wait for user input.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -454,15 +388,17 @@ export function buildNativeWorktreePrompt(
 	projectContext?: ProjectContext,
 	manifestPath?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const manifestLocation = manifestPath
 		? `\`${manifestPath}\``
@@ -484,7 +420,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -528,7 +464,7 @@ export function buildPlanningPrompt(
 	issue: Issue,
 	config: LisaConfig,
 	planPath?: string,
-	repoGenerators?: Map<string, ApiClientGenerator>,
+	globalContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 
@@ -539,26 +475,8 @@ export function buildPlanningPrompt(
 		})
 		.join("\n");
 
-	const generatorBlock =
-		repoGenerators && repoGenerators.size > 0
-			? `\n## API Client Generators Detected\n\nThe following repositories use API client generators to produce type-safe API clients:\n\n${[
-					...repoGenerators.entries(),
-				]
-					.map(([repoName, gen]) => {
-						const inputDesc =
-							gen.inputSource.type === "url"
-								? `input from URL \`${gen.inputSource.url}\``
-								: gen.inputSource.type === "file"
-									? `input from file \`${gen.inputSource.path}\``
-									: "unknown input source";
-						return `- **${repoName}**: Uses **${gen.name}**, ${inputDesc}`;
-					})
-					.join(
-						"\n",
-					)}\n\n**Ordering rule**: Repositories that SERVE APIs (backends) must execute BEFORE repositories that CONSUME them (frontends with generators). The frontend step scope should include running the generator command after backend APIs are available.\n`
-			: "";
-
 	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
+	const globalContextBlock = buildContextMdBlock(globalContextMd ?? null);
 
 	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
 
@@ -577,7 +495,7 @@ ${issue.description}
 ## Available Repositories
 
 ${repoBlock}
-${generatorBlock}
+${globalContextBlock}
 ## Instructions
 
 1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
@@ -628,15 +546,17 @@ export function buildScopedImplementPrompt(
 	manifestPath?: string,
 	cwd?: string,
 	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const apiClientBlock = buildApiClientInstructions(projectContext);
+	const apiClientBlock = "";
 	const headings = cwd ? extractReadmeHeadings(cwd) : [];
 	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
 	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
 	const previousBlock =
@@ -662,7 +582,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:

@@ -13,34 +13,14 @@ export interface TestPattern {
 	example?: string;
 }
 
-export interface CodeTool {
-	name: string;
-	configFile: string;
-}
-
-export type ApiInputSource =
-	| { type: "url"; url: string }
-	| { type: "file"; path: string }
-	| { type: "unknown" };
-
-export interface ApiClientGenerator {
-	name: string;
-	configFile: string;
-	inputSource: ApiInputSource;
-	outputDir?: string;
-	command: string;
-	customScript?: string;
-}
-
 export type ProjectEnvironment = "cli" | "mobile" | "web" | "server" | "library" | "unknown";
 
 export interface ProjectContext {
 	qualityScripts: QualityScript[];
 	testPattern: TestPattern | null;
-	codeTools: CodeTool[];
 	projectTree: string;
 	environment: ProjectEnvironment;
-	apiClientGenerator: ApiClientGenerator | null;
+	configFiles: string[];
 }
 
 const QUALITY_SCRIPT_NAMES = new Set([
@@ -68,14 +48,81 @@ const IGNORED_DIRS = new Set([
 	".lisa",
 ]);
 
+const CONFIG_FILE_PATTERNS: string[] = [
+	// ORM / migrations
+	"prisma/schema.prisma",
+	"drizzle.config.ts",
+	"drizzle.config.js",
+	"drizzle.config.mjs",
+	"data-source.ts",
+	"ormconfig.ts",
+	"ormconfig.js",
+	".sequelizerc",
+	"alembic.ini",
+	"flyway.conf",
+	"liquibase.properties",
+	// API codegen
+	"orval.config.ts",
+	"orval.config.js",
+	"orval.config.mjs",
+	"kubb.config.ts",
+	"kubb.config.js",
+	"kubb.config.mjs",
+	"codegen.ts",
+	"codegen.js",
+	"codegen.yml",
+	"codegen.yaml",
+	"openapi-ts.config.ts",
+	"openapi-ts.config.js",
+	"openapi-ts.config.mjs",
+	"openapitools.json",
+	"swagger-codegen-config.json",
+	"buf.yaml",
+	"buf.gen.yaml",
+	// Linters / formatters
+	"biome.json",
+	"biome.jsonc",
+	".eslintrc",
+	".eslintrc.js",
+	".eslintrc.cjs",
+	".eslintrc.json",
+	".eslintrc.yml",
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.ts",
+	".prettierrc",
+	".prettierrc.json",
+	".prettierrc.js",
+	"prettier.config.js",
+	// Language / project markers
+	"go.mod",
+	"Cargo.toml",
+	"Gemfile",
+	"pubspec.yaml",
+	"pyproject.toml",
+	"requirements.txt",
+	"composer.json",
+	"Makefile",
+	"justfile",
+];
+
+export function detectConfigFiles(cwd: string): string[] {
+	return CONFIG_FILE_PATTERNS.filter((pattern) => {
+		const parts = pattern.split("/");
+		if (parts.length === 2) {
+			return existsSync(join(cwd, parts[0]!, parts[1]!));
+		}
+		return existsSync(join(cwd, pattern));
+	});
+}
+
 export function analyzeProject(cwd: string): ProjectContext {
 	return {
 		qualityScripts: detectQualityScripts(cwd),
 		testPattern: detectTestPattern(cwd),
-		codeTools: detectCodeTools(cwd),
 		projectTree: generateProjectTree(cwd),
 		environment: detectEnvironment(cwd),
-		apiClientGenerator: detectApiClientGenerator(cwd),
+		configFiles: detectConfigFiles(cwd),
 	};
 }
 
@@ -209,258 +256,6 @@ export function detectTestPattern(cwd: string): TestPattern | null {
 	};
 }
 
-export function detectCodeTools(cwd: string): CodeTool[] {
-	const tools: CodeTool[] = [];
-
-	const biomeConfig = ["biome.json", "biome.jsonc"].find((f) => existsSync(join(cwd, f)));
-	if (biomeConfig) {
-		tools.push({ name: "Biome", configFile: biomeConfig });
-	}
-
-	const eslintConfigs = [
-		".eslintrc",
-		".eslintrc.js",
-		".eslintrc.cjs",
-		".eslintrc.json",
-		".eslintrc.yml",
-		".eslintrc.yaml",
-		"eslint.config.js",
-		"eslint.config.mjs",
-		"eslint.config.cjs",
-		"eslint.config.ts",
-	];
-	const eslintConfig = eslintConfigs.find((f) => existsSync(join(cwd, f)));
-	if (eslintConfig) {
-		tools.push({ name: "ESLint", configFile: eslintConfig });
-	}
-
-	const prettierConfigs = [
-		".prettierrc",
-		".prettierrc.json",
-		".prettierrc.yml",
-		".prettierrc.yaml",
-		".prettierrc.js",
-		".prettierrc.cjs",
-		".prettierrc.mjs",
-		"prettier.config.js",
-		"prettier.config.cjs",
-		"prettier.config.mjs",
-	];
-	const prettierConfig = prettierConfigs.find((f) => existsSync(join(cwd, f)));
-	if (prettierConfig) {
-		tools.push({ name: "Prettier", configFile: prettierConfig });
-	}
-
-	return tools;
-}
-
-interface GeneratorDef {
-	name: string;
-	configFiles: string[];
-	configDirs?: string[];
-	packageName?: string;
-	command: string;
-}
-
-const GENERATOR_DEFS: GeneratorDef[] = [
-	{
-		name: "Orval",
-		configFiles: [
-			"orval.config.ts",
-			"orval.config.js",
-			"orval.config.mjs",
-			".orvalrc",
-			".orvalrc.json",
-			".orvalrc.js",
-			".orvalrc.ts",
-		],
-		packageName: "orval",
-		command: "npx orval",
-	},
-	{
-		name: "Kubb",
-		configFiles: ["kubb.config.ts", "kubb.config.js", "kubb.config.mjs"],
-		packageName: "@kubb/cli",
-		command: "npx kubb generate",
-	},
-	{
-		name: "hey-api",
-		configFiles: ["openapi-ts.config.ts", "openapi-ts.config.js", "openapi-ts.config.mjs"],
-		packageName: "@hey-api/openapi-ts",
-		command: "npx @hey-api/openapi-ts",
-	},
-	{
-		name: "openapi-generator",
-		configFiles: ["openapitools.json"],
-		configDirs: [".openapi-generator"],
-		packageName: "@openapitools/openapi-generator-cli",
-		command: "npx openapi-generator-cli generate",
-	},
-	{
-		name: "swagger-codegen",
-		configFiles: ["swagger-codegen-config.json"],
-		command: "npx swagger-codegen generate",
-	},
-	{
-		name: "openapi-typescript",
-		configFiles: [],
-		packageName: "openapi-typescript",
-		command: "npx openapi-typescript",
-	},
-];
-
-const GENERATION_SCRIPT_PATTERNS = ["generate", "codegen", "openapi", "orval", "kubb", "swagger"];
-
-function parseInputSource(content: string): ApiInputSource {
-	// Match input: 'value' or input: "value" or input: `value`
-	const inputMatch = content.match(/input\s*:\s*['"`]([^'"`]+)['"`]/);
-	if (inputMatch?.[1]) {
-		const value = inputMatch[1];
-		if (value.startsWith("http://") || value.startsWith("https://")) {
-			return { type: "url", url: value };
-		}
-		return { type: "file", path: value };
-	}
-
-	// Match input: { target: 'value' } pattern (Orval)
-	const targetMatch = content.match(/target\s*:\s*['"`]([^'"`]+)['"`]/);
-	if (targetMatch?.[1]) {
-		const value = targetMatch[1];
-		if (value.startsWith("http://") || value.startsWith("https://")) {
-			return { type: "url", url: value };
-		}
-		return { type: "file", path: value };
-	}
-
-	return { type: "unknown" };
-}
-
-function parseJsonInputSource(json: Record<string, unknown>): ApiInputSource {
-	// Check common JSON config patterns
-	const input =
-		(json.input as string | undefined) ??
-		(json.inputSpec as string | undefined) ??
-		(json.specPath as string | undefined);
-	if (typeof input === "string") {
-		if (input.startsWith("http://") || input.startsWith("https://")) {
-			return { type: "url", url: input };
-		}
-		return { type: "file", path: input };
-	}
-
-	// Orval .orvalrc.json: { [key]: { input: 'value' } }
-	for (const value of Object.values(json)) {
-		if (typeof value === "object" && value !== null && "input" in value) {
-			const nestedInput = (value as Record<string, unknown>).input;
-			if (typeof nestedInput === "string") {
-				if (nestedInput.startsWith("http://") || nestedInput.startsWith("https://")) {
-					return { type: "url", url: nestedInput };
-				}
-				return { type: "file", path: nestedInput };
-			}
-		}
-	}
-
-	return { type: "unknown" };
-}
-
-function parseOutputDir(content: string): string | undefined {
-	const outputMatch = content.match(/output\s*:\s*['"`]([^'"`]+)['"`]/);
-	return outputMatch?.[1];
-}
-
-function findCustomScript(
-	scripts: Record<string, string>,
-	generatorName: string,
-): string | undefined {
-	const lowerName = generatorName.toLowerCase();
-	for (const [name, command] of Object.entries(scripts)) {
-		const lowerCmd = command.toLowerCase();
-		if (
-			GENERATION_SCRIPT_PATTERNS.some((p) => name.toLowerCase().includes(p)) &&
-			(lowerCmd.includes(lowerName) ||
-				lowerCmd.includes("orval") ||
-				lowerCmd.includes("kubb") ||
-				lowerCmd.includes("openapi"))
-		) {
-			return name;
-		}
-	}
-	return undefined;
-}
-
-export function detectApiClientGenerator(cwd: string): ApiClientGenerator | null {
-	const packageJsonPath = join(cwd, "package.json");
-	let pkg: {
-		dependencies?: Record<string, string>;
-		devDependencies?: Record<string, string>;
-		scripts?: Record<string, string>;
-	} = {};
-
-	try {
-		if (existsSync(packageJsonPath)) {
-			pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-		}
-	} catch {
-		// Continue with empty pkg
-	}
-
-	const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-
-	for (const def of GENERATOR_DEFS) {
-		// Check config files
-		const configFile = def.configFiles.find((f) => existsSync(join(cwd, f)));
-
-		// Check config directories
-		const configDir =
-			!configFile && def.configDirs
-				? def.configDirs.find((d) => {
-						try {
-							return statSync(join(cwd, d)).isDirectory();
-						} catch {
-							return false;
-						}
-					})
-				: undefined;
-
-		// Check package.json dependency
-		const hasDep = def.packageName ? def.packageName in deps : false;
-
-		if (!configFile && !configDir && !hasDep) continue;
-
-		let inputSource: ApiInputSource = { type: "unknown" };
-		let outputDir: string | undefined;
-
-		if (configFile) {
-			try {
-				const content = readFileSync(join(cwd, configFile), "utf-8");
-				if (configFile.endsWith(".json")) {
-					const json = JSON.parse(content) as Record<string, unknown>;
-					inputSource = parseJsonInputSource(json);
-				} else {
-					inputSource = parseInputSource(content);
-					outputDir = parseOutputDir(content);
-				}
-			} catch {
-				// Graceful degradation: keep unknown input source
-			}
-		}
-
-		const customScript = pkg.scripts ? findCustomScript(pkg.scripts, def.name) : undefined;
-
-		return {
-			name: def.name,
-			configFile: configFile ?? configDir ?? def.packageName ?? def.name,
-			inputSource,
-			outputDir,
-			command: def.command,
-			customScript,
-		};
-	}
-
-	return null;
-}
-
 export function generateProjectTree(cwd: string): string {
 	const lines: string[] = [];
 
@@ -508,30 +303,19 @@ export function generateProjectTree(cwd: string): string {
 	return lines.join("\n");
 }
 
-const ENVIRONMENT_LABELS: Record<ProjectEnvironment, string> = {
-	cli: "CLI (Node.js)",
-	mobile: "Mobile (React Native / Flutter / native)",
-	web: "Web (browser)",
-	server: "Server-side (Node.js)",
-	library: "Library",
-	unknown: "",
-};
-
-const ENVIRONMENT_FORBIDDEN: Partial<Record<ProjectEnvironment, string>> = {
-	cli: "Do NOT install browser/DOM packages (`jsdom`, `happy-dom`, `@testing-library/dom`, `@testing-library/react`). All code and tests must run in Node.js only.",
-	mobile:
-		"Do NOT install browser/DOM packages or web-only libraries. Use only packages compatible with the mobile runtime.",
-	server: "Do NOT install browser/DOM packages. Use only Node.js-compatible packages.",
-};
-
 export function formatProjectContext(ctx: ProjectContext): string {
 	const sections: string[] = [];
 
 	if (ctx.environment !== "unknown" && ctx.environment !== "library") {
-		const label = ENVIRONMENT_LABELS[ctx.environment];
-		const forbidden = ENVIRONMENT_FORBIDDEN[ctx.environment];
-		const note = forbidden ? ` — ${forbidden}` : "";
-		sections.push(`### Project Environment\n\n**${label}**${note}`);
+		const labels: Record<ProjectEnvironment, string> = {
+			cli: "CLI (Node.js)",
+			mobile: "Mobile (React Native / Flutter / native)",
+			web: "Web (browser)",
+			server: "Server-side (Node.js)",
+			library: "Library",
+			unknown: "",
+		};
+		sections.push(`### Project Environment\n\n**${labels[ctx.environment]}**`);
 	}
 
 	if (ctx.qualityScripts.length > 0) {
@@ -539,6 +323,11 @@ export function formatProjectContext(ctx: ProjectContext): string {
 			.map((s) => `- \`${s.name}\`: \`${s.command}\``)
 			.join("\n");
 		sections.push(`### Quality Scripts\n\n${scriptLines}`);
+	}
+
+	if (ctx.configFiles.length > 0) {
+		const fileLines = ctx.configFiles.map((f) => `- \`${f}\``).join("\n");
+		sections.push(`### Config Files Detected\n\n${fileLines}`);
 	}
 
 	if (ctx.testPattern) {
@@ -555,28 +344,6 @@ export function formatProjectContext(ctx: ProjectContext): string {
 			block += `\n\n**Reference test file:**\n\`\`\`typescript\n${tp.example}\n\`\`\``;
 		}
 		sections.push(block);
-	}
-
-	if (ctx.codeTools.length > 0) {
-		const toolLines = ctx.codeTools
-			.map((t) => `- **${t.name}** (config: \`${t.configFile}\`)`)
-			.join("\n");
-		sections.push(`### Code Tools\n\n${toolLines}`);
-	}
-
-	if (ctx.apiClientGenerator) {
-		const gen = ctx.apiClientGenerator;
-		const inputDesc =
-			gen.inputSource.type === "url"
-				? `URL: \`${gen.inputSource.url}\``
-				: gen.inputSource.type === "file"
-					? `File: \`${gen.inputSource.path}\``
-					: "Unknown source";
-		const outputLine = gen.outputDir ? `\n- Output: \`${gen.outputDir}\`` : "";
-		const scriptLine = gen.customScript ? `\n- Custom script: \`npm run ${gen.customScript}\`` : "";
-		sections.push(
-			`### API Client Generator\n\n- **${gen.name}** (config: \`${gen.configFile}\`)\n- Input: ${inputDesc}\n- Command: \`${gen.command}\`${outputLine}${scriptLine}`,
-		);
 	}
 
 	if (ctx.projectTree) {

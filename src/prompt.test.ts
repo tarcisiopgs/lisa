@@ -4,16 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectContext } from "./context.js";
 import {
+	buildContextMdBlock,
 	buildDependencyContext,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
-	buildStackInstructions,
 	detectTestRunner,
 	extractReadmeHeadings,
 } from "./prompt.js";
-import type { StackTool } from "./session/discovery.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
@@ -619,10 +618,9 @@ function makeProjectContext(overrides?: Partial<ProjectContext>): ProjectContext
 			mocking: ["vi.mock/vi.fn"],
 			example: '// src/utils.test.ts\nimport { describe, it } from "vitest";',
 		},
-		codeTools: [{ name: "Biome", configFile: "biome.json" }],
 		projectTree: "src/\n  index.ts\npackage.json",
 		environment: "unknown",
-		apiClientGenerator: null,
+		configFiles: [],
 		...overrides,
 	};
 }
@@ -642,8 +640,6 @@ describe("project context injection", () => {
 		expect(prompt).toContain("### Quality Scripts");
 		expect(prompt).toContain("`lint`: `biome lint`");
 		expect(prompt).toContain("### Test Patterns");
-		expect(prompt).toContain("### Code Tools");
-		expect(prompt).toContain("**Biome**");
 		expect(prompt).toContain("### Project Structure");
 	});
 
@@ -776,6 +772,22 @@ describe("buildDependencyContext", () => {
 	});
 });
 
+describe("buildContextMdBlock", () => {
+	it("returns empty string when content is null", () => {
+		expect(buildContextMdBlock(null)).toBe("");
+	});
+
+	it("returns empty string when content is empty string", () => {
+		expect(buildContextMdBlock("")).toBe("");
+	});
+
+	it("wraps content in a Project Conventions section", () => {
+		const result = buildContextMdBlock("## Stack\n- Use pnpm run generate");
+		expect(result).toContain("## Project Conventions");
+		expect(result).toContain("## Stack\n- Use pnpm run generate");
+	});
+});
+
 describe("dependency context in prompts", () => {
 	const dep = makeDependency();
 
@@ -867,244 +879,5 @@ describe("dependency context in prompts", () => {
 		const instrIndex = prompt.indexOf("## Instructions");
 		expect(descIndex).toBeLessThan(depIndex);
 		expect(depIndex).toBeLessThan(instrIndex);
-	});
-});
-
-describe("API client generator instructions", () => {
-	const generatorCtx = makeProjectContext({
-		apiClientGenerator: {
-			name: "Orval",
-			configFile: "orval.config.ts",
-			inputSource: { type: "url", url: "http://localhost:3000/api-docs" },
-			outputDir: "./src/api",
-			command: "npx orval",
-		},
-	});
-
-	it("worktree prompt includes API client instructions when generator detected", () => {
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			generatorCtx,
-		);
-		expect(prompt).toContain("API Client Generation");
-		expect(prompt).toContain("Orval");
-		expect(prompt).toContain("Do NOT write API fetch/request code manually");
-		expect(prompt).toContain("npx orval");
-	});
-
-	it("branch prompt includes API client instructions when generator detected", () => {
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "branch" }),
-			"vitest",
-			"pnpm",
-			generatorCtx,
-		);
-		expect(prompt).toContain("API Client Generation");
-		expect(prompt).toContain("Orval");
-	});
-
-	it("native worktree prompt includes API client instructions", () => {
-		const prompt = buildNativeWorktreePrompt(
-			makeIssue(),
-			undefined,
-			"vitest",
-			"pnpm",
-			"main",
-			generatorCtx,
-		);
-		expect(prompt).toContain("API Client Generation");
-		expect(prompt).toContain("Orval");
-	});
-
-	it("scoped implement prompt includes API client instructions", () => {
-		const step = { repoPath: "/tmp/repo", scope: "Implement API endpoints", order: 1 };
-		const prompt = buildScopedImplementPrompt(
-			makeIssue(),
-			step,
-			[],
-			"vitest",
-			"pnpm",
-			false,
-			"main",
-			generatorCtx,
-		);
-		expect(prompt).toContain("API Client Generation");
-		expect(prompt).toContain("Orval");
-	});
-
-	it("includes URL input note when input source is URL", () => {
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			generatorCtx,
-		);
-		expect(prompt).toContain("reads from a live API at `http://localhost:3000/api-docs`");
-	});
-
-	it("includes file input note when input source is file", () => {
-		const fileCtx = makeProjectContext({
-			apiClientGenerator: {
-				name: "Kubb",
-				configFile: "kubb.config.ts",
-				inputSource: { type: "file", path: "./openapi.yaml" },
-				command: "npx kubb generate",
-			},
-		});
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			fileCtx,
-		);
-		expect(prompt).toContain("reads from a spec file at `./openapi.yaml`");
-	});
-
-	it("includes output dir when available", () => {
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			generatorCtx,
-		);
-		expect(prompt).toContain("Import generated types and functions from `./src/api`");
-	});
-
-	it("uses custom script in instructions when available", () => {
-		const scriptCtx = makeProjectContext({
-			apiClientGenerator: {
-				name: "Orval",
-				configFile: "orval.config.ts",
-				inputSource: { type: "unknown" },
-				command: "npx orval",
-				customScript: "generate:api",
-			},
-		});
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			scriptCtx,
-		);
-		expect(prompt).toContain("npm run generate:api");
-	});
-
-	it("no API instructions when apiClientGenerator is null", () => {
-		const prompt = buildImplementPrompt(
-			makeIssue(),
-			makeConfig({ workflow: "worktree" }),
-			"vitest",
-			"pnpm",
-			makeProjectContext(),
-		);
-		expect(prompt).not.toContain("API Client Generation");
-	});
-});
-
-describe("planning prompt with API generators", () => {
-	it("includes generator context when repoGenerators provided", () => {
-		const config = makeConfig({
-			repos: [
-				{ name: "api", path: "api", match: "API:", base_branch: "main" },
-				{ name: "web", path: "web", match: "Web:", base_branch: "main" },
-			],
-		});
-		const generators = new Map([
-			[
-				"web",
-				{
-					name: "Orval",
-					configFile: "orval.config.ts",
-					inputSource: { type: "url" as const, url: "http://localhost:3000/api-docs" },
-					command: "npx orval",
-				},
-			],
-		]);
-		const prompt = buildPlanningPrompt(makeIssue(), config, undefined, generators);
-		expect(prompt).toContain("## API Client Generators Detected");
-		expect(prompt).toContain("**web**: Uses **Orval**");
-		expect(prompt).toContain("input from URL `http://localhost:3000/api-docs`");
-		expect(prompt).toContain("SERVE APIs (backends) must execute BEFORE");
-	});
-
-	it("no generator section when repoGenerators is empty", () => {
-		const config = makeConfig({
-			repos: [{ name: "api", path: "api", match: "API:", base_branch: "main" }],
-		});
-		const prompt = buildPlanningPrompt(makeIssue(), config, undefined, new Map());
-		expect(prompt).not.toContain("API Client Generators Detected");
-	});
-
-	it("no generator section when repoGenerators is undefined", () => {
-		const config = makeConfig({
-			repos: [{ name: "api", path: "api", match: "API:", base_branch: "main" }],
-		});
-		const prompt = buildPlanningPrompt(makeIssue(), config);
-		expect(prompt).not.toContain("API Client Generators Detected");
-	});
-});
-
-describe("buildStackInstructions", () => {
-	const prisma: StackTool = {
-		name: "prisma",
-		category: "orm",
-		language: "typescript",
-		configFile: "prisma/schema.prisma",
-		infraCommand: "npx prisma db push",
-		manualHint: "Create migration files manually in `prisma/migrations/`.",
-	};
-
-	const orval: StackTool = {
-		name: "orval",
-		category: "api-codegen",
-		language: "typescript",
-		configFile: "orval.config.ts",
-		infraCommand: "npx orval",
-		manualHint: "Create TypeScript types manually based on the OpenAPI spec.",
-	};
-
-	it("returns empty string when no tools", () => {
-		expect(buildStackInstructions([], "available")).toBe("");
-		expect(buildStackInstructions([], "unavailable")).toBe("");
-	});
-
-	it("generates infra-available instructions", () => {
-		const result = buildStackInstructions([prisma], "available");
-		expect(result).toContain("## Resource Generation");
-		expect(result).toContain("Infrastructure services are running");
-		expect(result).toContain("npx prisma db push");
-		expect(result).not.toContain("Do NOT run");
-	});
-
-	it("generates infra-unavailable instructions", () => {
-		const result = buildStackInstructions([prisma], "unavailable");
-		expect(result).toContain("## Resource Generation");
-		expect(result).toContain("not running");
-		expect(result).toContain("Do NOT run `npx prisma db push`");
-		expect(result).toContain("Create migration files manually");
-	});
-
-	it("includes multiple tools", () => {
-		const result = buildStackInstructions([prisma, orval], "unavailable");
-		expect(result).toContain("### Prisma (ORM)");
-		expect(result).toContain("### Orval (API Codegen)");
-	});
-
-	it("capitalizes tool name in heading", () => {
-		const result = buildStackInstructions([prisma], "available");
-		expect(result).toContain("### Prisma (ORM)");
-	});
-
-	it("labels api-codegen category correctly", () => {
-		const result = buildStackInstructions([orval], "available");
-		expect(result).toContain("### Orval (API Codegen)");
 	});
 });

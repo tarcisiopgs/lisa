@@ -1,6 +1,6 @@
 import { appendFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type ApiClientGenerator, analyzeProject, detectApiClientGenerator } from "../context.js";
+import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -9,13 +9,13 @@ import { getPlanPath } from "../paths.js";
 import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
-	buildStackInstructions,
 	detectPackageManager,
 	detectTestRunner,
 	type PreviousStepResult,
 } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
-import { discoverInfra, discoverStackTools } from "../session/discovery.js";
+import { readContext } from "../session/context-manager.js";
+import { discoverInfra } from "../session/discovery.js";
 import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
@@ -54,15 +54,8 @@ export async function runWorktreeMultiRepoSession(
 	startSpinner(`${issue.id} \u2014 analyzing issue...`);
 	logger.log(`Multi-repo planning phase for ${issue.id}`);
 
-	// Detect API client generators in each repo for planning context
-	const repoGenerators = new Map<string, ApiClientGenerator>();
-	for (const repo of config.repos) {
-		const absPath = resolve(workspace, repo.path);
-		const gen = detectApiClientGenerator(absPath);
-		if (gen) repoGenerators.set(repo.name, gen);
-	}
-
-	const planPrompt = buildPlanningPrompt(issue, config, planPath, repoGenerators);
+	const globalContextMd = readContext(workspace);
+	const planPrompt = buildPlanningPrompt(issue, config, planPath, globalContextMd);
 	const planResult = await runWithFallback(models, planPrompt, {
 		logFile,
 		cwd: workspace,
@@ -218,9 +211,9 @@ export async function runMultiRepoStep(
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
+	const repoContextMd = readContext(repoPath);
 
-	// Detect stack tools and infrastructure
-	const stackTools = discoverStackTools(worktreePath);
+	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
 	let lifecycleEnv: Record<string, string> = {};
 	let lifecycleSuccess = true;
@@ -237,8 +230,7 @@ export async function runMultiRepoStep(
 		lifecycleEnv = started.env;
 	}
 	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
-	const stackBlock = buildStackInstructions(stackTools, infraStatus);
+	resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
 
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
@@ -256,11 +248,11 @@ export async function runMultiRepoStep(
 		manifestPath,
 		worktreePath,
 		config.platform,
+		repoContextMd,
 	);
-	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
-	const result = await runWithFallback(models, fullPrompt, {
+	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: worktreePath,
 		guardrailsDir: workspace,

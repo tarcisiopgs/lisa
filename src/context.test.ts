@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	analyzeProject,
-	detectApiClientGenerator,
-	detectCodeTools,
+	detectConfigFiles,
 	detectEnvironment,
 	detectQualityScripts,
 	detectTestPattern,
 	formatProjectContext,
 	generateProjectTree,
+	type ProjectContext,
 } from "./context.js";
 
 describe("detectQualityScripts", () => {
@@ -220,67 +220,6 @@ describe("detectTestPattern", () => {
 	});
 });
 
-describe("detectCodeTools", () => {
-	let tmpDir: string;
-
-	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "lisa-ctx-"));
-	});
-
-	afterEach(() => {
-		rmSync(tmpDir, { recursive: true, force: true });
-	});
-
-	it("returns empty array when no code tools found", () => {
-		expect(detectCodeTools(tmpDir)).toEqual([]);
-	});
-
-	it("detects biome.json", () => {
-		writeFileSync(join(tmpDir, "biome.json"), "{}");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "Biome", configFile: "biome.json" }]);
-	});
-
-	it("detects biome.jsonc", () => {
-		writeFileSync(join(tmpDir, "biome.jsonc"), "{}");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "Biome", configFile: "biome.jsonc" }]);
-	});
-
-	it("detects .eslintrc.json", () => {
-		writeFileSync(join(tmpDir, ".eslintrc.json"), "{}");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "ESLint", configFile: ".eslintrc.json" }]);
-	});
-
-	it("detects eslint.config.js", () => {
-		writeFileSync(join(tmpDir, "eslint.config.js"), "export default {};");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "ESLint", configFile: "eslint.config.js" }]);
-	});
-
-	it("detects .prettierrc", () => {
-		writeFileSync(join(tmpDir, ".prettierrc"), "{}");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "Prettier", configFile: ".prettierrc" }]);
-	});
-
-	it("detects prettier.config.js", () => {
-		writeFileSync(join(tmpDir, "prettier.config.js"), "export default {};");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toEqual([{ name: "Prettier", configFile: "prettier.config.js" }]);
-	});
-
-	it("detects multiple tools", () => {
-		writeFileSync(join(tmpDir, "biome.json"), "{}");
-		writeFileSync(join(tmpDir, ".eslintrc.json"), "{}");
-		writeFileSync(join(tmpDir, ".prettierrc"), "{}");
-		const tools = detectCodeTools(tmpDir);
-		expect(tools).toHaveLength(3);
-		expect(tools.map((t) => t.name)).toEqual(["Biome", "ESLint", "Prettier"]);
-	});
-});
-
 describe("generateProjectTree", () => {
 	let tmpDir: string;
 
@@ -390,34 +329,16 @@ describe("analyzeProject", () => {
 		const ctx = analyzeProject(tmpDir);
 		expect(ctx.qualityScripts).toHaveLength(2);
 		expect(ctx.testPattern).not.toBeNull();
-		expect(ctx.codeTools).toHaveLength(1);
 		expect(ctx.projectTree).toContain("src/");
 		expect(ctx.environment).toBe("library");
-		expect(ctx.apiClientGenerator).toBeNull();
 	});
 
 	it("handles empty project", () => {
 		const ctx = analyzeProject(tmpDir);
 		expect(ctx.qualityScripts).toEqual([]);
 		expect(ctx.testPattern).toBeNull();
-		expect(ctx.codeTools).toEqual([]);
 		expect(ctx.projectTree).toBe("");
 		expect(ctx.environment).toBe("unknown");
-		expect(ctx.apiClientGenerator).toBeNull();
-	});
-
-	it("includes apiClientGenerator when detected", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { orval: "^7.0.0" } }),
-		);
-		writeFileSync(
-			join(tmpDir, "orval.config.ts"),
-			"export default { petstore: { input: 'http://localhost:3000/api-docs', output: './src/api' } }",
-		);
-		const ctx = analyzeProject(tmpDir);
-		expect(ctx.apiClientGenerator).not.toBeNull();
-		expect(ctx.apiClientGenerator?.name).toBe("Orval");
 	});
 });
 
@@ -536,10 +457,9 @@ describe("formatProjectContext", () => {
 		const result = formatProjectContext({
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toBe("");
 	});
@@ -551,10 +471,9 @@ describe("formatProjectContext", () => {
 				{ name: "test", command: "vitest run" },
 			],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("## Project Context");
 		expect(result).toContain("### Quality Scripts");
@@ -571,10 +490,9 @@ describe("formatProjectContext", () => {
 				mocking: ["vi.mock/vi.fn"],
 				example: '// src/utils.test.ts\nimport { describe, it } from "vitest";',
 			},
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Test Patterns");
 		expect(result).toContain("colocated next to source files");
@@ -583,31 +501,13 @@ describe("formatProjectContext", () => {
 		expect(result).toContain("Reference test file");
 	});
 
-	it("includes code tools section", () => {
-		const result = formatProjectContext({
-			qualityScripts: [],
-			testPattern: null,
-			codeTools: [
-				{ name: "Biome", configFile: "biome.json" },
-				{ name: "ESLint", configFile: ".eslintrc.json" },
-			],
-			projectTree: "",
-			environment: "unknown",
-			apiClientGenerator: null,
-		});
-		expect(result).toContain("### Code Tools");
-		expect(result).toContain("**Biome** (config: `biome.json`)");
-		expect(result).toContain("**ESLint** (config: `.eslintrc.json`)");
-	});
-
 	it("includes project structure section", () => {
 		const result = formatProjectContext({
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "src/\n  index.ts\npackage.json",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Structure");
 		expect(result).toContain("src/");
@@ -622,14 +522,12 @@ describe("formatProjectContext", () => {
 				style: "test",
 				mocking: [],
 			},
-			codeTools: [{ name: "ESLint", configFile: ".eslintrc.json" }],
 			projectTree: "src/\npackage.json",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Quality Scripts");
 		expect(result).toContain("### Test Patterns");
-		expect(result).toContain("### Code Tools");
 		expect(result).toContain("### Project Structure");
 	});
 
@@ -641,10 +539,9 @@ describe("formatProjectContext", () => {
 				style: "test",
 				mocking: [],
 			},
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("tests are in a separate directory");
 	});
@@ -657,10 +554,9 @@ describe("formatProjectContext", () => {
 				style: "test",
 				mocking: [],
 			},
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("top-level test() calls");
 	});
@@ -673,36 +569,32 @@ describe("formatProjectContext", () => {
 				style: "mixed",
 				mocking: [],
 			},
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("mixed (describe/it and test())");
 	});
 
-	it("includes CLI environment section with forbidden packages note", () => {
+	it("includes CLI environment section", () => {
 		const result = formatProjectContext({
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "cli",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Environment");
 		expect(result).toContain("CLI (Node.js)");
-		expect(result).toContain("jsdom");
 	});
 
 	it("includes mobile environment section", () => {
 		const result = formatProjectContext({
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "mobile",
-			apiClientGenerator: null,
+			configFiles: [],
 		});
 		expect(result).toContain("### Project Environment");
 		expect(result).toContain("Mobile");
@@ -713,271 +605,81 @@ describe("formatProjectContext", () => {
 			const result = formatProjectContext({
 				qualityScripts: [{ name: "lint", command: "eslint ." }],
 				testPattern: null,
-				codeTools: [],
 				projectTree: "",
 				environment: env,
-				apiClientGenerator: null,
+				configFiles: [],
 			});
 			expect(result).not.toContain("### Project Environment");
 		}
 	});
 
-	it("includes API client generator section with URL input", () => {
-		const result = formatProjectContext({
+	it("includes config files section when present", () => {
+		const ctx: ProjectContext = {
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: {
-				name: "Orval",
-				configFile: "orval.config.ts",
-				inputSource: { type: "url", url: "http://localhost:3000/api-docs" },
-				outputDir: "./src/api",
-				command: "npx orval",
-			},
-		});
-		expect(result).toContain("### API Client Generator");
-		expect(result).toContain("**Orval**");
-		expect(result).toContain("URL: `http://localhost:3000/api-docs`");
-		expect(result).toContain("Output: `./src/api`");
-		expect(result).toContain("`npx orval`");
+			configFiles: ["prisma/schema.prisma", "biome.json"],
+		};
+		const result = formatProjectContext(ctx);
+		expect(result).toContain("### Config Files Detected");
+		expect(result).toContain("`prisma/schema.prisma`");
+		expect(result).toContain("`biome.json`");
 	});
 
-	it("includes API client generator section with file input", () => {
-		const result = formatProjectContext({
+	it("omits config files section when empty", () => {
+		const ctx: ProjectContext = {
 			qualityScripts: [],
 			testPattern: null,
-			codeTools: [],
 			projectTree: "",
 			environment: "unknown",
-			apiClientGenerator: {
-				name: "Kubb",
-				configFile: "kubb.config.ts",
-				inputSource: { type: "file", path: "./openapi.yaml" },
-				command: "npx kubb generate",
-			},
-		});
-		expect(result).toContain("### API Client Generator");
-		expect(result).toContain("**Kubb**");
-		expect(result).toContain("File: `./openapi.yaml`");
-	});
-
-	it("includes custom script in API client generator section", () => {
-		const result = formatProjectContext({
-			qualityScripts: [],
-			testPattern: null,
-			codeTools: [],
-			projectTree: "",
-			environment: "unknown",
-			apiClientGenerator: {
-				name: "Orval",
-				configFile: "orval.config.ts",
-				inputSource: { type: "unknown" },
-				command: "npx orval",
-				customScript: "generate:api",
-			},
-		});
-		expect(result).toContain("Custom script: `npm run generate:api`");
-	});
-
-	it("omits API client generator section when null", () => {
-		const result = formatProjectContext({
-			qualityScripts: [{ name: "lint", command: "eslint ." }],
-			testPattern: null,
-			codeTools: [],
-			projectTree: "",
-			environment: "unknown",
-			apiClientGenerator: null,
-		});
-		expect(result).not.toContain("### API Client Generator");
+			configFiles: [],
+		};
+		const result = formatProjectContext(ctx);
+		expect(result).not.toContain("Config Files Detected");
 	});
 });
 
-describe("detectApiClientGenerator", () => {
+describe("detectConfigFiles", () => {
 	let tmpDir: string;
-
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "lisa-apigen-"));
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-ctx-"));
 	});
-
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("returns null when no generator found", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		expect(detectApiClientGenerator(tmpDir)).toBeNull();
+	it("returns empty array when no known config files present", () => {
+		expect(detectConfigFiles(tmpDir)).toEqual([]);
 	});
 
-	it("returns null when no package.json exists", () => {
-		expect(detectApiClientGenerator(tmpDir)).toBeNull();
+	it("detects prisma schema", () => {
+		mkdirSync(join(tmpDir, "prisma"));
+		writeFileSync(join(tmpDir, "prisma", "schema.prisma"), "");
+		expect(detectConfigFiles(tmpDir)).toContain("prisma/schema.prisma");
 	});
 
-	it("detects Orval via config file", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { orval: "^7.0.0" } }),
-		);
-		writeFileSync(join(tmpDir, "orval.config.ts"), "export default {}");
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("Orval");
-		expect(gen?.configFile).toBe("orval.config.ts");
-		expect(gen?.command).toBe("npx orval");
+	it("detects drizzle config", () => {
+		writeFileSync(join(tmpDir, "drizzle.config.ts"), "");
+		expect(detectConfigFiles(tmpDir)).toContain("drizzle.config.ts");
 	});
 
-	it("detects Orval via .orvalrc.json", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { orval: "^7.0.0" } }),
-		);
-		writeFileSync(
-			join(tmpDir, ".orvalrc.json"),
-			JSON.stringify({ petstore: { input: "http://localhost:3000/api-docs" } }),
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("Orval");
-		expect(gen?.configFile).toBe(".orvalrc.json");
-		expect(gen?.inputSource).toEqual({ type: "url", url: "http://localhost:3000/api-docs" });
+	it("detects biome.json", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		expect(detectConfigFiles(tmpDir)).toContain("biome.json");
 	});
 
-	it("detects Kubb via config file", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { "@kubb/cli": "^3.0.0" } }),
-		);
-		writeFileSync(join(tmpDir, "kubb.config.ts"), "export default {}");
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("Kubb");
-		expect(gen?.command).toBe("npx kubb generate");
+	it("detects multiple files", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		writeFileSync(join(tmpDir, "drizzle.config.ts"), "");
+		const files = detectConfigFiles(tmpDir);
+		expect(files).toContain("biome.json");
+		expect(files).toContain("drizzle.config.ts");
 	});
 
-	it("detects hey-api via package.json dependency", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { "@hey-api/openapi-ts": "^0.50.0" } }),
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("hey-api");
-		expect(gen?.command).toBe("npx @hey-api/openapi-ts");
-	});
-
-	it("detects openapi-generator via openapitools.json", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(
-			join(tmpDir, "openapitools.json"),
-			JSON.stringify({ "generator-cli": { version: "7.0.0" } }),
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("openapi-generator");
-		expect(gen?.command).toBe("npx openapi-generator-cli generate");
-	});
-
-	it("detects openapi-generator via directory", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		mkdirSync(join(tmpDir, ".openapi-generator"));
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("openapi-generator");
-	});
-
-	it("detects openapi-typescript via package.json dependency", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ devDependencies: { "openapi-typescript": "^7.0.0" } }),
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.name).toBe("openapi-typescript");
-		expect(gen?.command).toBe("npx openapi-typescript");
-	});
-
-	it("extracts URL input source from Orval config", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(
-			join(tmpDir, "orval.config.ts"),
-			"export default {\n  petstore: {\n    input: 'https://petstore.swagger.io/v2/swagger.json',\n    output: './src/api'\n  }\n}",
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen?.inputSource).toEqual({
-			type: "url",
-			url: "https://petstore.swagger.io/v2/swagger.json",
-		});
-		expect(gen?.outputDir).toBe("./src/api");
-	});
-
-	it("extracts file input source from Orval config", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(
-			join(tmpDir, "orval.config.ts"),
-			"export default {\n  petstore: {\n    input: './openapi.yaml',\n    output: './src/api'\n  }\n}",
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen?.inputSource).toEqual({ type: "file", path: "./openapi.yaml" });
-	});
-
-	it("returns unknown input when config is unparseable", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(join(tmpDir, "orval.config.ts"), "export default dynamic()");
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen).not.toBeNull();
-		expect(gen?.inputSource).toEqual({ type: "unknown" });
-	});
-
-	it("detects custom script from package.json", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({
-				devDependencies: { orval: "^7.0.0" },
-				scripts: { "generate:api": "orval" },
-			}),
-		);
-		writeFileSync(join(tmpDir, "orval.config.ts"), "export default {}");
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen?.customScript).toBe("generate:api");
-	});
-
-	it("config file detection takes precedence over dep-only detection", () => {
-		writeFileSync(
-			join(tmpDir, "package.json"),
-			JSON.stringify({
-				devDependencies: { orval: "^7.0.0", "openapi-typescript": "^7.0.0" },
-			}),
-		);
-		writeFileSync(join(tmpDir, "orval.config.ts"), "export default {}");
-		const gen = detectApiClientGenerator(tmpDir);
-		// Orval has both config file and dep, should be found first
-		expect(gen?.name).toBe("Orval");
-	});
-
-	it("extracts input from JSON config with inputSpec field", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(
-			join(tmpDir, "openapitools.json"),
-			JSON.stringify({ inputSpec: "http://localhost:8080/v3/api-docs" }),
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen?.inputSource).toEqual({
-			type: "url",
-			url: "http://localhost:8080/v3/api-docs",
-		});
-	});
-
-	it("extracts target-style input from TS config", () => {
-		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
-		writeFileSync(
-			join(tmpDir, "orval.config.ts"),
-			"export default {\n  petstore: {\n    input: {\n      target: 'http://localhost:3000/api-docs'\n    }\n  }\n}",
-		);
-		const gen = detectApiClientGenerator(tmpDir);
-		expect(gen?.inputSource).toEqual({
-			type: "url",
-			url: "http://localhost:3000/api-docs",
-		});
+	it("does not include non-existent files", () => {
+		writeFileSync(join(tmpDir, "biome.json"), "{}");
+		const files = detectConfigFiles(tmpDir);
+		expect(files).not.toContain("drizzle.config.ts");
 	});
 });

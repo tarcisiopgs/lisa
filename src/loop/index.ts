@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { formatLabels } from "../config.js";
 import * as logger from "../output/logger.js";
 import { ensureCacheDir, rotateLogFiles } from "../paths.js";
@@ -7,6 +7,7 @@ import { createSource } from "../sources/index.js";
 import type { LisaConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { runConcurrentLoop } from "./concurrent.js";
+import { ensureWorkspaceContext } from "./context-generation.js";
 import type { LoopOptions } from "./models.js";
 import { resolveModels } from "./models.js";
 import { recoverOrphanIssues } from "./recovery.js";
@@ -29,6 +30,11 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 	ensureCacheDir(workspace);
 	migrateGuardrails(workspace);
 	rotateLogFiles(workspace);
+
+	if (!opts.dryRun) {
+		const contextLogFile = join(workspace, ".lisa", "context-generation.log");
+		await ensureWorkspaceContext(config, models, workspace, contextLogFile);
+	}
 
 	logger.log(
 		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow}${concurrency > 1 ? `, concurrency: ${concurrency}` : ""})`,

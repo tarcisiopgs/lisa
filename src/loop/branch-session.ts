@@ -5,15 +5,11 @@ import { appendPlatformAttribution } from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
-import {
-	buildImplementPrompt,
-	buildStackInstructions,
-	detectPackageManager,
-	detectTestRunner,
-} from "../prompt.js";
+import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
-import { discoverInfra, discoverStackTools } from "../session/discovery.js";
-import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
+import { readContext } from "../session/context-manager.js";
+import { discoverInfra } from "../session/discovery.js";
+import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
@@ -43,9 +39,9 @@ export async function runBranchSession(
 	}
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
+	const repoContextMd = readContext(workspace);
 
-	// Detect stack tools and infrastructure
-	const stackTools = discoverStackTools(workspace);
+	// Detect infrastructure
 	const infra = discoverInfra(workspace);
 	let lifecycleEnv: Record<string, string> = {};
 	let lifecycleSuccess = true;
@@ -61,9 +57,6 @@ export async function runBranchSession(
 		}
 		lifecycleEnv = started.env;
 	}
-	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
-	const stackBlock = buildStackInstructions(stackTools, infraStatus);
 
 	const prompt = buildImplementPrompt(
 		issue,
@@ -73,15 +66,15 @@ export async function runBranchSession(
 		projectContext,
 		workspace,
 		manifestPath,
+		repoContextMd,
 	);
 
-	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
 
-	const result = await runWithFallback(models, fullPrompt, {
+	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: workspace,
 		guardrailsDir: workspace,
