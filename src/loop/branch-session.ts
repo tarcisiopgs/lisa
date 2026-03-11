@@ -13,6 +13,7 @@ import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { resolveProviderOptions } from "./helpers.js";
 import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
@@ -83,6 +84,7 @@ export async function runBranchSession(
 		overseer: config.overseer,
 		sessionTimeout: config.loop.session_timeout,
 		outputStallTimeout: config.loop.output_stall_timeout,
+		providerOptions: resolveProviderOptions(config),
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);

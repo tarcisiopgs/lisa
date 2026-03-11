@@ -19,7 +19,7 @@ import { discoverInfra } from "../session/discovery.js";
 import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { resolveBaseBranch } from "./helpers.js";
+import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
 import {
 	cleanupPlanFile,
 	extractPrUrlFromOutput,
@@ -77,6 +77,7 @@ export async function runWorktreeMultiRepoSession(
 			overseer: config.overseer,
 			sessionTimeout: config.loop.session_timeout,
 			outputStallTimeout: config.loop.output_stall_timeout,
+			providerOptions: resolveProviderOptions(config),
 			onProcess: (pid) => {
 				activeProviderPids.set(issue.id, pid);
 			},
@@ -283,6 +284,7 @@ export async function runMultiRepoStep(
 		overseer: config.overseer,
 		sessionTimeout: config.loop.session_timeout,
 		outputStallTimeout: config.loop.output_stall_timeout,
+		providerOptions: resolveProviderOptions(config),
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);

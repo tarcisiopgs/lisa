@@ -42,6 +42,9 @@ export class ClaudeProvider implements Provider {
 			if (opts.model) {
 				flags.push("--model", opts.model);
 			}
+			if (opts.providerOptions?.effort) {
+				flags.push("--effort", opts.providerOptions.effort);
+			}
 
 			const command = `claude ${flags.join(" ")} "$(cat '${promptFile}')"`;
 			logger.log(`[claude] Running: claude ${flags.join(" ")}`.trim());

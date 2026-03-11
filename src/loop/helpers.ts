@@ -4,6 +4,12 @@ import * as logger from "../output/logger.js";
 import type { LisaConfig } from "../types/index.js";
 import { isLoopPaused } from "./state.js";
 
+export function resolveProviderOptions(config: LisaConfig): { effort?: string } | undefined {
+	const opts = config.provider_options?.[config.provider];
+	if (!opts?.effort) return undefined;
+	return { effort: opts.effort };
+}
+
 export function resolveBaseBranch(config: LisaConfig, repoPath: string): string {
 	const workspace = resolve(config.workspace);
 	const repo = config.repos.find((r) => resolve(workspace, r.path) === repoPath);

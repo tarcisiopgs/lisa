@@ -25,7 +25,7 @@ import { discoverInfra } from "../session/discovery.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { resolveBaseBranch } from "./helpers.js";
+import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
 import {
 	cleanupManifest,
 	extractPrUrlFromOutput,
@@ -163,6 +163,7 @@ export async function runNativeWorktreeSession(
 		overseer: config.overseer,
 		sessionTimeout: config.loop.session_timeout,
 		outputStallTimeout: config.loop.output_stall_timeout,
+		providerOptions: resolveProviderOptions(config),
 		useNativeWorktree: true,
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
@@ -340,6 +341,7 @@ export async function runManualWorktreeSession(
 		overseer: config.overseer,
 		sessionTimeout: config.loop.session_timeout,
 		outputStallTimeout: config.loop.output_stall_timeout,
+		providerOptions: resolveProviderOptions(config),
 		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);

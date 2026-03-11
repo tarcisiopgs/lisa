@@ -63,7 +63,10 @@ export interface LifecycleConfig {
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<
-		Record<ProviderName, { model?: string; models?: string[]; goose_provider?: string }>
+		Record<
+			ProviderName,
+			{ model?: string; models?: string[]; goose_provider?: string; effort?: string }
+		>
 	>;
 	bell?: boolean;
 	source: SourceName;
@@ -112,6 +115,7 @@ export interface RunOptions {
 	outputStallTimeout?: number; // seconds without stdout before killing provider (default: 120, 0 = disabled)
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
+	providerOptions?: { effort?: string }; // provider-specific options (e.g. Claude --effort)
 	env?: Record<string, string>; // additional env vars to inject into the provider process
 	onProcess?: (pid: number) => void; // called when the provider spawns its child process
 	shouldAbort?: () => boolean; // checked between fallback attempts to stop the chain early
