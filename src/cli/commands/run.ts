@@ -1,8 +1,10 @@
+import { resolve } from "node:path";
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig, mergeWithFlags } from "../../config.js";
 import { runDemoLoop, runLoop } from "../../loop/index.js";
 import { banner, setOutputMode } from "../../output/logger.js";
+import { createKanbanPersistence } from "../../session/kanban-persistence.js";
 import type { LifecycleMode, PRPlatform, ProviderName, SourceName } from "../../types/index.js";
 import { getMissingEnvVars } from "../detection.js";
 
@@ -146,11 +148,19 @@ export const run = defineCommand({
 			merged.workflow = "worktree";
 		}
 
+		let onBeforeExit: (() => void) | undefined;
+
 		if (isTTY) {
+			const workspace = resolve(merged.workspace);
+			const persistence = createKanbanPersistence(workspace);
+			const initialCards = persistence.load();
+			persistence.start();
+			onBeforeExit = () => persistence.stop();
+
 			const { render } = await import("ink");
 			const { createElement } = await import("react");
 			const { KanbanApp } = await import("../../ui/kanban.js");
-			render(createElement(KanbanApp, { config: merged }), { exitOnCtrlC: false });
+			render(createElement(KanbanApp, { config: merged, initialCards }), { exitOnCtrlC: false });
 		}
 
 		await runLoop(merged, {
@@ -160,6 +170,7 @@ export const run = defineCommand({
 			dryRun: args["dry-run"],
 			issueId: args.issue,
 			concurrency,
+			onBeforeExit,
 		});
 	},
 });

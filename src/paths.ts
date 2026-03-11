@@ -50,6 +50,10 @@ export function getPlanPath(cwd: string, issueId?: string): string {
 	return join(getCacheDir(cwd), "plan.json");
 }
 
+export function getKanbanStatePath(cwd: string): string {
+	return join(getCacheDir(cwd), "kanban-state.json");
+}
+
 export function ensureCacheDir(cwd: string): void {
 	const dir = getCacheDir(cwd);
 	if (!existsSync(dir)) {

@@ -91,8 +91,11 @@ export function registerBellListeners(bellEnabled: boolean): () => void {
 	};
 }
 
-export function useKanbanState(bellEnabled: boolean): KanbanStateData {
-	const [cards, setCards] = useState<KanbanCard[]>([]);
+export function useKanbanState(
+	bellEnabled: boolean,
+	initialCards: KanbanCard[] = [],
+): KanbanStateData {
+	const [cards, setCards] = useState<KanbanCard[]>(initialCards);
 	const [isEmpty, setIsEmpty] = useState(false);
 	const [isWatching, setIsWatching] = useState(false);
 	const [isWatchPrompt, setIsWatchPrompt] = useState(false);
@@ -284,6 +287,18 @@ export function useKanbanState(bellEnabled: boolean): KanbanStateData {
 			}
 		};
 	}, [bellEnabled]);
+
+	// Restart merge polling for Done cards hydrated from persisted state
+	// biome-ignore lint/correctness/useExhaustiveDependencies: initialCards is stable (from useState seed) — only run on mount
+	useEffect(() => {
+		for (const card of initialCards) {
+			if (card.column === "done" && card.prUrls.length > 0 && !card.merged) {
+				for (const url of card.prUrls) {
+					startMergePolling(card.id, url);
+				}
+			}
+		}
+	}, []);
 
 	return { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse };
 }

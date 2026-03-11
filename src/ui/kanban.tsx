@@ -5,17 +5,20 @@ import type { LisaConfig } from "../types/index.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
 import { Sidebar } from "./sidebar.js";
+import type { KanbanCard } from "./state.js";
 import { kanbanEmitter, useKanbanState } from "./state.js";
 import { useTerminalSize } from "./use-terminal-size.js";
 
 interface KanbanAppProps {
 	config: LisaConfig;
+	initialCards?: KanbanCard[];
 }
 
-export function KanbanApp({ config }: KanbanAppProps) {
+export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const { exit } = useApp();
 	const { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse } = useKanbanState(
 		config.bell ?? true,
+		initialCards,
 	);
 	const { rows } = useTerminalSize();
 

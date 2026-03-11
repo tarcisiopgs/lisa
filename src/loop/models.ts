@@ -8,6 +8,7 @@ export interface LoopOptions {
 	dryRun: boolean;
 	issueId?: string;
 	concurrency: number;
+	onBeforeExit?: () => void;
 }
 
 export const WATCH_POLL_INTERVAL_MS = 60_000;

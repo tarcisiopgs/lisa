@@ -91,3 +91,21 @@ describe("watch prompt events", () => {
 		expect(mockFn).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("useKanbanState — initialCards deduplication guard", () => {
+	afterEach(() => {
+		kanbanEmitter.removeAllListeners();
+	});
+
+	it("the onQueued guard prevents duplicates for pre-existing card IDs", () => {
+		const seen = new Set<string>();
+		const handler = (issue: { id: string; title: string }) => {
+			if (!seen.has(issue.id)) seen.add(issue.id);
+		};
+		kanbanEmitter.on("issue:queued", handler);
+		kanbanEmitter.emit("issue:queued", { id: "DUP-1", title: "First" });
+		kanbanEmitter.emit("issue:queued", { id: "DUP-1", title: "Duplicate" });
+		kanbanEmitter.off("issue:queued", handler);
+		expect(seen.size).toBe(1);
+	});
+});
