@@ -9,13 +9,12 @@ import { getPlanPath } from "../paths.js";
 import {
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
-	buildStackInstructions,
 	detectPackageManager,
 	detectTestRunner,
 	type PreviousStepResult,
 } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
-import { discoverInfra, discoverStackTools } from "../session/discovery.js";
+import { discoverInfra } from "../session/discovery.js";
 import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
@@ -211,8 +210,7 @@ export async function runMultiRepoStep(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
-	// Detect stack tools and infrastructure
-	const stackTools = discoverStackTools(worktreePath);
+	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
 	let lifecycleEnv: Record<string, string> = {};
 	let lifecycleSuccess = true;
@@ -229,8 +227,7 @@ export async function runMultiRepoStep(
 		lifecycleEnv = started.env;
 	}
 	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
-	const stackBlock = buildStackInstructions(stackTools, infraStatus);
+	resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
 
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);
@@ -249,10 +246,9 @@ export async function runMultiRepoStep(
 		worktreePath,
 		config.platform,
 	);
-	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
-	const result = await runWithFallback(models, fullPrompt, {
+	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: worktreePath,
 		guardrailsDir: workspace,

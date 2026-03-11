@@ -3,57 +3,10 @@ import { join, resolve } from "node:path";
 import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
 import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
-import type { StackTool } from "./session/discovery.js";
-import type { InfraStatus } from "./session/lifecycle.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
-
-const CATEGORY_LABELS: Record<StackTool["category"], string> = {
-	orm: "ORM",
-	"api-codegen": "API Codegen",
-	other: "Tool",
-};
-
-function capitalize(s: string): string {
-	return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-export function buildStackInstructions(tools: StackTool[], status: InfraStatus): string {
-	if (tools.length === 0) return "";
-
-	const sections: string[] = [];
-
-	for (const tool of tools) {
-		const label = CATEGORY_LABELS[tool.category];
-		const heading = `### ${capitalize(tool.name)} (${label})`;
-
-		if (status === "available") {
-			const lines = [heading];
-			if (tool.infraCommand) {
-				lines.push(`- Run \`${tool.infraCommand}\` to apply changes`);
-			}
-			sections.push(lines.join("\n"));
-		} else {
-			const lines = [heading];
-			if (tool.infraCommand) {
-				lines.push(
-					`- Do NOT run \`${tool.infraCommand}\` — infrastructure services are not available`,
-				);
-			}
-			lines.push(`- ${tool.manualHint}`);
-			sections.push(lines.join("\n"));
-		}
-	}
-
-	const intro =
-		status === "available"
-			? "Infrastructure services are running. Use the following commands to generate resources:"
-			: "The following tools were detected but infrastructure services are not running.\nCreate resources manually following project conventions:";
-
-	return `\n## Resource Generation\n\n${intro}\n\n${sections.join("\n\n")}\n`;
-}
 
 export function detectPackageManager(cwd: string): PackageManager {
 	if (existsSync(join(cwd, "bun.lockb")) || existsSync(join(cwd, "bun.lock"))) return "bun";

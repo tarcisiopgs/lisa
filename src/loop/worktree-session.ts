@@ -16,13 +16,12 @@ import { getManifestPath } from "../paths.js";
 import {
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
-	buildStackInstructions,
 	detectPackageManager,
 	detectTestRunner,
 } from "../prompt.js";
 import { createProvider, runWithFallback } from "../providers/index.js";
-import { discoverInfra, discoverStackTools } from "../session/discovery.js";
-import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
+import { discoverInfra } from "../session/discovery.js";
+import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch } from "./helpers.js";
@@ -118,8 +117,7 @@ export async function runNativeWorktreeSession(
 
 	const workspace = resolve(config.workspace);
 
-	// Detect stack tools and infrastructure
-	const stackTools = discoverStackTools(repoPath);
+	// Detect infrastructure
 	const infra = discoverInfra(repoPath);
 	let lifecycleEnv: Record<string, string> = {};
 	let lifecycleSuccess = true;
@@ -135,9 +133,6 @@ export async function runNativeWorktreeSession(
 		}
 		lifecycleEnv = started.env;
 	}
-	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
-	const stackBlock = buildStackInstructions(stackTools, infraStatus);
 
 	// Clean stale manifest from previous run (per-issue)
 	cleanupManifest(workspace, issue.id);
@@ -152,13 +147,12 @@ export async function runNativeWorktreeSession(
 		getManifestPath(workspace, issue.id),
 		config.platform,
 	);
-	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
 
-	const result = await runWithFallback(models, fullPrompt, {
+	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: repoPath,
 		guardrailsDir: workspace,
@@ -298,8 +292,7 @@ export async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 
-	// Detect stack tools and infrastructure
-	const stackTools = discoverStackTools(worktreePath);
+	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
 	let lifecycleEnv: Record<string, string> = {};
 	let lifecycleSuccess = true;
@@ -315,9 +308,6 @@ export async function runManualWorktreeSession(
 		}
 		lifecycleEnv = started.env;
 	}
-	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	const infraStatus = resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
-	const stackBlock = buildStackInstructions(stackTools, infraStatus);
 
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
@@ -332,12 +322,11 @@ export async function runManualWorktreeSession(
 		manifestPath,
 	);
 	logger.initLogFile(logFile);
-	const fullPrompt = stackBlock ? `${prompt}\n${stackBlock}` : prompt;
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 
-	const result = await runWithFallback(models, fullPrompt, {
+	const result = await runWithFallback(models, prompt, {
 		logFile,
 		cwd: worktreePath,
 		guardrailsDir: workspace,
