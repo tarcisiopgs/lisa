@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_BASE_URL = "https://api.app.shortcut.com";
@@ -56,6 +57,13 @@ interface ShortcutLabel {
 	archived: boolean;
 }
 
+interface ShortcutStoryLink {
+	id: number;
+	subject_id: number;
+	object_id: number;
+	verb: string;
+}
+
 interface ShortcutStory {
 	id: number;
 	name: string;
@@ -65,11 +73,38 @@ interface ShortcutStory {
 	label_ids: number[];
 	position: number;
 	priority: number | null;
+	story_links: ShortcutStoryLink[];
 }
 
 interface ShortcutStorySearchResult {
 	data: ShortcutStory[];
 	next: string | null;
+}
+
+// The search API may return either { data: [...] } or a plain array depending on the version.
+function extractStories(result: ShortcutStorySearchResult | ShortcutStory[]): ShortcutStory[] {
+	if (Array.isArray(result)) return result;
+	return result.data ?? [];
+}
+
+function extractNext(result: ShortcutStorySearchResult | ShortcutStory[]): string | null {
+	if (Array.isArray(result)) return null;
+	return result.next ?? null;
+}
+
+async function searchStoriesAll(body: Record<string, unknown>): Promise<ShortcutStory[]> {
+	const all: ShortcutStory[] = [];
+	let next: string | null = null;
+	do {
+		const req = next ? { ...body, next } : body;
+		const result = await shortcutPost<ShortcutStorySearchResult | ShortcutStory[]>(
+			"/api/v3/stories/search",
+			req,
+		);
+		all.push(...extractStories(result));
+		next = extractNext(result);
+	} while (next);
+	return all;
 }
 
 interface ShortcutComment {
@@ -133,20 +168,93 @@ export class ShortcutSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelId = await resolveLabelId(config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labelNames[0] ?? "";
+		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
-		// Search for stories in the given workflow states with the given label
-		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-			workflow_state_ids: stateIds,
-			label_ids: [labelId],
-			archived: false,
-		});
+		// Resolve all workflow states to determine "done" states
+		const workflows = await shortcutGet<ShortcutWorkflow[]>("/api/v3/workflows");
+		const doneStateIds = new Set<number>();
+		for (const workflow of workflows) {
+			for (const state of workflow.states) {
+				if (state.type === "done") {
+					doneStateIds.add(state.id);
+				}
+			}
+		}
 
-		const stories = searchResult.data ?? [];
+		// Search stories per workflow state (API only accepts singular workflow_state_id)
+		// and filter by primary label; deduplicate by story ID
+		const seen = new Set<number>();
+		const allStories: ShortcutStory[] = [];
+		for (const stateId of stateIds) {
+			for (const story of await searchStoriesAll({
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			})) {
+				if (!seen.has(story.id)) {
+					seen.add(story.id);
+					allStories.push(story);
+				}
+			}
+		}
+
+		// Client-side AND filter for additional labels
+		const stories =
+			labelIds.length > 1
+				? allStories.filter((s) => labelIds.every((lid) => s.label_ids.includes(lid)))
+				: allStories;
+
 		if (stories.length === 0) return null;
 
+		// Check blocking relations for each story
+		const unblocked: ShortcutStory[] = [];
+		const blocked: { id: number; name: string; blockers: number[] }[] = [];
+
+		for (const story of stories) {
+			const storyLinks = story.story_links ?? [];
+			// "blocks" verb: subject_id blocks object_id
+			// If this story is the object (object_id === story.id), the subject is blocking it
+			const blockerIds = storyLinks
+				.filter((link) => link.verb === "blocks" && link.object_id === story.id)
+				.map((link) => link.subject_id);
+
+			// Check if blockers are still active
+			const activeBlockers: number[] = [];
+			for (const blockerId of blockerIds) {
+				try {
+					const blocker = await shortcutGet<ShortcutStory>(`/api/v3/stories/${blockerId}`);
+					if (!doneStateIds.has(blocker.workflow_state_id)) {
+						activeBlockers.push(blockerId);
+					}
+				} catch {
+					// If we can't fetch, assume still active
+					activeBlockers.push(blockerId);
+				}
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(story);
+			} else {
+				blocked.push({ id: story.id, name: story.name, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.id} (${entry.name}) — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority ascending (lower = higher priority), then by position
-		const sorted = [...stories].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.priority);
 			const pb = priorityRank(b.priority);
 			if (pa !== pb) return pa - pb;
@@ -201,15 +309,33 @@ export class ShortcutSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelId = await resolveLabelId(config.label);
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labelNames[0] ?? "";
+		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
-		const searchResult = await shortcutPost<ShortcutStorySearchResult>("/api/v3/stories/search", {
-			workflow_state_ids: stateIds,
-			label_ids: [labelId],
-			archived: false,
-		});
+		// Search stories per workflow state (API only accepts singular workflow_state_id)
+		const seen = new Set<number>();
+		const allStories: ShortcutStory[] = [];
+		for (const stateId of stateIds) {
+			for (const story of await searchStoriesAll({
+				workflow_state_id: stateId,
+				label_name: primaryLabel,
+				archived: false,
+			})) {
+				if (!seen.has(story.id)) {
+					seen.add(story.id);
+					allStories.push(story);
+				}
+			}
+		}
 
-		return (searchResult.data ?? []).map((story) => ({
+		// Client-side AND filter for additional labels
+		const stories =
+			labelIds.length > 1
+				? allStories.filter((s) => labelIds.every((lid) => s.label_ids.includes(lid)))
+				: allStories;
+
+		return stories.map((story) => ({
 			id: String(story.id),
 			title: story.name,
 			description: story.description ?? "",

@@ -37,6 +37,8 @@ export class LinearSource implements Source {
 	name = "linear" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {
 				nodes: {
@@ -46,6 +48,7 @@ export class LinearSource implements Source {
 					description: string;
 					url: string;
 					priority: number;
+					labels: { nodes: { name: string }[] };
 					inverseRelations: {
 						nodes: {
 							type: string;
@@ -75,6 +78,7 @@ export class LinearSource implements Source {
 						description
 						url
 						priority
+						labels { nodes { name } }
 						inverseRelations(first: 50) {
 							nodes {
 								type
@@ -90,23 +94,41 @@ export class LinearSource implements Source {
 			{
 				teamName: config.team,
 				projectName: config.project,
-				labelName: config.label,
+				labelName: primaryLabel,
 				statusName: config.pick_from,
 			},
 		);
 
-		const issues = data.issues.nodes;
+		// Client-side filter: ensure issue has ALL configured labels (AND logic)
+		const issues =
+			labels.length > 1
+				? data.issues.nodes.filter((issue) => {
+						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
+						return labels.every((l) => issueLabels.has(l.toLowerCase()));
+					})
+				: data.issues.nodes;
 		if (issues.length === 0) return null;
 
 		// Separate unblocked from blocked issues based on dependency relations
-		const unblocked: typeof issues = [];
+		const unblocked: (typeof issues)[number][] = [];
 		const blocked: { identifier: string; blockers: string[] }[] = [];
+		// Track completed blocker IDs per issue for dependency resolution
+		const completedBlockerMap = new Map<string, string[]>();
 
 		for (const issue of issues) {
-			const activeBlockers = issue.inverseRelations.nodes
-				.filter((r) => r.type === "blocks")
+			const blockerRelations = issue.inverseRelations.nodes.filter((r) => r.type === "blocks");
+
+			const activeBlockers = blockerRelations
 				.filter((r) => r.issue.state.type !== "completed" && r.issue.state.type !== "canceled")
 				.map((r) => r.issue.identifier);
+
+			const completedBlockers = blockerRelations
+				.filter((r) => r.issue.state.type === "completed")
+				.map((r) => r.issue.identifier);
+
+			if (completedBlockers.length > 0) {
+				completedBlockerMap.set(issue.identifier, completedBlockers);
+			}
 
 			if (activeBlockers.length === 0) {
 				unblocked.push(issue);
@@ -134,11 +156,14 @@ export class LinearSource implements Source {
 
 		const issue = unblocked[0];
 		if (!issue) return null;
+
+		const completedBlockerIds = completedBlockerMap.get(issue.identifier);
 		return {
 			id: issue.identifier,
 			title: issue.title,
 			description: issue.description || "",
 			url: issue.url,
+			...(completedBlockerIds && { completedBlockerIds }),
 		};
 	}
 
@@ -303,6 +328,8 @@ export class LinearSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {
 				nodes: {
@@ -310,6 +337,7 @@ export class LinearSource implements Source {
 					title: string;
 					description: string;
 					url: string;
+					labels: { nodes: { name: string }[] };
 				}[];
 			};
 		}>(
@@ -328,23 +356,126 @@ export class LinearSource implements Source {
 						title
 						description
 						url
+						labels { nodes { name } }
 					}
 				}
 			}`,
 			{
 				teamName: config.team,
 				projectName: config.project,
-				labelName: config.label,
+				labelName: primaryLabel,
 				statusName: config.pick_from,
 			},
 		);
 
-		return data.issues.nodes.map((issue) => ({
+		// Client-side filter: ensure issue has ALL configured labels (AND logic)
+		const filtered =
+			labels.length > 1
+				? data.issues.nodes.filter((issue) => {
+						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
+						return labels.every((l) => issueLabels.has(l.toLowerCase()));
+					})
+				: data.issues.nodes;
+
+		return filtered.map((issue) => ({
 			id: issue.identifier,
 			title: issue.title,
 			description: issue.description || "",
 			url: issue.url,
 		}));
+	}
+
+	async addLabel(issueId: string, labelName: string): Promise<void> {
+		// Fetch issue with current labels and team labels
+		const issueData = await gql<{
+			issue: {
+				id: string;
+				team: { id: string; labels: { nodes: { id: string; name: string }[] } };
+				labels: { nodes: { id: string; name: string }[] };
+			};
+		}>(
+			`query($identifier: String!) {
+				issue(id: $identifier) {
+					id
+					team {
+						id
+						labels { nodes { id name } }
+					}
+					labels { nodes { id name } }
+				}
+			}`,
+			{ identifier: issueId },
+		);
+
+		// Find label in team labels — auto-create if missing
+		let teamLabel = issueData.issue.team.labels.nodes.find(
+			(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+		);
+
+		if (!teamLabel) {
+			const created = await gql<{
+				issueLabelCreate: { success: boolean; issueLabel: { id: string; name: string } | null };
+			}>(
+				`mutation($teamId: String!, $name: String!) {
+					issueLabelCreate(input: { teamId: $teamId, name: $name }) {
+						success
+						issueLabel { id name }
+					}
+				}`,
+				{ teamId: issueData.issue.team.id, name: labelName },
+			);
+
+			if (created.issueLabelCreate.success && created.issueLabelCreate.issueLabel) {
+				logger.log(`Label "${labelName}" created automatically in team ${issueData.issue.team.id}`);
+				teamLabel = created.issueLabelCreate.issueLabel;
+			} else {
+				// Race condition: label may have been created by another process — refetch
+				const refetch = await gql<{
+					issue: { team: { labels: { nodes: { id: string; name: string }[] } } };
+				}>(
+					`query($identifier: String!) {
+						issue(id: $identifier) {
+							team { labels { nodes { id name } } }
+						}
+					}`,
+					{ identifier: issueId },
+				);
+				teamLabel = refetch.issue.team.labels.nodes.find(
+					(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+				);
+				if (!teamLabel) {
+					throw new Error(`Failed to create or find label "${labelName}" in team`);
+				}
+			}
+		}
+
+		// Skip if issue already has this label
+		const alreadyHasLabel = issueData.issue.labels.nodes.some(
+			(l) => l.name.toLowerCase() === labelName.toLowerCase(),
+		);
+		if (alreadyHasLabel) return;
+
+		const newLabelIds = [...issueData.issue.labels.nodes.map((l) => l.id), teamLabel.id];
+
+		const mutationResult = await gql<{
+			issueUpdate: { success: boolean };
+		}>(
+			`mutation($issueId: String!, $labelIds: [String!]!) {
+				issueUpdate(id: $issueId, input: { labelIds: $labelIds }) {
+					success
+				}
+			}`,
+			{
+				issueId: issueData.issue.id,
+				labelIds: newLabelIds,
+			},
+		);
+
+		if (!mutationResult.issueUpdate.success) {
+			throw new Error(
+				`issueUpdate returned success=false when adding label "${labelName}" to ${issueId}`,
+			);
+		}
 	}
 
 	async removeLabel(issueId: string, labelName: string): Promise<void> {

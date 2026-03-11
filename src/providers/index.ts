@@ -14,6 +14,7 @@ import type {
 } from "../types/index.js";
 import { AiderProvider } from "./aider.js";
 import { ClaudeProvider } from "./claude.js";
+import { CodexProvider } from "./codex.js";
 import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
 import { GeminiProvider } from "./gemini.js";
@@ -28,6 +29,7 @@ const providers: Record<ProviderName, () => Provider> = {
 	cursor: () => new CursorProvider(),
 	goose: () => new GooseProvider(),
 	aider: () => new AiderProvider(),
+	codex: () => new CodexProvider(),
 };
 
 export async function getAvailableProviders(): Promise<Provider[]> {
@@ -68,15 +70,18 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/ECONNREFUSED/,
 	/ECONNRESET/,
 	/ENOTFOUND/,
-	/timeout/i,
-	/timed?\s*out/i,
+	/fetch failed/i,
+	/\btimeout\b/i,
+	/\btimed?\s*out\b/i,
 	/network.?error/i,
 	/not installed/i,
 	/not in PATH/i,
 	/command not found/i,
 	/lisa-overseer/i,
+	/lisa-timeout/i,
 	/named models unavailable/i,
 	/free plans can only use/i,
+	/empty commit/i,
 ];
 
 export function isEligibleForFallback(output: string): boolean {
@@ -102,6 +107,10 @@ export async function runWithFallback(
 	const attempts: ModelAttempt[] = [];
 
 	for (const spec of models) {
+		if (opts.shouldAbort?.()) {
+			break;
+		}
+
 		const provider = createProvider(spec.provider);
 		const available = await provider.isAvailable();
 

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitLabIssuesSource, parseGitLabIssueRef, parseGitLabProject } from "./gitlab-issues.js";
+import {
+	checkPrMerged,
+	GitLabIssuesSource,
+	parseGitLabIssueRef,
+	parseGitLabMrUrl,
+	parseGitLabProject,
+} from "./gitlab-issues.js";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -34,6 +40,27 @@ function mockFetch(response: unknown, ok = true, status = 200) {
 		status,
 		json: async () => response,
 		text: async () => JSON.stringify(response),
+	});
+}
+
+function mockFetchByUrl(handlers: Record<string, unknown>, fallback: unknown = []) {
+	return vi.fn().mockImplementation((url: string) => {
+		for (const [pattern, response] of Object.entries(handlers)) {
+			if (url.includes(pattern)) {
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => response,
+					text: async () => JSON.stringify(response),
+				});
+			}
+		}
+		return Promise.resolve({
+			ok: true,
+			status: 200,
+			json: async () => fallback,
+			text: async () => JSON.stringify(fallback),
+		});
 	});
 }
 
@@ -135,7 +162,7 @@ describe("GitLabIssuesSource", () => {
 
 		it("returns the first issue from sorted list", async () => {
 			const issues = [makeIssue({ iid: 1, title: "Issue 1", created_at: "2024-01-01T00:00:00Z" })];
-			global.fetch = mockFetch(issues);
+			global.fetch = mockFetchByUrl({ "/issues?": issues, "/links": [] });
 
 			const result = await source.fetchNextIssue(config);
 			expect(result).not.toBeNull();
@@ -149,7 +176,7 @@ describe("GitLabIssuesSource", () => {
 				makeIssue({ iid: 2, title: "P1 issue", labels: ["ready", "p1"] }),
 				makeIssue({ iid: 3, title: "P2 issue", labels: ["ready", "p2"] }),
 			];
-			global.fetch = mockFetch(issues);
+			global.fetch = mockFetchByUrl({ "/issues?": issues, "/links": [] });
 
 			const result = await source.fetchNextIssue(config);
 			expect(result?.title).toBe("P1 issue");
@@ -160,7 +187,7 @@ describe("GitLabIssuesSource", () => {
 				makeIssue({ iid: 2, title: "Newer issue", created_at: "2024-02-01T00:00:00Z" }),
 				makeIssue({ iid: 1, title: "Older issue", created_at: "2024-01-01T00:00:00Z" }),
 			];
-			global.fetch = mockFetch(issues);
+			global.fetch = mockFetchByUrl({ "/issues?": issues, "/links": [] });
 
 			const result = await source.fetchNextIssue(config);
 			expect(result?.title).toBe("Older issue");
@@ -168,10 +195,119 @@ describe("GitLabIssuesSource", () => {
 
 		it("uses numeric project ID as-is", async () => {
 			const numericConfig = { ...config, team: "12345" };
-			global.fetch = mockFetch([makeIssue({ iid: 7 })]);
+			global.fetch = mockFetchByUrl({ "/issues?": [makeIssue({ iid: 7 })], "/links": [] });
 
 			const result = await source.fetchNextIssue(numericConfig);
 			expect(result?.id).toBe("12345#7");
+		});
+
+		it("skips blocked issues and returns unblocked one", async () => {
+			const issues = [
+				makeIssue({ iid: 1, title: "Blocked issue" }),
+				makeIssue({ iid: 2, title: "Unblocked issue" }),
+			];
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown = [];
+				if (url.includes("/issues?")) data = issues;
+				else if (url.includes("/issues/1/links"))
+					data = [
+						{
+							iid: 99,
+							state: "opened",
+							link_type: "is_blocked_by",
+						},
+					];
+				else if (url.includes("/issues/2/links")) data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(config);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const issues = [makeIssue({ iid: 1, title: "Blocked issue" })];
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown = [];
+				if (url.includes("/issues?")) data = issues;
+				else if (url.includes("/links"))
+					data = [
+						{
+							iid: 99,
+							state: "opened",
+							link_type: "is_blocked_by",
+						},
+					];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(config);
+			expect(result).toBeNull();
+		});
+
+		it("ignores blockers that are closed", async () => {
+			const issues = [makeIssue({ iid: 1, title: "Issue with closed blocker" })];
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown = [];
+				if (url.includes("/issues?")) data = issues;
+				else if (url.includes("/links"))
+					data = [
+						{
+							iid: 99,
+							state: "closed",
+							link_type: "is_blocked_by",
+						},
+					];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(config);
+			expect(result?.title).toBe("Issue with closed blocker");
+		});
+
+		it("respects priority among unblocked issues", async () => {
+			const issues = [
+				makeIssue({ iid: 1, title: "P1 blocked", labels: ["ready", "p1"] }),
+				makeIssue({ iid: 2, title: "P3 unblocked", labels: ["ready", "p3"] }),
+				makeIssue({ iid: 3, title: "P2 unblocked", labels: ["ready", "p2"] }),
+			];
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown = [];
+				if (url.includes("/issues?")) data = issues;
+				else if (url.includes("/issues/1/links"))
+					data = [
+						{
+							iid: 99,
+							state: "opened",
+							link_type: "is_blocked_by",
+						},
+					];
+				else if (url.includes("/links")) data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(config);
+			expect(result?.title).toBe("P2 unblocked");
 		});
 
 		it("throws if GITLAB_TOKEN is not set", async () => {
@@ -484,5 +620,100 @@ describe("GitLabIssuesSource", () => {
 			const labels = (capturedBody as { labels: string }).labels.split(",");
 			expect(labels).not.toContain("Ready");
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseGitLabMrUrl
+// ---------------------------------------------------------------------------
+
+describe("parseGitLabMrUrl", () => {
+	it("parses a standard gitlab.com MR URL", () => {
+		const result = parseGitLabMrUrl("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toEqual({ project: "my-org/my-repo", iid: "42" });
+	});
+
+	it("parses a self-hosted GitLab MR URL", () => {
+		const result = parseGitLabMrUrl(
+			"https://gitlab.example.com/my-org/my-repo/-/merge_requests/10",
+		);
+		expect(result).toEqual({ project: "my-org/my-repo", iid: "10" });
+	});
+
+	it("parses a nested namespace MR URL", () => {
+		const result = parseGitLabMrUrl("https://gitlab.com/group/subgroup/repo/-/merge_requests/5");
+		expect(result).toEqual({ project: "group/subgroup/repo", iid: "5" });
+	});
+
+	it("returns null for a GitHub PR URL", () => {
+		expect(parseGitLabMrUrl("https://github.com/my-org/my-repo/pull/42")).toBeNull();
+	});
+
+	it("returns null for a GitLab issue URL", () => {
+		expect(parseGitLabMrUrl("https://gitlab.com/my-org/my-repo/-/issues/42")).toBeNull();
+	});
+
+	it("returns null for an empty string", () => {
+		expect(parseGitLabMrUrl("")).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkPrMerged (GitLab)
+// ---------------------------------------------------------------------------
+
+describe("checkPrMerged (GitLab)", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		delete process.env.GITLAB_TOKEN;
+	});
+
+	beforeEach(() => {
+		process.env.GITLAB_TOKEN = "test-token";
+	});
+
+	it("returns true when MR state is merged", async () => {
+		global.fetch = mockFetch({ state: "merged" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(true);
+	});
+
+	it("returns false when MR state is opened", async () => {
+		global.fetch = mockFetch({ state: "opened" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when MR state is closed", async () => {
+		global.fetch = mockFetch({ state: "closed" });
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when URL is not a GitLab MR URL", async () => {
+		const result = await checkPrMerged("https://not-a-gitlab-url.com/foo");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when API call fails", async () => {
+		global.fetch = mockFetch("Unauthorized", false, 401);
+		const result = await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(result).toBe(false);
+	});
+
+	it("calls the correct API endpoint", async () => {
+		let capturedUrl = "";
+		global.fetch = vi.fn().mockImplementation((url: string) => {
+			capturedUrl = url;
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({ state: "merged" }),
+				text: async () => "",
+			});
+		});
+		await checkPrMerged("https://gitlab.com/my-org/my-repo/-/merge_requests/42");
+		expect(capturedUrl).toContain("merge_requests/42");
+		expect(capturedUrl).toContain("my-org%2Fmy-repo");
 	});
 });

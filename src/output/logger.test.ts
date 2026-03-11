@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { initLogFile, setOutputMode } from "./logger.js";
+import * as logger from "./logger.js";
 
 describe("initLogFile", () => {
 	let tmpDir: string;
@@ -17,7 +17,7 @@ describe("initLogFile", () => {
 
 	it("creates a log file with a timestamp header", () => {
 		const logPath = join(tmpDir, "test.log");
-		initLogFile(logPath);
+		logger.initLogFile(logPath);
 
 		const content = readFileSync(logPath, "utf-8");
 		expect(content).toContain("Log started");
@@ -25,62 +25,65 @@ describe("initLogFile", () => {
 
 	it("creates nested directories if needed", () => {
 		const logPath = join(tmpDir, "nested", "dir", "test.log");
-		initLogFile(logPath);
+		logger.initLogFile(logPath);
 
 		const content = readFileSync(logPath, "utf-8");
 		expect(content).toContain("Log started");
 	});
 });
 
-describe("setOutputMode and JSON events", () => {
-	afterEach(() => {
-		setOutputMode("default");
+describe("setOutputMode", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+		// Point log file to a valid path so appendFileSync doesn't fail
+		logger.initLogFile(join(tmpDir, "test.log"));
+		logger.setOutputMode("default");
 	});
 
-	it("accumulates JSON events when in json mode", async () => {
-		setOutputMode("json");
+	afterEach(() => {
+		logger.setOutputMode("default");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("prints to console in default mode", () => {
 		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-		// Import dynamically to get fresh state
-		const logger = await import("./logger.js");
-		const eventsBefore = logger.getJsonEvents().length;
-
-		logger.log("test message");
-
-		const events = logger.getJsonEvents();
-		expect(events.length).toBeGreaterThan(eventsBefore);
-
-		const lastEvent = events[events.length - 1] as { level: string; message: string };
-		expect(lastEvent?.level).toBe("info");
-		expect(lastEvent?.message).toBe("test message");
-
-		consoleSpy.mockRestore();
+		try {
+			logger.log("test message");
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 });
 
 describe("tui output mode", () => {
-	afterEach(() => {
-		setOutputMode("default");
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-tui-test-"));
 	});
 
-	it("suppresses console output but still writes to file in tui mode", async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-tui-test-"));
+	afterEach(() => {
+		logger.setOutputMode("default");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("suppresses console output but still writes to file in tui mode", () => {
 		const logPath = join(tmpDir, "test.log");
+		logger.initLogFile(logPath);
+		logger.setOutputMode("tui");
 
+		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 		try {
-			const logger = await import("./logger.js");
-			logger.initLogFile(logPath);
-			logger.setOutputMode("tui");
-
-			const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 			logger.log("hello from tui");
 			expect(consoleSpy).not.toHaveBeenCalled();
-			consoleSpy.mockRestore();
-
-			const content = readFileSync(logPath, "utf-8");
-			expect(content).toContain("hello from tui");
 		} finally {
-			rmSync(tmpDir, { recursive: true, force: true });
+			consoleSpy.mockRestore();
 		}
+
+		const content = readFileSync(logPath, "utf-8");
+		expect(content).toContain("hello from tui");
 	});
 });

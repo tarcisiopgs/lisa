@@ -1,7 +1,30 @@
+import { exec } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KanbanCard } from "./state.js";
+import { useTerminalSize } from "./use-terminal-size.js";
+
+export function openUrl(url: string): void {
+	const platform = process.platform;
+	let command: string;
+
+	if (platform === "darwin") {
+		command = `open "${url}"`;
+	} else if (platform === "linux") {
+		command = `xdg-open "${url}"`;
+	} else if (platform === "win32") {
+		command = `start "" "${url}"`;
+	} else {
+		return;
+	}
+
+	exec(command, (error) => {
+		if (error) {
+			console.error("Failed to open URL:", error.message);
+		}
+	});
+}
 
 function formatElapsed(ms: number): string {
 	const seconds = Math.floor(ms / 1000);
@@ -16,9 +39,34 @@ interface IssueDetailProps {
 	onBack: () => void;
 }
 
-function statusLabel(column: string, hasError?: boolean): { text: string; color: string } {
+function hyperlink(url: string, text: string): string {
+	return `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
+}
+
+function logLineColor(line: string): string {
+	if (/\berror\b|✖/i.test(line)) return "red";
+	if (/\bwarn(ing)?\b/i.test(line)) return "yellow";
+	if (/✔|\bsuccess\b/i.test(line)) return "green";
+	return "white";
+}
+
+function scrollBar(pct: number, width = 8): string {
+	const filled = Math.round((pct / 100) * width);
+	return "▓".repeat(filled) + "░".repeat(width - filled);
+}
+
+export function statusLabel(
+	column: string,
+	hasError?: boolean,
+	killed?: boolean,
+	skipped?: boolean,
+	merged?: boolean,
+): { text: string; color: string } {
+	if (killed) return { text: "KILLED", color: "red" };
+	if (skipped) return { text: "SKIPPED", color: "gray" };
 	if (hasError) return { text: "FAILED", color: "red" };
 	if (column === "in_progress") return { text: "IN PROGRESS", color: "yellow" };
+	if (column === "done" && merged) return { text: "MERGED", color: "magenta" };
 	if (column === "done") return { text: "DONE", color: "green" };
 	return { text: "QUEUED", color: "white" };
 }
@@ -29,11 +77,13 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const [userScrolled, setUserScrolled] = useState(false);
 	const prevOutputLen = useRef(card.outputLog.length);
 
+	const isPausedInProgress = card.column === "in_progress" && !!card.pausedAt;
+
 	useEffect(() => {
-		if (card.column !== "in_progress") return;
+		if (card.column !== "in_progress" || isPausedInProgress) return;
 		const interval = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(interval);
-	}, [card.column]);
+	}, [card.column, isPausedInProgress]);
 
 	useEffect(() => {
 		if (!userScrolled && card.outputLog.length !== prevOutputLen.current) {
@@ -45,6 +95,12 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	useInput((_input, key) => {
 		if (key.escape) {
 			onBack();
+			return;
+		}
+		if (_input === "o" && card.prUrls.length > 0) {
+			for (const url of card.prUrls) {
+				openUrl(url);
+			}
 			return;
 		}
 		if (key.upArrow) {
@@ -60,8 +116,7 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 		}
 	});
 
-	const terminalCols = process.stdout.columns ?? 80;
-	const terminalRows = process.stdout.rows ?? 24;
+	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
 	// Header: ~6 rows, footer: ~2 rows, border: ~2 rows
 	const bodyRows = Math.max(1, terminalRows - 10);
 
@@ -69,13 +124,14 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const startLine = Math.max(0, lines.length - bodyRows - logScrollOffset);
 	const visibleLines = lines.slice(startLine, startLine + bodyRows);
 
-	const status = statusLabel(card.column, card.hasError);
+	const status = statusLabel(card.column, card.hasError, card.killed, card.skipped, card.merged);
 
 	let elapsedDisplay: string | null = null;
 	let isRunning = false;
 	if (card.column === "in_progress" && card.startedAt !== undefined) {
-		elapsedDisplay = formatElapsed(now - card.startedAt);
-		isRunning = true;
+		const pauseOffset = (card.pauseAccumulated ?? 0) + (card.pausedAt ? now - card.pausedAt : 0);
+		elapsedDisplay = formatElapsed(Math.max(0, now - card.startedAt - pauseOffset));
+		isRunning = !isPausedInProgress;
 	} else if (
 		card.column === "done" &&
 		card.startedAt !== undefined &&
@@ -84,20 +140,23 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 		elapsedDisplay = formatElapsed(card.finishedAt - card.startedAt);
 	}
 
-	// Decorative separator: ╠═══...═══╣
-	// sidebar width (28) + detail border (2) + detail padding (2) = 32
-	const SIDEBAR_TOTAL_WIDTH = 28;
-	const separatorInner = Math.max(0, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
-	const separator = `╠${"═".repeat(Math.max(0, separatorInner - 2))}╣`;
+	// sidebar width (28) + sidebar border (2) = 30
+	const SIDEBAR_TOTAL_WIDTH = 30; // 28 (width) + 2 (borderStyle="single")
+
+	// Decorative separator: ╠═══...═══╣ — memoized, only recomputed on terminal resize
+	const separator = useMemo(() => {
+		const separatorInner = Math.max(0, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
+		return `╠${"═".repeat(Math.max(0, separatorInner - 2))}╣`;
+	}, [terminalCols]);
 
 	// Scroll position indicator
 	const totalLines = lines.length;
-	const scrollPct =
-		totalLines <= bodyRows ? "100%" : `${Math.round(((startLine + bodyRows) / totalLines) * 100)}%`;
+	const scrollPctNum =
+		totalLines <= bodyRows ? 100 : Math.round(((startLine + bodyRows) / totalLines) * 100);
 
 	return (
 		<Box
-			flexGrow={1}
+			width={terminalCols - SIDEBAR_TOTAL_WIDTH}
 			flexDirection="column"
 			borderStyle="single"
 			borderColor="yellow"
@@ -124,10 +183,18 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 							<Text color="yellow" bold>{` ${elapsedDisplay}`}</Text>
 						</Box>
 					)}
-					{!isRunning && elapsedDisplay && (
+					{isPausedInProgress && elapsedDisplay && (
 						<Box flexDirection="row" marginRight={2}>
-							<Text color="green">{"✔ "}</Text>
-							<Text color="green" bold>
+							<Text color="gray">{"⏸ "}</Text>
+							<Text color="gray" bold>
+								{elapsedDisplay}
+							</Text>
+						</Box>
+					)}
+					{!isRunning && !isPausedInProgress && elapsedDisplay && (
+						<Box flexDirection="row" marginRight={2}>
+							<Text color={status.color}>{"✔ "}</Text>
+							<Text color={status.color} bold>
 								{elapsedDisplay}
 							</Text>
 						</Box>
@@ -142,13 +209,24 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 				</Text>
 			</Box>
 
-			{/* PR URL if available */}
-			{card.prUrl !== undefined && card.prUrl.length > 0 && (
+			{/* PR URL(s) if available */}
+			{card.prUrls.length > 0 &&
+				card.prUrls.map((url, i) => (
+					<Box marginTop={0} key={url}>
+						<Text color="yellow" dimColor>
+							{card.prUrls.length === 1 ? "PR: " : `PR ${i + 1}: `}
+						</Text>
+						<Text color="yellow">{hyperlink(url, url)}</Text>
+					</Box>
+				))}
+
+			{/* Log file path */}
+			{card.logFile && (
 				<Box marginTop={0}>
-					<Text color="yellow" dimColor>
-						{"PR: "}
+					<Text color="gray" dimColor>
+						{"LOG: "}
 					</Text>
-					<Text color="yellow">{card.prUrl}</Text>
+					<Text color="gray">{card.logFile}</Text>
 				</Box>
 			)}
 
@@ -161,13 +239,20 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 
 			{/* Log header */}
 			<Box flexDirection="row" justifyContent="space-between">
-				<Text color="gray" dimColor>
-					{"PROVIDER OUTPUT"}
-				</Text>
-				{userScrolled && <Text color="yellow" dimColor>{`scroll ${scrollPct}`}</Text>}
+				<Box flexDirection="row">
+					<Text color="gray" dimColor>
+						{"OUTPUT"}
+					</Text>
+					{totalLines > 0 && <Text color="gray" dimColor>{` · ${totalLines}L`}</Text>}
+				</Box>
+				{userScrolled && (
+					<Text color="yellow" dimColor>
+						{scrollBar(scrollPctNum)}
+					</Text>
+				)}
 				{!userScrolled && totalLines > bodyRows && (
 					<Text color="gray" dimColor>
-						{"auto-scroll"}
+						{"live"}
 					</Text>
 				)}
 			</Box>
@@ -184,23 +269,16 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 						</Text>
 					</Box>
 				) : (
-					visibleLines.map((line, i) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: log lines have no stable key
-						<Text key={i} color="white" dimColor>
-							{line}
-						</Text>
-					))
+					visibleLines.map((line, i) => {
+						const color = logLineColor(line);
+						return (
+							// biome-ignore lint/suspicious/noArrayIndexKey: log lines have no stable key
+							<Text key={i} color={color} dimColor={color === "white"}>
+								{line}
+							</Text>
+						);
+					})
 				)}
-			</Box>
-
-			{/* Footer */}
-			<Box justifyContent="space-between" borderStyle="single" borderColor="gray" paddingX={1}>
-				<Text color="gray" dimColor>
-					{"[↑↓] scroll"}
-				</Text>
-				<Text color="yellow" dimColor>
-					{"[Esc] back to board"}
-				</Text>
 			</Box>
 		</Box>
 	);

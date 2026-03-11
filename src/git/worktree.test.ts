@@ -1,9 +1,27 @@
+import { existsSync, rmSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanupOrphanedWorktree, determineRepoPath, generateBranchName } from "./worktree.js";
+import {
+	cleanupOrphanedWorktree,
+	createWorktree,
+	determineRepoPath,
+	generateBranchName,
+	hasCodeChanges,
+} from "./worktree.js";
 
 vi.mock("execa", () => ({
 	execa: vi.fn(),
 }));
+
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	return {
+		...actual,
+		existsSync: vi.fn(),
+		readFileSync: vi.fn(),
+		appendFileSync: vi.fn(),
+		rmSync: vi.fn(),
+	};
+});
 
 describe("generateBranchName", () => {
 	it("generates a branch name from issue ID and title", () => {
@@ -143,5 +161,153 @@ describe("cleanupOrphanedWorktree", () => {
 		expect(vi.mocked(execa)).toHaveBeenCalledWith("git", ["branch", "-D", "feat/int-1-fix"], {
 			cwd: "/repo",
 		});
+	});
+});
+
+describe("createWorktree", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("removes residual directory when it exists on disk after orphan cleanup", async () => {
+		const { execa } = await import("execa");
+		const branch = "feat/int-1-fix";
+		const worktreePath = "/repo/.worktrees/feat/int-1-fix";
+
+		// cleanupOrphanedWorktree: branch does not exist → returns false
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		// existsSync returns true → residual directory exists
+		vi.mocked(existsSync).mockReturnValueOnce(true);
+
+		// git worktree remove --force (reject: false)
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+		// git worktree prune (reject: false)
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		// existsSync again → directory was removed by git
+		vi.mocked(existsSync).mockReturnValueOnce(false);
+
+		// git fetch origin main
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+		// git worktree add
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		const result = await createWorktree("/repo", branch, "main");
+
+		expect(result).toBe(worktreePath);
+		expect(vi.mocked(execa)).toHaveBeenCalledWith(
+			"git",
+			["worktree", "remove", worktreePath, "--force"],
+			{ cwd: "/repo", reject: false },
+		);
+		expect(vi.mocked(rmSync)).not.toHaveBeenCalled();
+	});
+
+	it("falls back to rmSync when git worktree remove does not clear the directory", async () => {
+		const { execa } = await import("execa");
+		const branch = "feat/int-2-bug";
+		const worktreePath = "/repo/.worktrees/feat/int-2-bug";
+
+		// cleanupOrphanedWorktree: branch does not exist
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		// existsSync: directory exists
+		vi.mocked(existsSync).mockReturnValueOnce(true);
+
+		// git worktree remove --force
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+		// git worktree prune
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		// existsSync: directory still exists after git commands
+		vi.mocked(existsSync).mockReturnValueOnce(true);
+
+		// git fetch origin main
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+		// git worktree add
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		const result = await createWorktree("/repo", branch, "main");
+
+		expect(result).toBe(worktreePath);
+		expect(vi.mocked(rmSync)).toHaveBeenCalledWith(worktreePath, {
+			recursive: true,
+			force: true,
+		});
+	});
+
+	it("skips residual cleanup when directory does not exist", async () => {
+		const { execa } = await import("execa");
+		const branch = "feat/int-3-clean";
+
+		// cleanupOrphanedWorktree: branch does not exist
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		// existsSync: no residual directory
+		vi.mocked(existsSync).mockReturnValueOnce(false);
+
+		// git fetch origin main
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+		// git worktree add
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		await createWorktree("/repo", branch, "main");
+
+		// Should not attempt worktree remove or rmSync
+		expect(vi.mocked(execa)).not.toHaveBeenCalledWith(
+			"git",
+			expect.arrayContaining(["worktree", "remove"]),
+			expect.objectContaining({ reject: false }),
+		);
+		expect(vi.mocked(rmSync)).not.toHaveBeenCalled();
+	});
+});
+
+describe("hasCodeChanges", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns true when there are code changes", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({
+			stdout: " file1.ts | 10 ++---\n file2.ts | 5 +++\n",
+		} as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(true);
+		expect(vi.mocked(execa)).toHaveBeenCalledWith("git", ["diff", "--stat", "main..HEAD"], {
+			cwd: "/repo",
+			reject: false,
+		});
+	});
+
+	it("returns false when there are no code changes", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
+	});
+
+	it("returns false when git command fails", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockRejectedValueOnce(new Error("git error") as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
+	});
+
+	it("returns true when diff output is only whitespace", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "   " } as never);
+
+		const result = await hasCodeChanges("/repo", "main");
+
+		expect(result).toBe(false);
 	});
 });

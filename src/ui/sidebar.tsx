@@ -4,18 +4,35 @@ import { Box, Text } from "ink";
 
 interface SidebarProps {
 	provider: string;
+	model: string | null;
+	models: string[];
 	source: string;
 	cwd: string;
+	activeView: "board" | "detail";
+	paused?: boolean;
+	hasInProgress?: boolean;
+	hasPrUrl?: boolean;
 }
 
-export function Sidebar({ provider, source, cwd }: SidebarProps) {
-	const dir = basename(cwd);
+export function Sidebar({
+	provider,
+	model,
+	models,
+	source,
+	cwd,
+	activeView,
+	paused = false,
+	hasInProgress = false,
+	hasPrUrl = false,
+}: SidebarProps) {
+	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
 
 	return (
 		<Box
 			flexDirection="column"
 			width={28}
+			flexShrink={0}
 			borderStyle="single"
 			borderColor="yellow"
 			paddingX={1}
@@ -42,9 +59,9 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 
 			{/* Status indicator */}
 			<Box marginBottom={1}>
-				<Text color="green">{"▶ "}</Text>
-				<Text color="green" bold>
-					RUNNING
+				<Text color={paused ? "yellow" : "green"}>{paused ? "⏸ " : "▶ "}</Text>
+				<Text color={paused ? "yellow" : "green"} bold>
+					{paused ? "PAUSED" : "RUNNING"}
 				</Text>
 			</Box>
 
@@ -62,6 +79,46 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 					</Text>
 				</Box>
 			</Box>
+
+			{/* Model — single model: own dedicated row */}
+			{models.length <= 1 && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color="white" dimColor>
+						MODEL
+					</Text>
+					<Box>
+						<Text color="yellow">{"▸ "}</Text>
+						<Text color="white" bold>
+							{(() => {
+								const m = (model ?? "default").toUpperCase();
+								return m.length > 19 ? `${m.slice(0, 18)}…` : m;
+							})()}
+						</Text>
+					</Box>
+				</Box>
+			)}
+
+			{/* Model Queue — multiple models: bullet marks active */}
+			{models.length > 1 && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color="white" dimColor>
+						MODEL QUEUE
+					</Text>
+					{models.map((m, i) => (
+						<Box key={m} paddingLeft={1} flexDirection="row">
+							<Text color={m === model ? "yellow" : "gray"}>
+								{m === model ? "● " : `${i + 1}. `}
+							</Text>
+							<Text color={m === model ? "yellow" : "white"} bold={m === model}>
+								{(() => {
+									const display = m.toUpperCase();
+									return display.length > 19 ? `${display.slice(0, 18)}…` : display;
+								})()}
+							</Text>
+						</Box>
+					))}
+				</Box>
+			)}
 
 			{/* Source */}
 			<Box flexDirection="column" marginTop={1}>
@@ -92,12 +149,25 @@ export function Sidebar({ provider, source, cwd }: SidebarProps) {
 			<Box flexGrow={1} />
 
 			<Text color="yellow">{"────────────────────────"}</Text>
-			<Box marginTop={1} flexDirection="column">
-				<Text dimColor>{"[Tab]  next column"}</Text>
-				<Text dimColor>{"[↑↓]  navigate    "}</Text>
-				<Text dimColor>{"[↵]   view detail "}</Text>
-				<Text dimColor>{"[q]   quit        "}</Text>
-			</Box>
+
+			{/* Dynamic legend */}
+			{activeView === "board" ? (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[←→] columns"}</Text>
+					<Text dimColor>{"[↑↓] navigate"}</Text>
+					<Text dimColor>{"[↵]  detail"}</Text>
+					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
+					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
+					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
+					<Text dimColor>{"[q]  quit"}</Text>
+				</Box>
+			) : (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[↑↓] scroll"}</Text>
+					{hasPrUrl && <Text dimColor>{"[o]  open PR(s)"}</Text>}
+					<Text dimColor>{"[Esc] board"}</Text>
+				</Box>
+			)}
 		</Box>
 	);
 }

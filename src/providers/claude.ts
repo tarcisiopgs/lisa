@@ -1,11 +1,14 @@
 import { execSync, spawn } from "node:child_process";
-import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
-import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
+import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { spawnWithPty, stripAnsi } from "./pty.js";
+import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
 export class ClaudeProvider implements Provider {
 	name = "claude" as const;
@@ -34,22 +37,43 @@ export class ClaudeProvider implements Provider {
 				flags.push("--model", opts.model);
 			}
 
-			const proc = spawn("sh", ["-c", `claude ${flags.join(" ")} "$(cat '${promptFile}')"`], {
-				cwd: opts.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-				env: { ...process.env, CLAUDECODE: undefined },
-			});
+			const command = `claude ${flags.join(" ")} "$(cat '${promptFile}')"`;
+			logger.log(`[claude] Running: claude ${flags.join(" ")}`.trim());
+			if (opts.issueId) {
+				kanbanEmitter.emit("issue:output", opts.issueId, `$ claude ${flags.join(" ")}\n`);
+			}
+			const spawnEnv = { ...process.env, ...opts.env, CLAUDECODE: undefined };
+			// When Lisa itself runs inside an active Claude Code session (CLAUDECODE is set in the
+			// parent environment), the script PTY wrapper reads EOF from its closed stdin and
+			// forwards ^D to Claude, causing it to exit. Use a plain spawn without PTY instead.
+			const isNestedInClaude = Boolean(process.env.CLAUDECODE);
+			let proc: ReturnType<typeof spawn>;
+			let isPty: boolean;
+			if (isNestedInClaude) {
+				proc = spawn("sh", ["-c", command], {
+					cwd: opts.cwd,
+					env: spawnEnv,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				isPty = false;
+			} else {
+				({ proc, isPty } = spawnWithPty(command, { cwd: opts.cwd, env: spawnEnv }));
+			}
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+			const sessionTimeout = createSessionTimeout(proc, opts.sessionTimeout);
+			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 
 			const chunks: string[] = [];
 
-			proc.stdout.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stdout.write(text);
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				errorLoopDetector.check(text);
+				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
-					kanbanEmitter.emit("issue:output", opts.issueId, text);
+					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
 				try {
@@ -57,9 +81,10 @@ export class ClaudeProvider implements Provider {
 				} catch {}
 			});
 
-			proc.stderr.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stderr.write(text);
+			proc.stderr?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}
@@ -68,16 +93,23 @@ export class ClaudeProvider implements Provider {
 			const exitCode = await new Promise<number>((resolve) => {
 				proc.on("close", (code) => {
 					overseer?.stop();
+					sessionTimeout.stop();
 					resolve(code ?? 1);
 				});
 			});
 
-			if (overseer?.wasKilled()) {
+			if (sessionTimeout.wasTimedOut()) {
+				chunks.push(TIMEOUT_MESSAGE);
+			} else if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
 
 			return {
-				success: exitCode === 0 && !overseer?.wasKilled(),
+				success:
+					exitCode === 0 &&
+					!overseer?.wasKilled() &&
+					!errorLoopDetector.wasKilled() &&
+					!sessionTimeout.wasTimedOut(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
@@ -89,7 +121,7 @@ export class ClaudeProvider implements Provider {
 			};
 		} finally {
 			try {
-				unlinkSync(promptFile);
+				rmSync(tmpDir, { recursive: true, force: true });
 			} catch {}
 		}
 	}

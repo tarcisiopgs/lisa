@@ -2,7 +2,16 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { resolve } from "node:path";
 import * as logger from "../output/logger.js";
-import type { RepoConfig, ResourceConfig } from "../types/index.js";
+import type { LifecycleConfig, LifecycleMode } from "../types/index.js";
+
+export type InfraStatus = "available" | "unavailable";
+
+export function resolveInfraStatus(mode: LifecycleMode, result: { success: boolean }): InfraStatus {
+	if (mode === "skip") return "unavailable";
+	return result.success ? "available" : "unavailable";
+}
+
+import type { InfraConfig, ResourceConfig } from "./discovery.js";
 
 interface ManagedResource {
 	name: string;
@@ -26,7 +35,7 @@ export function isPortInUse(port: number): Promise<boolean> {
 	});
 }
 
-function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
+export function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
 	return new Promise((resolve) => {
 		const deadline = Date.now() + timeoutMs;
 		const check = () => {
@@ -46,10 +55,34 @@ function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
 	});
 }
 
-function spawnResource(config: ResourceConfig, baseCwd: string): ChildProcess {
+/**
+ * Find the first free port in the range [basePort, basePort + range).
+ * Returns the allocated port, or null if no free port is found.
+ */
+export async function allocatePort(basePort: number, range: number): Promise<number | null> {
+	for (let offset = 0; offset < range; offset++) {
+		const port = basePort + offset;
+		const inUse = await isPortInUse(port);
+		if (!inUse) {
+			return port;
+		}
+	}
+	return null;
+}
+
+function spawnResource(
+	config: ResourceConfig,
+	baseCwd: string,
+	allocatedPort: number,
+): ChildProcess {
 	const cwd = config.cwd ? resolve(baseCwd, config.cwd) : baseCwd;
+	const env: NodeJS.ProcessEnv = { ...process.env };
+	if (config.port_env_var) {
+		env[config.port_env_var] = String(allocatedPort);
+	}
 	const child = spawn("sh", ["-c", config.up], {
 		cwd,
+		env,
 		stdio: "ignore",
 		detached: true,
 	});
@@ -57,10 +90,11 @@ function spawnResource(config: ResourceConfig, baseCwd: string): ChildProcess {
 	return child;
 }
 
-function runSetupCommand(command: string, cwd: string): Promise<void> {
+function runSetupCommand(command: string, cwd: string, env: Record<string, string>): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("sh", ["-c", command], {
 			cwd,
+			env: { ...process.env, ...env },
 			stdio: "inherit",
 		});
 		child.on("close", (code) => {
@@ -76,24 +110,57 @@ function runSetupCommand(command: string, cwd: string): Promise<void> {
 	});
 }
 
-export async function startResources(repo: RepoConfig, baseCwd: string): Promise<boolean> {
-	const lifecycle = repo.lifecycle;
-	if (!lifecycle) return true;
+export interface StartResourcesResult {
+	success: boolean;
+	/** Env vars to inject into the provider and setup commands (e.g. { DATABASE_PORT: "5433" }) */
+	env: Record<string, string>;
+}
 
+/**
+ * Start all resources defined in the InfraConfig, allocating free ports when port_range is set.
+ * Returns { success, env } where env contains all allocated port env vars.
+ */
+export async function startResources(
+	infra: InfraConfig,
+	baseCwd: string,
+): Promise<StartResourcesResult> {
 	registerCleanup();
 
-	// Start resources
-	for (const resource of lifecycle.resources) {
-		const alreadyRunning = await isPortInUse(resource.check_port);
+	const allocatedEnv: Record<string, string> = {};
 
+	for (const resource of infra.resources) {
+		// Allocate a free port
+		let allocatedPort: number;
+		if (resource.port_range && resource.port_range > 0) {
+			const found = await allocatePort(resource.check_port, resource.port_range);
+			if (found === null) {
+				logger.error(
+					`No free port found for "${resource.name}" in range ${resource.check_port}–${resource.check_port + resource.port_range - 1}`,
+				);
+				await stopResources();
+				return { success: false, env: allocatedEnv };
+			}
+			allocatedPort = found;
+			logger.log(`Allocated port ${allocatedPort} for "${resource.name}"`);
+		} else {
+			allocatedPort = resource.check_port;
+		}
+
+		// Track allocated port env var
+		if (resource.port_env_var) {
+			allocatedEnv[resource.port_env_var] = String(allocatedPort);
+		}
+
+		// Check if already running on the allocated port
+		const alreadyRunning = await isPortInUse(allocatedPort);
 		if (alreadyRunning) {
-			logger.ok(`Resource "${resource.name}" already running on port ${resource.check_port}`);
+			logger.ok(`Resource "${resource.name}" already running on port ${allocatedPort}`);
 			continue;
 		}
 
-		logger.log(`Starting resource "${resource.name}" on port ${resource.check_port}...`);
+		logger.log(`Starting resource "${resource.name}" on port ${allocatedPort}...`);
 
-		const child = spawnResource(resource, baseCwd);
+		const child = spawnResource(resource, baseCwd, allocatedPort);
 
 		managedResources.push({
 			name: resource.name,
@@ -102,33 +169,80 @@ export async function startResources(repo: RepoConfig, baseCwd: string): Promise
 		});
 
 		const timeoutMs = (resource.startup_timeout || 30) * 1000;
-		const ready = await waitForPort(resource.check_port, timeoutMs);
+		const ready = await waitForPort(allocatedPort, timeoutMs);
 
 		if (!ready) {
 			logger.error(
 				`Resource "${resource.name}" failed to start within ${resource.startup_timeout}s`,
 			);
 			await stopResources();
-			return false;
+			return { success: false, env: allocatedEnv };
 		}
 
-		logger.ok(`Resource "${resource.name}" is ready on port ${resource.check_port}`);
+		logger.ok(`Resource "${resource.name}" is ready on port ${allocatedPort}`);
 	}
 
-	// Run setup commands
-	for (const command of lifecycle.setup) {
+	// Run setup commands with the allocated env vars
+	for (const command of infra.setup) {
 		logger.log(`Running setup: ${command}`);
 		try {
-			await runSetupCommand(command, baseCwd);
+			await runSetupCommand(command, baseCwd, allocatedEnv);
 			logger.ok(`Setup complete: ${command}`);
 		} catch (err) {
 			logger.error(`Setup failed: ${err instanceof Error ? err.message : String(err)}`);
 			await stopResources();
-			return false;
+			return { success: false, env: allocatedEnv };
 		}
 	}
 
-	return true;
+	return { success: true, env: allocatedEnv };
+}
+
+/**
+ * Run lifecycle management according to the configured mode.
+ *
+ * - "skip" (default): returns success immediately without touching resources
+ * - "auto": starts resources via startResources, applies optional timeout override
+ * - "validate-only": checks ports via isPortInUse; returns failure if any resource is not running
+ */
+export async function runLifecycle(
+	infra: InfraConfig,
+	lifecycle: LifecycleConfig | undefined,
+	baseCwd: string,
+): Promise<StartResourcesResult> {
+	const mode = lifecycle?.mode ?? "skip";
+
+	if (mode === "skip") {
+		return { success: true, env: {} };
+	}
+
+	if (mode === "validate-only") {
+		for (const resource of infra.resources) {
+			const inUse = await isPortInUse(resource.check_port);
+			if (!inUse) {
+				logger.error(
+					`Resource "${resource.name}" is not running on port ${resource.check_port}. ` +
+						`Start it manually or use lifecycle: auto.`,
+				);
+				return { success: false, env: {} };
+			}
+		}
+		return { success: true, env: {} };
+	}
+
+	// mode === "auto": use startResources, optionally overriding per-resource timeout
+	if (lifecycle?.timeout !== undefined) {
+		const patchedInfra: InfraConfig = {
+			...infra,
+			resources: infra.resources.map((r) => ({
+				...r,
+				startup_timeout: lifecycle.timeout as number,
+			})),
+		};
+		return startResources(patchedInfra, baseCwd);
+	}
+
+	return startResources(infra, baseCwd);
 }
 
 export async function stopResources(): Promise<void> {
@@ -139,7 +253,6 @@ export async function stopResources(): Promise<void> {
 
 		try {
 			if (config.down === "auto") {
-				// Kill the PID that Lisa started
 				if (child?.pid) {
 					try {
 						process.kill(-child.pid, "SIGTERM");
@@ -148,7 +261,6 @@ export async function stopResources(): Promise<void> {
 					}
 				}
 			} else {
-				// Run the down command
 				await new Promise<void>((resolve) => {
 					const down = spawn("sh", ["-c", config.down], {
 						stdio: "ignore",

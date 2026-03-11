@@ -1,16 +1,19 @@
-import { execSync, spawn } from "node:child_process";
-import { appendFileSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
-import { STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
+import { createErrorLoopDetector, STUCK_MESSAGE, startOverseer } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { spawnWithPty, stripAnsi } from "./pty.js";
+import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
 function findCursorBinary(): string | null {
 	for (const bin of ["agent", "cursor-agent"]) {
 		try {
-			execSync(`${bin} --version`, { stdio: "ignore" });
+			execSync(`which ${bin}`, { stdio: "ignore" });
 			return bin;
 		} catch {}
 	}
@@ -19,15 +22,21 @@ function findCursorBinary(): string | null {
 
 export class CursorProvider implements Provider {
 	name = "cursor" as const;
+	private _bin: string | null | undefined = undefined;
+
+	private resolveBin(): string | null {
+		if (this._bin === undefined) this._bin = findCursorBinary();
+		return this._bin;
+	}
 
 	async isAvailable(): Promise<boolean> {
-		return findCursorBinary() !== null;
+		return this.resolveBin() !== null;
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
 		const start = Date.now();
 
-		const bin = findCursorBinary();
+		const bin = this.resolveBin();
 		if (!bin) {
 			return {
 				success: false,
@@ -42,25 +51,37 @@ export class CursorProvider implements Provider {
 
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const proc = spawn(
-				"sh",
-				["-c", `${bin} -p "$(cat '${promptFile}')" --output-format text --force ${modelFlag}`],
-				{
-					cwd: opts.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				},
+			const command = `${bin} -p "$(cat '${promptFile}')" --output-format text --force ${modelFlag}`;
+			logger.log(
+				`[cursor] Running: ${bin} -p --output-format text --force ${modelFlag || "(default model)"}`.trim(),
 			);
+			if (opts.issueId) {
+				kanbanEmitter.emit(
+					"issue:output",
+					opts.issueId,
+					`$ ${bin} -p --output-format text --force ${modelFlag || "(default model)"}\n`.trim() +
+						"\n",
+				);
+			}
+			const { proc, isPty } = spawnWithPty(command, {
+				cwd: opts.cwd,
+				env: { ...process.env, ...opts.env },
+			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
 			const overseer = opts.overseer?.enabled ? startOverseer(proc, opts.cwd, opts.overseer) : null;
+			const sessionTimeout = createSessionTimeout(proc, opts.sessionTimeout);
+			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 
 			const chunks: string[] = [];
 
-			proc.stdout.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stdout.write(text);
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				errorLoopDetector.check(text);
+				if (getOutputMode() !== "tui") process.stdout.write(raw);
 				if (opts.issueId) {
-					kanbanEmitter.emit("issue:output", opts.issueId, text);
+					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
 				try {
@@ -68,9 +89,10 @@ export class CursorProvider implements Provider {
 				} catch {}
 			});
 
-			proc.stderr.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				if (getOutputMode() !== "tui") process.stderr.write(text);
+			proc.stderr?.on("data", (chunk: Buffer) => {
+				const raw = chunk.toString();
+				const text = isPty ? stripAnsi(raw) : raw;
+				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				try {
 					appendFileSync(opts.logFile, text);
 				} catch {}
@@ -79,16 +101,23 @@ export class CursorProvider implements Provider {
 			const exitCode = await new Promise<number>((resolve) => {
 				proc.on("close", (code) => {
 					overseer?.stop();
+					sessionTimeout.stop();
 					resolve(code ?? 1);
 				});
 			});
 
-			if (overseer?.wasKilled()) {
+			if (sessionTimeout.wasTimedOut()) {
+				chunks.push(TIMEOUT_MESSAGE);
+			} else if (overseer?.wasKilled() || errorLoopDetector.wasKilled()) {
 				chunks.push(STUCK_MESSAGE);
 			}
 
 			return {
-				success: exitCode === 0 && !overseer?.wasKilled(),
+				success:
+					exitCode === 0 &&
+					!overseer?.wasKilled() &&
+					!errorLoopDetector.wasKilled() &&
+					!sessionTimeout.wasTimedOut(),
 				output: chunks.join(""),
 				duration: Date.now() - start,
 			};
@@ -100,7 +129,7 @@ export class CursorProvider implements Provider {
 			};
 		} finally {
 			try {
-				unlinkSync(promptFile);
+				rmSync(tmpDir, { recursive: true, force: true });
 			} catch {}
 		}
 	}

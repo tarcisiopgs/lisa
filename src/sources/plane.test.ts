@@ -9,7 +9,7 @@ function makeProject(overrides: Partial<{ id: string; name: string; identifier: 
 	return { id: "project-uuid-1", name: "My Project", identifier: "DEV", ...overrides };
 }
 
-function makeState(overrides: Partial<{ id: string; name: string }> = {}) {
+function makeState(overrides: Partial<{ id: string; name: string; group: string }> = {}) {
 	return {
 		id: "state-uuid-1",
 		name: "Todo",
@@ -31,7 +31,7 @@ function makeIssue(
 		description_stripped: string | null;
 		priority: string;
 		state: string;
-		label_ids: string[];
+		labels: string[];
 		sequence_id: number;
 		project: string;
 	}> = {},
@@ -42,7 +42,7 @@ function makeIssue(
 		description_stripped: "Some description",
 		priority: "medium",
 		state: "state-uuid-1",
-		label_ids: ["label-uuid-1"],
+		labels: ["label-uuid-1"],
 		sequence_id: 1,
 		project: "project-uuid-1",
 		...overrides,
@@ -170,6 +170,12 @@ describe("PlaneSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("fetchNextIssue", () => {
+		// Helper: common states including a "completed" state for blocking checks
+		const allStates = [
+			makeState({ id: "state-uuid-1", name: "Todo" }),
+			makeState({ id: "state-done", name: "Done", group: "completed" }),
+		];
+
 		it("returns null when no matching issues found", async () => {
 			global.fetch = mockFetchSequence([
 				ok(makePage([makeProject()])), // resolveProject
@@ -187,7 +193,7 @@ describe("PlaneSource", () => {
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
-				ok(makePage([makeIssue({ label_ids: ["other-label-id"] })])),
+				ok(makePage([makeIssue({ labels: ["other-label-id"] })])),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -200,6 +206,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1", name: "Fix bug" })])),
+				ok(allStates), // fetchAll states for blocking check
+				ok([]), // fetch relations for issue
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -222,6 +230,10 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage(issues)),
+				ok(allStates),
+				ok([]), // relations for id-low
+				ok([]), // relations for id-urgent
+				ok([]), // relations for id-medium
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -239,6 +251,9 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage(issues)),
+				ok(allStates),
+				ok([]), // relations for id-none
+				ok([]), // relations for id-low
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -251,10 +266,88 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ description_stripped: null })])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.description).toBe("");
+		});
+
+		it("skips blocked issues and returns unblocked one", async () => {
+			const issues = [
+				makeIssue({ id: "blocked-id", name: "Blocked issue" }),
+				makeIssue({ id: "unblocked-id", name: "Unblocked issue" }),
+			];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "blocked-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-uuid-1" })), // blocker not in done state
+				ok([]), // relations for unblocked-id
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const issues = [makeIssue({ id: "blocked-id", name: "Blocked issue" })];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "blocked-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-uuid-1" })),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("ignores blockers in completed state", async () => {
+			const issues = [makeIssue({ id: "issue-id", name: "Issue with done blocker" })];
+
+			global.fetch = mockFetchSequence([
+				ok(makePage([makeProject()])),
+				ok([makeState()]),
+				ok([makeLabel()]),
+				ok(makePage(issues)),
+				ok(allStates),
+				ok([
+					{
+						id: "rel-1",
+						relation_type: "blocked_by",
+						related_issue: "blocker-id",
+						issue: "issue-id",
+					},
+				]),
+				ok(makeIssue({ id: "blocker-id", state: "state-done" })), // blocker in done state
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Issue with done blocker");
 		});
 
 		it("throws when PLANE_API_TOKEN is not set", async () => {
@@ -308,6 +401,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue()])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(configByName);
@@ -322,6 +417,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue()])),
+				ok(allStates),
+				ok([]), // relations
 			]);
 
 			const result = await source.fetchNextIssue(configByUuid);
@@ -394,7 +491,7 @@ describe("PlaneSource", () => {
 
 			await source.updateStatus("my-workspace::project-uuid-1::issue-uuid-1", "In Progress");
 
-			expect(capturedUrl).toContain("/issues/issue-uuid-1/");
+			expect(capturedUrl).toContain("/work-items/issue-uuid-1/");
 			expect(capturedBody).toMatchObject({ state: "state-in-progress" });
 		});
 
@@ -454,7 +551,7 @@ describe("PlaneSource", () => {
 				if (
 					(init?.method === "GET" || !init?.method) &&
 					url.includes("/states/") &&
-					!url.includes("/issues/")
+					!url.includes("/work-items/")
 				) {
 					return Promise.resolve({
 						ok: true,
@@ -465,7 +562,7 @@ describe("PlaneSource", () => {
 				}
 
 				// updateStatus PATCH
-				if (init?.method === "PATCH" && url.includes("/issues/issue-uuid-1/")) {
+				if (init?.method === "PATCH" && url.includes("/work-items/issue-uuid-1/")) {
 					const body = JSON.parse(init.body as string);
 					// First PATCH is state update
 					if ("state" in body) {
@@ -480,17 +577,20 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: [] }),
+						json: async () => makeIssue({ labels: [] }),
 						text: async () => "",
 					});
 				}
 
 				// GET issue for removeLabel
-				if ((init?.method === "GET" || !init?.method) && url.includes("/issues/issue-uuid-1/")) {
+				if (
+					(init?.method === "GET" || !init?.method) &&
+					url.includes("/work-items/issue-uuid-1/")
+				) {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: ["label-uuid-1"] }),
+						json: async () => makeIssue({ labels: ["label-uuid-1"] }),
 						text: async () => "",
 					});
 				}
@@ -499,7 +599,7 @@ describe("PlaneSource", () => {
 				if (
 					(init?.method === "GET" || !init?.method) &&
 					url.includes("/labels/") &&
-					!url.includes("/issues/")
+					!url.includes("/work-items/")
 				) {
 					return Promise.resolve({
 						ok: true,
@@ -560,7 +660,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-1", "label-uuid-2"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-1", "label-uuid-2"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -577,14 +677,14 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: ["label-uuid-2"] }),
+						json: async () => makeIssue({ labels: ["label-uuid-2"] }),
 						text: async () => "",
 					});
 				});
 
 			await source.removeLabel("my-workspace::project-uuid-1::issue-uuid-1", "ready");
 
-			expect((capturedBody as { label_ids: string[] }).label_ids).toEqual(["label-uuid-2"]);
+			expect((capturedBody as { labels: string[] }).labels).toEqual(["label-uuid-2"]);
 		});
 
 		it("skips API call if label is not on the issue", async () => {
@@ -593,7 +693,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-2"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-2"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -619,7 +719,7 @@ describe("PlaneSource", () => {
 				.mockResolvedValueOnce({
 					ok: true,
 					status: 200,
-					json: async () => makeIssue({ label_ids: ["label-uuid-1"] }),
+					json: async () => makeIssue({ labels: ["label-uuid-1"] }),
 					text: async () => "",
 				})
 				.mockResolvedValueOnce({
@@ -633,14 +733,14 @@ describe("PlaneSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => makeIssue({ label_ids: [] }),
+						json: async () => makeIssue({ labels: [] }),
 						text: async () => "",
 					});
 				});
 
 			await source.removeLabel("my-workspace::project-uuid-1::issue-uuid-1", "ready");
 
-			expect((capturedBody as { label_ids: string[] }).label_ids).toEqual([]);
+			expect((capturedBody as { labels: string[] }).labels).toEqual([]);
 		});
 	});
 
@@ -673,7 +773,7 @@ describe("PlaneSource", () => {
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
-				ok(makePage([makeIssue({ label_ids: ["other-label-id"] })])),
+				ok(makePage([makeIssue({ labels: ["other-label-id"] })])),
 			]);
 
 			const result = await source.listIssues(baseConfig);
@@ -698,12 +798,19 @@ describe("PlaneSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("app URL", () => {
+		const allStates = [
+			makeState({ id: "state-uuid-1", name: "Todo" }),
+			makeState({ id: "state-done", name: "Done", group: "completed" }),
+		];
+
 		it("uses app.plane.so for default cloud API URL", async () => {
 			global.fetch = mockFetchSequence([
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1" })])),
+				ok(allStates),
+				ok([]),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
@@ -718,6 +825,8 @@ describe("PlaneSource", () => {
 				ok([makeState()]),
 				ok([makeLabel()]),
 				ok(makePage([makeIssue({ id: "issue-uuid-1" })])),
+				ok(allStates),
+				ok([]),
 			]);
 
 			const result = await source.fetchNextIssue(baseConfig);

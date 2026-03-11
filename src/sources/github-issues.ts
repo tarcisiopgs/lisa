@@ -1,3 +1,5 @@
+import { execa } from "execa";
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const API_URL = "https://api.github.com";
@@ -5,9 +7,22 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 const PRIORITY_LABELS = ["p1", "p2", "p3"];
 
-function getAuthHeaders(): Record<string, string> {
-	const token = process.env.GITHUB_TOKEN;
-	if (!token) throw new Error("GITHUB_TOKEN must be set");
+// Matches "depends on #N", "blocked by #N", case-insensitive, supports multiple formats
+const DEPENDENCY_PATTERN = /(?:depends\s+on|blocked\s+by)\s+#(\d+)/gi;
+
+async function getToken(): Promise<string> {
+	if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+	try {
+		const { stdout } = await execa("gh", ["auth", "token"]);
+		if (stdout.trim()) return stdout.trim();
+	} catch {
+		// gh CLI not available or not authenticated
+	}
+	throw new Error("GitHub authentication required: set GITHUB_TOKEN or run `gh auth login`");
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+	const token = await getToken();
 	return {
 		Authorization: `Bearer ${token}`,
 		Accept: "application/vnd.github+json",
@@ -18,7 +33,7 @@ function getAuthHeaders(): Record<string, string> {
 async function githubFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const url = `${API_URL}${path}`;
 	const headers: Record<string, string> = {
-		...getAuthHeaders(),
+		...(await getAuthHeaders()),
 		"Content-Type": "application/json",
 	};
 
@@ -61,6 +76,37 @@ interface GitHubIssue {
 	html_url: string;
 	labels: { name: string }[];
 	created_at: string;
+	state?: string;
+	// GitHub returns PRs mixed with issues; this field is present only on PRs
+	pull_request?: object;
+}
+
+interface GitHubPr {
+	merged: boolean;
+	state: string;
+}
+
+export function parseGitHubPrUrl(
+	url: string,
+): { owner: string; repo: string; number: string } | null {
+	const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+	if (match?.[1] && match?.[2] && match?.[3]) {
+		return { owner: match[1], repo: match[2], number: match[3] };
+	}
+	return null;
+}
+
+export async function checkPrMerged(prUrl: string): Promise<boolean> {
+	const parsed = parseGitHubPrUrl(prUrl);
+	if (!parsed) return false;
+	try {
+		const pr = await githubGet<GitHubPr>(
+			`/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}`,
+		);
+		return pr.merged === true;
+	} catch {
+		return false;
+	}
 }
 
 function priorityRank(labels: { name: string }[]): number {
@@ -104,6 +150,17 @@ export function parseGitHubIssueNumber(id: string): {
 	return { owner: "", repo: "", number: id };
 }
 
+export function parseDependencies(body: string | null): number[] {
+	if (!body) return [];
+	const deps: number[] = [];
+	const matches = body.matchAll(DEPENDENCY_PATTERN);
+	for (const match of matches) {
+		const num = Number.parseInt(match[1] ?? "", 10);
+		if (!Number.isNaN(num)) deps.push(num);
+	}
+	return [...new Set(deps)];
+}
+
 function makeIssueId(owner: string, repo: string, number: number): string {
 	return `${owner}/${repo}#${number}`;
 }
@@ -113,14 +170,76 @@ export class GitHubIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const label = encodeURIComponent(config.label);
+		// GitHub valid states: open, closed, all. If pick_from is a non-empty, non-standard-state
+		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		const validStates = ["open", "closed", "all"];
+		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
+		const filterLabels = isOrphanDetection
+			? [config.pick_from]
+			: Array.isArray(config.label)
+				? config.label
+				: [config.label];
+		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = await githubGet<GitHubIssue[]>(path);
+		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		if (issues.length === 0) return null;
 
+		// Check blocking relations parsed from issue body
+		const unblocked: GitHubIssue[] = [];
+		const blocked: { number: number; blockers: number[] }[] = [];
+		// Track closed (resolved) blocker IDs per issue for dependency resolution
+		const closedBlockerMap = new Map<number, string[]>();
+
+		for (const issue of issues) {
+			const depNumbers = parseDependencies(issue.body);
+			if (depNumbers.length === 0) {
+				unblocked.push(issue);
+				continue;
+			}
+
+			// Check if any referenced issues are still open
+			const activeBlockers: number[] = [];
+			const closedBlockers: string[] = [];
+			for (const depNum of depNumbers) {
+				try {
+					const dep = await githubGet<GitHubIssue>(`/repos/${owner}/${repo}/issues/${depNum}`);
+					if (!dep.state || dep.state === "open") {
+						activeBlockers.push(depNum);
+					} else {
+						closedBlockers.push(makeIssueId(owner, repo, depNum));
+					}
+				} catch {
+					// If we can't fetch, assume still open
+					activeBlockers.push(depNum);
+				}
+			}
+
+			if (closedBlockers.length > 0) {
+				closedBlockerMap.set(issue.number, closedBlockers);
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ number: issue.number, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.number} — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority labels (p1/p2/p3) first, then by created_at ascending
-		const sorted = [...issues].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.labels);
 			const pb = priorityRank(b.labels);
 			if (pa !== pb) return pa - pb;
@@ -130,11 +249,13 @@ export class GitHubIssuesSource implements Source {
 		const issue = sorted[0];
 		if (!issue) return null;
 
+		const completedBlockerIds = closedBlockerMap.get(issue.number);
 		return {
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,
 			description: issue.body ?? "",
 			url: issue.html_url,
+			...(completedBlockerIds && { completedBlockerIds }),
 		};
 	}
 
@@ -156,8 +277,44 @@ export class GitHubIssuesSource implements Source {
 		}
 	}
 
-	async updateStatus(issueId: string, labelToAdd: string): Promise<void> {
+	async updateStatus(issueId: string, labelToAdd: string, config?: SourceConfig): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
+
+		if (config && config.in_progress !== config.pick_from) {
+			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const isMovingToInProgress = labelToAdd === config.in_progress;
+
+			if (isMovingToInProgress) {
+				// Add in_progress label and remove filter labels (prevent re-picking)
+				await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+					labels: [labelToAdd],
+				});
+				for (const label of filterLabels) {
+					try {
+						await githubDelete(
+							`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(label)}`,
+						);
+					} catch {
+						// Label may not exist; ignore
+					}
+				}
+				return;
+			}
+
+			// Reverting to pick_from: add back filter labels and remove in_progress label
+			await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+				labels: filterLabels,
+			});
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
+			return;
+		}
+
 		await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 			labels: [labelToAdd],
 		});
@@ -170,7 +327,12 @@ export class GitHubIssuesSource implements Source {
 		});
 	}
 
-	async completeIssue(issueId: string, _status: string, labelToRemove?: string): Promise<void> {
+	async completeIssue(
+		issueId: string,
+		_status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		await githubPatch(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, {
 			state: "closed",
@@ -178,14 +340,25 @@ export class GitHubIssuesSource implements Source {
 		if (labelToRemove) {
 			await this.removeLabel(issueId, labelToRemove);
 		}
+		// Also remove in_progress label if config-aware and in_progress differs from pick_from
+		if (config && config.in_progress !== config.pick_from) {
+			try {
+				await githubDelete(
+					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
+				);
+			} catch {
+				// Label may not exist; ignore
+			}
+		}
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const { owner, repo } = parseOwnerRepo(config.team);
-		const label = encodeURIComponent(config.label);
+		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = await githubGet<GitHubIssue[]>(path);
+		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		return issues.map((issue) => ({
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,

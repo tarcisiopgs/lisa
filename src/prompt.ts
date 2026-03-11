@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
+import { formatProjectContext, type ProjectContext, type ProjectEnvironment } from "./context.js";
+import { buildPrCreateInstruction } from "./git/platform.js";
+import { getManifestPath, getPlanPath } from "./paths.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
@@ -30,17 +33,58 @@ export function detectTestRunner(cwd: string): TestRunner {
 	}
 }
 
+export function extractReadmeHeadings(cwd: string): string[] {
+	const readmePath = join(cwd, "README.md");
+	if (!existsSync(readmePath)) return [];
+
+	try {
+		const content = readFileSync(readmePath, "utf-8");
+		return content
+			.split("\n")
+			.filter((line) => /^#{1,6}\s/.test(line))
+			.map((line) => line.trim());
+	} catch {
+		return [];
+	}
+}
+
 export function buildImplementPrompt(
 	issue: Issue,
 	config: LisaConfig,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	projectContext?: ProjectContext,
+	cwd?: string,
+	manifestPath?: string,
+	repoContextMd?: string | null,
 ): string {
+	const workspace = resolve(config.workspace);
+	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
+
 	if (config.workflow === "worktree") {
-		return buildWorktreePrompt(issue, testRunner, pm, config.base_branch);
+		return buildWorktreePrompt(
+			issue,
+			testRunner,
+			pm,
+			config.base_branch,
+			projectContext,
+			resolvedManifestPath,
+			cwd,
+			config.platform,
+			repoContextMd,
+		);
 	}
 
-	return buildBranchPrompt(issue, config, testRunner, pm);
+	return buildBranchPrompt(
+		issue,
+		config,
+		testRunner,
+		pm,
+		projectContext,
+		resolvedManifestPath,
+		cwd,
+		repoContextMd,
+	);
 }
 
 function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm"): string {
@@ -58,6 +102,46 @@ This project uses **${testRunner}** as its test runner.
 `;
 }
 
+function buildSpecWarningBlock(warning?: string): string {
+	if (!warning) return "";
+	return `\n> **Warning — incomplete spec:** ${warning}\n> Proceed using reasonable assumptions based on the title and description.\n> If the issue is genuinely too ambiguous to implement, STOP and explain what is missing.\n`;
+}
+
+function buildRulesSection(
+	env?: ProjectEnvironment,
+	variant: "issue" | "scope" = "issue",
+	extraRules = "",
+): string {
+	const envRule = buildEnvironmentDependencyRule(env);
+	const scopeRule =
+		variant === "scope"
+			? "- One scope only. Do not pick up additional work outside your scope."
+			: "- One issue only. Do not pick up additional issues.";
+
+	return `## Rules
+
+- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
+- The issue description may be in any language — read it for context but write all code artifacts in English.
+- Do NOT install new dependencies unless the issue explicitly requires it.
+- Do NOT use documentation lookup MCP tools (e.g., Context7, codesearch, Exa) — they have free-tier rate limits that will block your execution. Read files directly from the repository. Web search is allowed only when strictly necessary (e.g., looking up an external API format not available in the codebase).
+${envRule}${extraRules}- If you get stuck or the issue is unclear, STOP and explain why.
+${scopeRule}
+- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+}
+
+function buildEnvironmentDependencyRule(env?: ProjectEnvironment): string {
+	if (env === "cli") {
+		return "- **Environment**: This is a CLI (Node.js) project. Do NOT install browser/DOM packages (`jsdom`, `happy-dom`, `@testing-library/dom`, `@testing-library/react`). All dependencies and tests must be Node.js-compatible.\n";
+	}
+	if (env === "mobile") {
+		return "- **Environment**: This is a mobile project (React Native/Flutter). Do NOT install browser/DOM packages or web-only libraries. Use only packages compatible with the mobile runtime.\n";
+	}
+	if (env === "server") {
+		return "- **Environment**: This is a server-side (Node.js) project. Do NOT install browser/DOM packages. Use only Node.js-compatible packages.\n";
+	}
+	return "";
+}
+
 function buildPreCommitHookInstructions(): string {
 	return `
 **Pre-commit hooks:**
@@ -69,27 +153,51 @@ Do NOT skip or bypass hooks (no \`--no-verify\`). Fix the root cause and retry.
 `;
 }
 
-function buildReadmeInstructions(): string {
+function buildReadmeInstructions(headings: string[]): string {
+	if (headings.length === 0) return "";
+
+	const headingList = headings.map((h) => `   - ${h}`).join("\n");
+
 	return `
-**README.md Evaluation:**
-After implementing, review the diff of all changed files and check if README.md needs updating.
+**README.md Validation:**
+The current README.md documents these sections:
+${headingList}
 
-Update README.md if the changes include:
-- New or removed CLI commands or flags
-- New or removed providers or sources
-- Configuration schema changes (new fields, renamed fields, removed fields)
-- Pipeline or workflow stage changes
-- New or removed environment variables
-- Architectural changes
+Review your implementation diff against these sections. Update README.md if your changes affect any documented behavior:
+- CLI commands, flags, or usage examples
+- Providers, sources, or integrations
+- Configuration fields or schema
+- Pipeline stages, workflow modes, or architecture
+- Environment variables
 
-Do NOT update README.md for:
-- Internal refactors that don't change documented behavior
-- Bug fixes that don't change documented behavior
-- Test-only changes
-- Logging or formatting changes
-- Dependency updates
+Do NOT update README.md for internal refactors, bug fixes, test-only changes, logging, or dependency updates.
 
-If an update is needed, keep the existing README style and structure. Include the README change in the same commit as the implementation.
+If an update is needed, modify only the affected sections. Keep the existing style and structure. Include the README change in the same commit.
+`;
+}
+
+export function buildContextMdBlock(content: string | null | undefined): string {
+	if (!content?.trim()) return "";
+	return `\n## Project Conventions\n\n${content.trim()}\n`;
+}
+
+export function buildDependencyContext(dep: DependencyContext): string {
+	const fileList =
+		dep.changedFiles.length > 0
+			? dep.changedFiles.map((f) => `  - \`${f}\``).join("\n")
+			: "  (no files detected)";
+
+	return `## Dependency Context
+
+**This branch was created from the branch of issue ${dep.issueId}** (\`${dep.branch}\`), which has an open PR: ${dep.prUrl}
+
+The following files were changed by the dependency and are already available in your working tree:
+${fileList}
+
+**Important:**
+- Do NOT reimplement or modify code that was introduced by ${dep.issueId} — it already exists in your branch.
+- Your PR must target \`${dep.branch}\` as its base branch (not \`main\`), so the diff only shows YOUR changes.
+- When ${dep.issueId}'s PR is merged, your PR will be automatically re-targeted to \`main\`.
 `;
 }
 
@@ -98,12 +206,29 @@ function buildWorktreePrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
+	manifestPath?: string,
+	cwd?: string,
+	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const apiClientBlock = "";
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
+	const manifestLocation = manifestPath
+		? `\`${manifestPath}\``
+		: "`.lisa-manifest.json` in the **current directory**";
+	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are already inside the correct repository worktree on the correct branch.
 Do NOT create a new branch — just work on the current one.
@@ -117,7 +242,7 @@ Do NOT create a new branch — just work on the current one.
 ### Description
 
 ${issue.description}
-
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -125,12 +250,12 @@ ${issue.description}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it before committing using the single-argument form:
@@ -143,28 +268,19 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
-   Capture the PR URL from the output.
+5. ${prCreateBlock}
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
    Wait 1 second before calling this command.
 
-7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+7. **Write manifest**: Create ${manifestLocation} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment)}`;
 }
 
 function buildBranchPrompt(
@@ -172,6 +288,10 @@ function buildBranchPrompt(
 	config: LisaConfig,
 	testRunner?: TestRunner,
 	pm?: PackageManager,
+	projectContext?: ProjectContext,
+	manifestPath?: string,
+	cwd?: string,
+	repoContextMd?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const repoEntries = config.repos
@@ -182,18 +302,27 @@ function buildBranchPrompt(
 		.join("\n");
 
 	const baseBranch = config.base_branch;
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
-	const baseBranchInstruction =
-		config.repos.length > 0
+	const baseBranchInstruction = issue.dependency
+		? `From \`${issue.dependency.branch}\` (dependency branch)`
+		: config.repos.length > 0
 			? "From the repo's base branch (listed above)"
 			: `From \`${baseBranch}\``;
 
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const apiClientBlock = "";
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
-	const manifestPath = join(workspace, ".lisa-manifest.json");
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 ## Issue
 
@@ -204,7 +333,7 @@ function buildBranchPrompt(
 ### Description
 
 ${issue.description}
-
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Identify the repo**: Look at the issue description for relevant files or repo references.
@@ -221,12 +350,12 @@ ${repoEntries}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 4. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 5. **Commit & Push**: Make atomic commits with conventional commit messages.
    Push the branch to origin:
    \`git push -u origin <branch-name>\`
@@ -235,29 +364,19 @@ ${testBlock}${readmeBlock}${hookBlock}
    - All commit messages MUST be in English.
    - Use conventional commits format: \`feat: ...\`, \`fix: ...\`, \`refactor: ...\`, \`chore: ...\`
 
-6. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>" --base ${baseBranch}\`
-   Capture the PR URL from the output.
+6. ${buildPrCreateInstruction(config.platform, prBase)}
 
 7. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
    Wait 1 second before calling this command.
 
-8. **Write manifest**: Before finishing, create \`${manifestPath}\` with JSON:
+8. **Write manifest**: Before finishing, create \`${resolvedManifestPath}\` with JSON:
    \`\`\`json
    {"repoPath": "<absolute path to this repo>", "branch": "<branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT modify files outside the target repo.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment, "issue", "- Do NOT modify files outside the target repo.\n")}`;
 }
 
 export function buildNativeWorktreePrompt(
@@ -266,15 +385,28 @@ export function buildNativeWorktreePrompt(
 	testRunner?: TestRunner,
 	pm?: PackageManager,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
+	manifestPath?: string,
+	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const apiClientBlock = "";
+	const headings = repoPath ? extractReadmeHeadings(repoPath) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
-	const manifestLocation = repoPath
-		? `\`${join(repoPath, ".lisa-manifest.json")}\``
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
+	const manifestLocation = manifestPath
+		? `\`${manifestPath}\``
 		: "`.lisa-manifest.json` in the **current directory**";
+	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
 	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
@@ -288,7 +420,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Instructions
 
 1. **Implement**: Follow the issue description exactly:
@@ -296,12 +428,12 @@ ${issue.description}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
@@ -313,9 +445,7 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
-   Capture the PR URL from the output.
+5. ${prCreateBlock}
 
 6. **Update tracker**: Call the lisa CLI to mark the issue as done:
    \`lisa issue done ${issue.id} --pr-url <pr-url>\`
@@ -327,17 +457,15 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One issue only. Do not pick up additional issues.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment)}`;
 }
 
-export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
+export function buildPlanningPrompt(
+	issue: Issue,
+	config: LisaConfig,
+	planPath?: string,
+	globalContextMd?: string | null,
+): string {
 	const workspace = resolve(config.workspace);
 
 	const repoBlock = config.repos
@@ -347,7 +475,8 @@ export function buildPlanningPrompt(issue: Issue, config: LisaConfig): string {
 		})
 		.join("\n");
 
-	const planPath = join(workspace, ".lisa-plan.json");
+	const resolvedPlanPath = planPath ?? getPlanPath(workspace);
+	const globalContextBlock = buildContextMdBlock(globalContextMd ?? null);
 
 	return `You are an issue analysis agent. Your job is to read the issue below, determine which repositories are affected, and produce an execution plan.
 
@@ -366,7 +495,7 @@ ${issue.description}
 ## Available Repositories
 
 ${repoBlock}
-
+${globalContextBlock}
 ## Instructions
 
 1. **Analyze the issue**: Read the title and description carefully. Determine which repositories above are affected by this change.
@@ -377,14 +506,17 @@ ${repoBlock}
 
 2. **Determine execution order**: If multiple repos are affected, decide the order. Repos that produce APIs, schemas, or shared libraries should come first. Repos that consume them should come later.
 
-3. **Write the plan**: Create \`${planPath}\` with JSON:
-   \`\`\`json
-   {
-     "steps": [
-       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 1 },
-       { "repoPath": "<absolute path to repo>", "scope": "<what to implement in this repo>", "order": 2 }
-     ]
-   }
+3. **Write the plan file to disk**: Use a bash command or file-write tool to write the plan to \`${resolvedPlanPath}\`.
+   **You MUST write the file to disk. Do NOT print the JSON to stdout or in a code block.**
+
+   The file must be valid JSON with this structure (replace angle-bracket placeholders with real values):
+   - \`repoPath\`: absolute path to the affected repository
+   - \`scope\`: concise English description of what to implement in that repo
+   - \`order\`: integer starting at 1 (lower = executes first)
+
+   Use your write_file tool, or a bash command such as:
+   \`\`\`bash
+   printf '%s' '{"steps":[{"repoPath":"/absolute/path","scope":"description of work","order":1}]}' > '${resolvedPlanPath}'
    \`\`\`
 
 ## Rules
@@ -410,10 +542,22 @@ export function buildScopedImplementPrompt(
 	pm?: PackageManager,
 	isLastStep = false,
 	baseBranch?: string,
+	projectContext?: ProjectContext,
+	manifestPath?: string,
+	cwd?: string,
+	platform: PRPlatform = "cli",
+	repoContextMd?: string | null,
 ): string {
 	const testBlock = buildTestInstructions(testRunner ?? null, pm);
-	const readmeBlock = buildReadmeInstructions();
+	const apiClientBlock = "";
+	const headings = cwd ? extractReadmeHeadings(cwd) : [];
+	const readmeBlock = buildReadmeInstructions(headings);
 	const hookBlock = buildPreCommitHookInstructions();
+	const contextBlock = projectContext ? formatProjectContext(projectContext) : "";
+	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
+	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
+	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 
 	const previousBlock =
 		previousResults.length > 0
@@ -438,7 +582,7 @@ Work on the current branch — it was created for you.
 ### Description
 
 ${issue.description}
-
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}
 ## Your Scope
 
 You are responsible for **this specific part** of the issue:
@@ -453,12 +597,12 @@ ${previousBlock}
    - Read all relevant files first
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria relevant to your scope
-${testBlock}${readmeBlock}${hookBlock}
+${testBlock}${apiClientBlock}${hookBlock}
 2. **Validate**: Run the project's linter/typecheck/tests if available:
    - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
-
+${readmeBlock}
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
@@ -470,22 +614,13 @@ ${testBlock}${readmeBlock}${hookBlock}
    \`git push -u origin <branch-name>\`
    If the push fails due to a pre-push hook, read the error, fix the root cause, amend the commit, and retry. Do NOT use \`--no-verify\`.
 
-5. **Create PR**: Create a pull request using the GitHub CLI:
-   \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${baseBranch ? ` --base ${baseBranch}` : ""}\`
-   Capture the PR URL from the output.
+5. ${buildPrCreateInstruction(platform, prBase)}
 ${trackerStep}
-7. **Write manifest**: Create \`.lisa-manifest.json\` in the **current directory** with JSON:
+7. **Write manifest**: Create ${manifestPath ? `\`${manifestPath}\`` : "`.lisa-manifest.json` in the **current directory**"} with JSON:
    \`\`\`json
    {"branch": "<final English branch name>", "prUrl": "<pull request URL>"}
    \`\`\`
    Do NOT commit this file.
 
-## Rules
-
-- **ALL git commits, branch names, PR titles, and PR descriptions MUST be in English.**
-- The issue description may be in any language — read it for context but write all code artifacts in English.
-- Do NOT install new dependencies unless the issue explicitly requires it.
-- If you get stuck or the issue is unclear, STOP and explain why.
-- One scope only. Do not pick up additional work outside your scope.
-- If the repo has a CLAUDE.md, read it first and follow its conventions.`;
+${buildRulesSection(projectContext?.environment, "scope")}`;
 }

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execa } from "execa";
 
@@ -23,7 +23,8 @@ export function generateBranchName(issueId: string, title: string): string {
 		.substring(0, 40)
 		.replace(/^-|-$/g, "");
 
-	return `feat/${issueId.toLowerCase()}-${slug}`;
+	const safeId = issueId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+	return `feat/${safeId}-${slug}`;
 }
 
 /**
@@ -71,6 +72,18 @@ export async function createWorktree(
 
 	// Remove any orphaned worktree/branch before creating a fresh one
 	await cleanupOrphanedWorktree(repoRoot, branchName);
+
+	// Ensure worktree directory doesn't exist on disk (may be left from a crashed run)
+	if (existsSync(worktreePath)) {
+		await execa("git", ["worktree", "remove", worktreePath, "--force"], {
+			cwd: repoRoot,
+			reject: false,
+		});
+		await execa("git", ["worktree", "prune"], { cwd: repoRoot, reject: false });
+		if (existsSync(worktreePath)) {
+			rmSync(worktreePath, { recursive: true, force: true });
+		}
+	}
 
 	await execa("git", ["fetch", "origin", baseBranch], { cwd: repoRoot });
 	await execa("git", ["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`], {
@@ -236,4 +249,21 @@ export async function detectFeatureBranches(
 	}
 
 	return results;
+}
+
+/**
+ * Checks if there are actual code changes between the base branch and HEAD.
+ * Returns true if there are changes, false if the diff is empty.
+ */
+export async function hasCodeChanges(repoPath: string, baseBranch: string): Promise<boolean> {
+	try {
+		const { stdout } = await execa("git", ["diff", "--stat", `${baseBranch}..HEAD`], {
+			cwd: repoPath,
+			reject: false,
+		});
+		const trimmed = stdout.trim();
+		return trimmed.length > 0;
+	} catch {
+		return false;
+	}
 }

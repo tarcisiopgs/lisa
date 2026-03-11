@@ -2,14 +2,18 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ProjectContext } from "./context.js";
 import {
+	buildContextMdBlock,
+	buildDependencyContext,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
 	detectTestRunner,
+	extractReadmeHeadings,
 } from "./prompt.js";
-import type { Issue, LisaConfig, PlanStep } from "./types/index.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
 	return {
@@ -33,13 +37,12 @@ function makeConfig(overrides?: Partial<LisaConfig>): LisaConfig {
 			in_progress: "In Progress",
 			done: "Done",
 		},
-		github: "cli",
+		platform: "cli",
 		workflow: "worktree",
 		workspace: "/tmp/workspace",
 		base_branch: "main",
 		repos: [],
 		loop: { cooldown: 0, max_sessions: 0 },
-		logs: { dir: "/tmp/logs", format: "text" },
 		...overrides,
 	};
 }
@@ -105,6 +108,61 @@ describe("detectTestRunner", () => {
 	});
 });
 
+describe("extractReadmeHeadings", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("extracts headings from README.md", () => {
+		writeFileSync(
+			join(tmpDir, "README.md"),
+			"# Lisa\n\n## Getting Started\n\nSome text.\n\n### Installation\n\n### Configuration\n\n## Usage\n",
+		);
+		expect(extractReadmeHeadings(tmpDir)).toEqual([
+			"# Lisa",
+			"## Getting Started",
+			"### Installation",
+			"### Configuration",
+			"## Usage",
+		]);
+	});
+
+	it("returns empty array when no README exists", () => {
+		expect(extractReadmeHeadings(tmpDir)).toEqual([]);
+	});
+
+	it("returns empty array when README has no headings", () => {
+		writeFileSync(join(tmpDir, "README.md"), "Just some text without headings.\n");
+		expect(extractReadmeHeadings(tmpDir)).toEqual([]);
+	});
+
+	it("handles all heading levels (h1-h6)", () => {
+		writeFileSync(join(tmpDir, "README.md"), "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n");
+		expect(extractReadmeHeadings(tmpDir)).toEqual([
+			"# H1",
+			"## H2",
+			"### H3",
+			"#### H4",
+			"##### H5",
+			"###### H6",
+		]);
+	});
+
+	it("ignores lines that look like headings but are not", () => {
+		writeFileSync(
+			join(tmpDir, "README.md"),
+			"# Real Heading\n#not a heading\n##also not\nSome #inline hash\n",
+		);
+		expect(extractReadmeHeadings(tmpDir)).toEqual(["# Real Heading"]);
+	});
+});
+
 describe("buildImplementPrompt", () => {
 	describe("worktree mode", () => {
 		it("includes issue details in the prompt", () => {
@@ -156,15 +214,66 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("jest");
 		});
 
-		it("includes README evaluation instructions", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		it("includes README validation instructions when cwd has README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# Project\n## Installation\n## Usage\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
 
-			expect(prompt).toContain("README.md Evaluation");
-			expect(prompt).toContain("New or removed CLI commands or flags");
-			expect(prompt).toContain("New or removed providers or sources");
-			expect(prompt).toContain("Configuration schema changes");
-			expect(prompt).toContain("Do NOT update README.md for");
-			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+			expect(prompt).toContain("README.md Validation");
+			expect(prompt).toContain("# Project");
+			expect(prompt).toContain("## Installation");
+			expect(prompt).toContain("## Usage");
+			expect(prompt).toContain("CLI commands, flags, or usage examples");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("omits README instructions when no cwd provided", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+			expect(prompt).not.toContain("README.md Validation");
+		});
+
+		it("omits README instructions when cwd has no README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-no-readme-"));
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
+			expect(prompt).not.toContain("README.md Validation");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("places README block in Validate step, not Implement step", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# Project\n## Usage\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
+
+			const implementIndex = prompt.indexOf("1. **Implement**");
+			const validateIndex = prompt.indexOf("2. **Validate**");
+			const readmeIndex = prompt.indexOf("README.md Validation");
+			const commitIndex = prompt.indexOf("3. **Commit**");
+
+			expect(readmeIndex).toBeGreaterThan(validateIndex);
+			expect(readmeIndex).toBeLessThan(commitIndex);
+			expect(readmeIndex).toBeGreaterThan(implementIndex);
+			rmSync(tmpDir, { recursive: true, force: true });
 		});
 	});
 
@@ -208,15 +317,67 @@ describe("buildImplementPrompt", () => {
 			expect(prompt).toContain("vitest");
 		});
 
-		it("includes README evaluation instructions", () => {
-			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+		it("includes README validation instructions when cwd has README", () => {
+			const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+			writeFileSync(join(tmpDir, "README.md"), "# App\n## API Reference\n");
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "branch" }),
+				undefined,
+				undefined,
+				undefined,
+				tmpDir,
+			);
 
-			expect(prompt).toContain("README.md Evaluation");
-			expect(prompt).toContain("New or removed CLI commands or flags");
-			expect(prompt).toContain("New or removed providers or sources");
-			expect(prompt).toContain("Configuration schema changes");
-			expect(prompt).toContain("Do NOT update README.md for");
-			expect(prompt).toContain("Internal refactors that don't change documented behavior");
+			expect(prompt).toContain("README.md Validation");
+			expect(prompt).toContain("# App");
+			expect(prompt).toContain("## API Reference");
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("omits README instructions when no cwd provided in branch mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+			expect(prompt).not.toContain("README.md Validation");
+		});
+	});
+
+	describe("manifest path override", () => {
+		it("uses explicit manifestPath in worktree mode when provided", () => {
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "worktree" }),
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"/path/to/worktree/.lisa-manifest.json",
+			);
+			expect(prompt).toContain("/path/to/worktree/.lisa-manifest.json");
+		});
+
+		it("falls back to cache-dir manifest when no manifestPath provided in worktree mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
+			expect(prompt).toContain("manifest.json");
+		});
+
+		it("uses explicit manifestPath in branch mode when provided", () => {
+			const prompt = buildImplementPrompt(
+				makeIssue(),
+				makeConfig({ workflow: "branch" }),
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"/workspace/.lisa-manifest.json",
+			);
+			expect(prompt).toContain("/workspace/.lisa-manifest.json");
+		});
+
+		it("falls back to cache-dir manifest when no manifestPath provided in branch mode", () => {
+			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
+			// Cache-dir path ends in manifest.json (e.g., ~/.cache/lisa/<hash>/manifest.json)
+			expect(prompt).toContain("manifest.json");
 		});
 	});
 });
@@ -240,12 +401,20 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).toContain(".lisa-manifest.json");
 	});
 
-	it("writes manifest to repoPath when provided", () => {
-		const prompt = buildNativeWorktreePrompt(makeIssue(), "/tmp/my-repo");
-		expect(prompt).toContain("/tmp/my-repo/.lisa-manifest.json");
+	it("writes manifest to manifestPath when provided", () => {
+		const prompt = buildNativeWorktreePrompt(
+			makeIssue(),
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"/tmp/cache/manifest.json",
+		);
+		expect(prompt).toContain("/tmp/cache/manifest.json");
 	});
 
-	it("writes manifest to current directory when repoPath not provided", () => {
+	it("writes manifest to current directory when manifestPath not provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
 		expect(prompt).toContain("in the **current directory**");
 	});
@@ -261,9 +430,19 @@ describe("buildNativeWorktreePrompt", () => {
 		expect(prompt).not.toContain("MANDATORY — Unit Tests");
 	});
 
-	it("includes README evaluation instructions", () => {
+	it("includes README validation instructions when repoPath has README", () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-readme-"));
+		writeFileSync(join(tmpDir, "README.md"), "# Native Project\n## Docs\n");
+		const prompt = buildNativeWorktreePrompt(makeIssue(), tmpDir);
+		expect(prompt).toContain("README.md Validation");
+		expect(prompt).toContain("# Native Project");
+		expect(prompt).toContain("## Docs");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("omits README instructions when no repoPath provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).toContain("README.md Evaluation");
+		expect(prompt).not.toContain("README.md Validation");
 	});
 
 	it("includes English-only rules", () => {
@@ -301,9 +480,9 @@ describe("buildPlanningPrompt", () => {
 		expect(prompt).toContain("Do NOT implement anything");
 	});
 
-	it("mentions .lisa-plan.json", () => {
+	it("mentions plan file path", () => {
 		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
-		expect(prompt).toContain(".lisa-plan.json");
+		expect(prompt).toContain("plan.json");
 	});
 
 	it("describes JSON structure with steps", () => {
@@ -312,6 +491,20 @@ describe("buildPlanningPrompt", () => {
 		expect(prompt).toContain('"repoPath"');
 		expect(prompt).toContain('"scope"');
 		expect(prompt).toContain('"order"');
+	});
+
+	it("uses explicit planPath when provided", () => {
+		const prompt = buildPlanningPrompt(
+			makeIssue(),
+			multiRepoConfig,
+			"/workspace/.lisa-plan-INT_100.json",
+		);
+		expect(prompt).toContain("/workspace/.lisa-plan-INT_100.json");
+	});
+
+	it("falls back to cache-dir plan path when no planPath provided", () => {
+		const prompt = buildPlanningPrompt(makeIssue(), multiRepoConfig);
+		expect(prompt).toContain("plan.json");
 	});
 });
 
@@ -410,5 +603,281 @@ describe("prompt delegation — provider does push/PR/tracker", () => {
 		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], undefined, undefined, false);
 		expect(prompt).toContain("Skip tracker update");
 		expect(prompt).not.toContain("lisa issue done");
+	});
+});
+
+function makeProjectContext(overrides?: Partial<ProjectContext>): ProjectContext {
+	return {
+		qualityScripts: [
+			{ name: "lint", command: "biome lint" },
+			{ name: "test", command: "vitest run" },
+		],
+		testPattern: {
+			location: "colocated",
+			style: "describe-it",
+			mocking: ["vi.mock/vi.fn"],
+			example: '// src/utils.test.ts\nimport { describe, it } from "vitest";',
+		},
+		projectTree: "src/\n  index.ts\npackage.json",
+		environment: "unknown",
+		configFiles: [],
+		...overrides,
+	};
+}
+
+describe("project context injection", () => {
+	const ctx = makeProjectContext();
+
+	it("worktree prompt includes project context when provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+		expect(prompt).toContain("`lint`: `biome lint`");
+		expect(prompt).toContain("### Test Patterns");
+		expect(prompt).toContain("### Project Structure");
+	});
+
+	it("worktree prompt omits project context when not provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+		);
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("branch prompt includes project context when provided", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "branch" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+	});
+
+	it("branch prompt omits project context when not provided", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }), "vitest");
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("native worktree prompt includes project context when provided", () => {
+		const prompt = buildNativeWorktreePrompt(
+			makeIssue(),
+			"/tmp/repo",
+			"vitest",
+			"npm",
+			"main",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+		expect(prompt).toContain("### Test Patterns");
+		expect(prompt).toContain("colocated next to source files");
+		expect(prompt).toContain("describe/it blocks");
+	});
+
+	it("native worktree prompt omits project context when not provided", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue());
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("scoped prompt includes project context when provided", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(
+			makeIssue(),
+			step,
+			[],
+			"vitest",
+			"npm",
+			false,
+			"main",
+			ctx,
+		);
+		expect(prompt).toContain("## Project Context");
+		expect(prompt).toContain("### Quality Scripts");
+	});
+
+	it("scoped prompt omits project context when not provided", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
+		expect(prompt).not.toContain("## Project Context");
+	});
+
+	it("project context appears between description and instructions", () => {
+		const prompt = buildImplementPrompt(
+			makeIssue(),
+			makeConfig({ workflow: "worktree" }),
+			"vitest",
+			"npm",
+			ctx,
+		);
+		const descIndex = prompt.indexOf("Implement the feature X as described.");
+		const ctxIndex = prompt.indexOf("## Project Context");
+		const instrIndex = prompt.indexOf("## Instructions");
+		expect(descIndex).toBeLessThan(ctxIndex);
+		expect(ctxIndex).toBeLessThan(instrIndex);
+	});
+});
+
+function makeDependency(overrides?: Partial<DependencyContext>): DependencyContext {
+	return {
+		issueId: "INT-99",
+		branch: "feat/int-99-add-base-feature",
+		prUrl: "https://github.com/org/repo/pull/42",
+		changedFiles: ["src/types/index.ts", "src/utils.ts"],
+		...overrides,
+	};
+}
+
+describe("buildDependencyContext", () => {
+	it("includes dependency issue ID and branch", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("INT-99");
+		expect(ctx).toContain("feat/int-99-add-base-feature");
+	});
+
+	it("includes PR URL", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("https://github.com/org/repo/pull/42");
+	});
+
+	it("lists changed files", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("src/types/index.ts");
+		expect(ctx).toContain("src/utils.ts");
+	});
+
+	it("instructs not to reimplement existing code", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("Do NOT reimplement");
+	});
+
+	it("instructs PR base to be dependency branch", () => {
+		const ctx = buildDependencyContext(makeDependency());
+		expect(ctx).toContain("must target `feat/int-99-add-base-feature` as its base branch");
+	});
+
+	it("handles empty changed files", () => {
+		const ctx = buildDependencyContext(makeDependency({ changedFiles: [] }));
+		expect(ctx).toContain("no files detected");
+	});
+});
+
+describe("buildContextMdBlock", () => {
+	it("returns empty string when content is null", () => {
+		expect(buildContextMdBlock(null)).toBe("");
+	});
+
+	it("returns empty string when content is empty string", () => {
+		expect(buildContextMdBlock("")).toBe("");
+	});
+
+	it("wraps content in a Project Conventions section", () => {
+		const result = buildContextMdBlock("## Stack\n- Use pnpm run generate");
+		expect(result).toContain("## Project Conventions");
+		expect(result).toContain("## Stack\n- Use pnpm run generate");
+	});
+});
+
+describe("dependency context in prompts", () => {
+	const dep = makeDependency();
+
+	it("worktree prompt includes dependency context when issue has dependency", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("INT-99");
+		expect(prompt).toContain("feat/int-99-add-base-feature");
+	});
+
+	it("worktree prompt PR base uses dependency branch", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+		expect(prompt).not.toContain("--base main");
+	});
+
+	it("worktree prompt omits dependency context when no dependency", () => {
+		const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("branch prompt includes dependency context when issue has dependency", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("INT-99");
+	});
+
+	it("branch prompt PR base uses dependency branch", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("branch prompt uses dependency branch for branch creation", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "branch" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		expect(prompt).toContain("feat/int-99-add-base-feature");
+		expect(prompt).toContain("dependency branch");
+	});
+
+	it("native worktree prompt includes dependency context", () => {
+		const issue = makeIssue({ dependency: dep });
+		const prompt = buildNativeWorktreePrompt(issue, "/repo", "vitest", "npm", "main");
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("native worktree prompt omits dependency context when no dependency", () => {
+		const prompt = buildNativeWorktreePrompt(makeIssue(), "/repo", "vitest", "npm", "main");
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("scoped prompt includes dependency context", () => {
+		const issue = makeIssue({ dependency: dep });
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(issue, step, []);
+
+		expect(prompt).toContain("## Dependency Context");
+		expect(prompt).toContain("--base feat/int-99-add-base-feature");
+	});
+
+	it("scoped prompt omits dependency context when no dependency", () => {
+		const step: PlanStep = { repoPath: "/tmp/repo", scope: "add feature", order: 1 };
+		const prompt = buildScopedImplementPrompt(makeIssue(), step, []);
+		expect(prompt).not.toContain("## Dependency Context");
+	});
+
+	it("dependency context appears between description and instructions in worktree prompt", () => {
+		const issue = makeIssue({ dependency: dep });
+		const config = makeConfig({ workflow: "worktree" });
+		const prompt = buildImplementPrompt(issue, config);
+
+		const descIndex = prompt.indexOf("Implement the feature X as described.");
+		const depIndex = prompt.indexOf("## Dependency Context");
+		const instrIndex = prompt.indexOf("## Instructions");
+		expect(descIndex).toBeLessThan(depIndex);
+		expect(depIndex).toBeLessThan(instrIndex);
 	});
 });

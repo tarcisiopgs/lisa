@@ -5,6 +5,18 @@ import { JiraSource } from "./jira.js";
 // helpers
 // ---------------------------------------------------------------------------
 
+interface JiraIssueLink {
+	type: { name: string; inward: string; outward: string };
+	inwardIssue?: {
+		key: string;
+		fields: { status: { name: string; statusCategory: { key: string } } };
+	};
+	outwardIssue?: {
+		key: string;
+		fields: { status: { name: string; statusCategory: { key: string } } };
+	};
+}
+
 function makeIssue(
 	overrides: Partial<{
 		id: string;
@@ -14,6 +26,7 @@ function makeIssue(
 		description: unknown;
 		labels: string[];
 		statusName: string;
+		issuelinks: JiraIssueLink[];
 	}> = {},
 ): JiraIssue {
 	return {
@@ -27,6 +40,7 @@ function makeIssue(
 				overrides.priorityName !== null ? { name: overrides.priorityName ?? "Medium" } : null,
 			status: { name: overrides.statusName ?? "Backlog" },
 			labels: overrides.labels ?? ["lisa"],
+			issuelinks: overrides.issuelinks ?? [],
 		},
 	};
 }
@@ -41,6 +55,7 @@ interface JiraIssue {
 		priority: { name: string } | null;
 		status: { name: string };
 		labels: string[];
+		issuelinks?: JiraIssueLink[];
 	};
 }
 
@@ -249,6 +264,108 @@ describe("JiraSource", () => {
 			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`project = "ENG"`);
 			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`labels = "lisa"`);
 			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`status = "Backlog"`);
+		});
+
+		it("skips blocked issues and returns unblocked one", async () => {
+			const blockedIssue = makeIssue({
+				key: "ENG-1",
+				summary: "Blocked issue",
+				issuelinks: [
+					{
+						type: { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+						inwardIssue: {
+							key: "ENG-99",
+							fields: {
+								status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+							},
+						},
+					},
+				],
+			});
+			const unblockedIssue = makeIssue({ key: "ENG-2", summary: "Unblocked issue" });
+			global.fetch = mockFetchSequence([ok({ issues: [blockedIssue, unblockedIssue], total: 2 })]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const blockedIssue = makeIssue({
+				key: "ENG-1",
+				summary: "Blocked",
+				issuelinks: [
+					{
+						type: { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+						inwardIssue: {
+							key: "ENG-99",
+							fields: {
+								status: { name: "To Do", statusCategory: { key: "new" } },
+							},
+						},
+					},
+				],
+			});
+			global.fetch = mockFetchSequence([ok({ issues: [blockedIssue], total: 1 })]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("ignores blockers with done statusCategory", async () => {
+			const issue = makeIssue({
+				key: "ENG-1",
+				summary: "Issue with done blocker",
+				issuelinks: [
+					{
+						type: { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+						inwardIssue: {
+							key: "ENG-99",
+							fields: {
+								status: { name: "Done", statusCategory: { key: "done" } },
+							},
+						},
+					},
+				],
+			});
+			global.fetch = mockFetchSequence([ok({ issues: [issue], total: 1 })]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Issue with done blocker");
+		});
+
+		it("respects priority among unblocked issues", async () => {
+			const blockedP1 = makeIssue({
+				key: "ENG-1",
+				summary: "P1 blocked",
+				priorityName: "Highest",
+				issuelinks: [
+					{
+						type: { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+						inwardIssue: {
+							key: "ENG-99",
+							fields: {
+								status: { name: "To Do", statusCategory: { key: "new" } },
+							},
+						},
+					},
+				],
+			});
+			const unblockedP3 = makeIssue({
+				key: "ENG-2",
+				summary: "P3 unblocked",
+				priorityName: "Low",
+			});
+			const unblockedP2 = makeIssue({
+				key: "ENG-3",
+				summary: "P2 unblocked",
+				priorityName: "High",
+			});
+			global.fetch = mockFetchSequence([
+				ok({ issues: [blockedP1, unblockedP3, unblockedP2], total: 3 }),
+			]);
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("P2 unblocked");
 		});
 
 		it("uses Basic auth header", async () => {

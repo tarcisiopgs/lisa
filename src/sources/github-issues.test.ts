@@ -1,5 +1,16 @@
+import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubIssuesSource, parseGitHubIssueNumber } from "./github-issues.js";
+import {
+	checkPrMerged,
+	GitHubIssuesSource,
+	parseDependencies,
+	parseGitHubIssueNumber,
+	parseGitHubPrUrl,
+} from "./github-issues.js";
+
+vi.mock("execa", () => ({
+	execa: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -34,6 +45,43 @@ function mockFetch(response: unknown, ok = true, status = 200) {
 		text: async () => JSON.stringify(response),
 	});
 }
+
+// ---------------------------------------------------------------------------
+// parseDependencies
+// ---------------------------------------------------------------------------
+
+describe("parseDependencies", () => {
+	it("returns empty array for null body", () => {
+		expect(parseDependencies(null)).toEqual([]);
+	});
+
+	it("returns empty array for body without dependencies", () => {
+		expect(parseDependencies("Just a regular issue description")).toEqual([]);
+	});
+
+	it("parses 'depends on #N'", () => {
+		expect(parseDependencies("This depends on #42")).toEqual([42]);
+	});
+
+	it("parses 'blocked by #N'", () => {
+		expect(parseDependencies("This is blocked by #10")).toEqual([10]);
+	});
+
+	it("parses multiple dependencies", () => {
+		const body = "depends on #1\nblocked by #2\ndepends on #3";
+		expect(parseDependencies(body)).toEqual([1, 2, 3]);
+	});
+
+	it("is case-insensitive", () => {
+		expect(parseDependencies("Depends On #5")).toEqual([5]);
+		expect(parseDependencies("BLOCKED BY #7")).toEqual([7]);
+	});
+
+	it("deduplicates issue numbers", () => {
+		const body = "depends on #1\nblocked by #1";
+		expect(parseDependencies(body)).toEqual([1]);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // parseGitHubIssueNumber
@@ -158,6 +206,23 @@ describe("GitHubIssuesSource", () => {
 			expect(result?.title).toBe("Older issue");
 		});
 
+		it("passes multiple labels as comma-separated in URL", async () => {
+			let capturedUrl: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				capturedUrl = url;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => [],
+					text: async () => "[]",
+				});
+			});
+
+			await source.fetchNextIssue({ ...baseConfig, label: ["ready", "api"] });
+
+			expect(capturedUrl).toContain("labels=ready,api");
+		});
+
 		it("includes priority label sort URL params", async () => {
 			let capturedUrl: string | undefined;
 			global.fetch = vi.fn().mockImplementation((url: string) => {
@@ -177,9 +242,12 @@ describe("GitHubIssuesSource", () => {
 			expect(capturedUrl).toContain("state=open");
 		});
 
-		it("throws if GITHUB_TOKEN is not set", async () => {
+		it("throws if GITHUB_TOKEN is not set and gh CLI is unavailable", async () => {
 			delete process.env.GITHUB_TOKEN;
-			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow("GITHUB_TOKEN must be set");
+			vi.mocked(execa).mockRejectedValueOnce(new Error("gh: command not found") as never);
+			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow(
+				"GitHub authentication required",
+			);
 		});
 
 		it("throws on API error", async () => {
@@ -209,6 +277,119 @@ describe("GitHubIssuesSource", () => {
 			await expect(source.fetchNextIssue(badConfig)).rejects.toThrow(
 				'Invalid owner/repo format: "invalid-format"',
 			);
+		});
+
+		it("skips issues blocked by open dependencies", async () => {
+			const blockedIssue = makeIssue({
+				number: 1,
+				title: "Blocked issue",
+				body: "depends on #99",
+			});
+			const unblockedIssue = makeIssue({
+				number: 2,
+				title: "Unblocked issue",
+				body: "No dependencies here",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedIssue, unblockedIssue];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Unblocked issue");
+		});
+
+		it("returns null when all issues are blocked", async () => {
+			const blockedIssue = makeIssue({
+				number: 1,
+				title: "Blocked",
+				body: "blocked by #99",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedIssue];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
+		});
+
+		it("does not skip issues when dependency is closed", async () => {
+			const issue = makeIssue({
+				number: 1,
+				title: "Issue with closed dep",
+				body: "depends on #99",
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [issue];
+				else if (url.includes("/issues/99"))
+					data = { number: 99, state: "closed", title: "Done dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("Issue with closed dep");
+		});
+
+		it("respects priority among unblocked issues", async () => {
+			const blockedP1 = makeIssue({
+				number: 1,
+				title: "P1 blocked",
+				body: "blocked by #99",
+				labels: [{ name: "ready" }, { name: "p1" }],
+			});
+			const unblockedP3 = makeIssue({
+				number: 2,
+				title: "P3 unblocked",
+				labels: [{ name: "ready" }, { name: "p3" }],
+			});
+			const unblockedP2 = makeIssue({
+				number: 3,
+				title: "P2 unblocked",
+				labels: [{ name: "ready" }, { name: "p2" }],
+			});
+
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				let data: unknown;
+				if (url.includes("/issues?")) data = [blockedP1, unblockedP3, unblockedP2];
+				else if (url.includes("/issues/99")) data = { number: 99, state: "open", title: "Dep" };
+				else data = [];
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result?.title).toBe("P2 unblocked");
 		});
 	});
 
@@ -460,5 +641,182 @@ describe("GitHubIssuesSource", () => {
 			// Should not throw
 			await expect(source.removeLabel("my-org/my-repo#42", "nonexistent")).resolves.toBeUndefined();
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseGitHubPrUrl
+// ---------------------------------------------------------------------------
+
+describe("parseGitHubPrUrl", () => {
+	it("parses a standard GitHub PR URL", () => {
+		const result = parseGitHubPrUrl("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toEqual({ owner: "my-org", repo: "my-repo", number: "42" });
+	});
+
+	it("returns null for a non-PR URL", () => {
+		expect(parseGitHubPrUrl("https://github.com/my-org/my-repo/issues/42")).toBeNull();
+	});
+
+	it("returns null for a GitLab URL", () => {
+		expect(parseGitHubPrUrl("https://gitlab.com/my-org/my-repo/-/merge_requests/42")).toBeNull();
+	});
+
+	it("returns null for an empty string", () => {
+		expect(parseGitHubPrUrl("")).toBeNull();
+	});
+
+	it("parses PR URL with numeric owner/repo names", () => {
+		const result = parseGitHubPrUrl("https://github.com/org123/repo456/pull/99");
+		expect(result).toEqual({ owner: "org123", repo: "repo456", number: "99" });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkPrMerged (GitHub)
+// ---------------------------------------------------------------------------
+
+describe("checkPrMerged (GitHub)", () => {
+	beforeEach(() => {
+		process.env.GITHUB_TOKEN = "test-token";
+	});
+
+	afterEach(() => {
+		delete process.env.GITHUB_TOKEN;
+		vi.restoreAllMocks();
+	});
+
+	it("returns true when PR is merged", async () => {
+		global.fetch = mockFetch({ merged: true, state: "closed" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(true);
+	});
+
+	it("returns false when PR is open (not merged)", async () => {
+		global.fetch = mockFetch({ merged: false, state: "open" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when PR is closed but not merged", async () => {
+		global.fetch = mockFetch({ merged: false, state: "closed" });
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when URL is not a GitHub PR URL", async () => {
+		const result = await checkPrMerged("https://not-a-github-url.com/foo");
+		expect(result).toBe(false);
+	});
+
+	it("returns false when API call fails", async () => {
+		global.fetch = mockFetch("Unauthorized", false, 401);
+		const result = await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(result).toBe(false);
+	});
+
+	it("calls the correct API endpoint", async () => {
+		let capturedUrl = "";
+		global.fetch = vi.fn().mockImplementation((url: string) => {
+			capturedUrl = url;
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({ merged: true, state: "closed" }),
+				text: async () => "",
+			});
+		});
+		await checkPrMerged("https://github.com/my-org/my-repo/pull/42");
+		expect(capturedUrl).toContain("/repos/my-org/my-repo/pulls/42");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// gh CLI token fallback
+// ---------------------------------------------------------------------------
+
+describe("gh CLI token fallback", () => {
+	let source: GitHubIssuesSource;
+
+	beforeEach(() => {
+		source = new GitHubIssuesSource();
+		delete process.env.GITHUB_TOKEN;
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		delete process.env.GITHUB_TOKEN;
+		vi.restoreAllMocks();
+	});
+
+	it("uses token from gh auth token when GITHUB_TOKEN is not set", async () => {
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "gh-cli-token-abc" } as never);
+
+		let capturedAuthHeader = "";
+		global.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+			capturedAuthHeader = (init?.headers as Record<string, string>)?.Authorization ?? "";
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => [],
+				text: async () => "[]",
+			});
+		});
+
+		await source.fetchNextIssue({
+			team: "my-org/my-repo",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "in-progress",
+			done: "done",
+		});
+
+		expect(vi.mocked(execa)).toHaveBeenCalledWith("gh", ["auth", "token"]);
+		expect(capturedAuthHeader).toBe("Bearer gh-cli-token-abc");
+	});
+
+	it("throws when GITHUB_TOKEN is not set and gh CLI is unavailable", async () => {
+		vi.mocked(execa).mockRejectedValueOnce(new Error("gh: command not found") as never);
+
+		global.fetch = vi.fn();
+
+		await expect(
+			source.fetchNextIssue({
+				team: "my-org/my-repo",
+				project: "",
+				label: "ready",
+				pick_from: "",
+				in_progress: "in-progress",
+				done: "done",
+			}),
+		).rejects.toThrow("GitHub authentication required");
+	});
+
+	it("prefers GITHUB_TOKEN over gh CLI when both are available", async () => {
+		process.env.GITHUB_TOKEN = "env-token-xyz";
+
+		let capturedAuthHeader = "";
+		global.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+			capturedAuthHeader = (init?.headers as Record<string, string>)?.Authorization ?? "";
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => [],
+				text: async () => "[]",
+			});
+		});
+
+		await source.fetchNextIssue({
+			team: "my-org/my-repo",
+			project: "",
+			label: "ready",
+			pick_from: "",
+			in_progress: "in-progress",
+			done: "done",
+		});
+
+		expect(vi.mocked(execa)).not.toHaveBeenCalled();
+		expect(capturedAuthHeader).toBe("Bearer env-token-xyz");
 	});
 });

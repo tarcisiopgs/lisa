@@ -1,0 +1,111 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { notify } from "../output/terminal.js";
+import { kanbanEmitter, registerBellListeners } from "./state.js";
+
+vi.mock("../output/terminal.js", () => ({
+	notify: vi.fn(),
+}));
+
+vi.mock("../sources/github-issues.js", () => ({
+	checkPrMerged: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock("../sources/gitlab-issues.js", () => ({
+	checkPrMerged: vi.fn().mockResolvedValue(false),
+}));
+
+const notifyMock = notify as ReturnType<typeof vi.fn>;
+
+describe("registerBellListeners", () => {
+	afterEach(() => {
+		kanbanEmitter.removeAllListeners();
+		notifyMock.mockClear();
+	});
+
+	it("calls notify(1) when issue:done fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(1);
+		cleanup();
+	});
+
+	it("calls notify(2) when issue:reverted fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(2);
+		cleanup();
+	});
+
+	it("calls notify(1) when work:complete fires and bell is enabled", () => {
+		const cleanup = registerBellListeners(true);
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).toHaveBeenCalledTimes(1);
+		expect(notifyMock).toHaveBeenCalledWith(1);
+		cleanup();
+	});
+
+	it("does not call notify when bell is disabled", () => {
+		const cleanup = registerBellListeners(false);
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).not.toHaveBeenCalled();
+		cleanup();
+	});
+
+	it("cleanup removes all bell listeners", () => {
+		const cleanup = registerBellListeners(true);
+		cleanup();
+		kanbanEmitter.emit("issue:done", "INT-123", ["http://pr.url"]);
+		kanbanEmitter.emit("issue:reverted", "INT-123");
+		kanbanEmitter.emit("work:complete", { total: 1, duration: 100 });
+		expect(notifyMock).not.toHaveBeenCalled();
+	});
+});
+
+describe("watch prompt events", () => {
+	afterEach(() => {
+		kanbanEmitter.removeAllListeners();
+	});
+
+	it("emits work:watch-prompt event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("work:watch-prompt", mockFn);
+		kanbanEmitter.emit("work:watch-prompt");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("emits work:watch-prompt-resolved event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("work:watch-prompt-resolved", mockFn);
+		kanbanEmitter.emit("work:watch-prompt-resolved");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("emits loop:quit event", () => {
+		const mockFn = vi.fn();
+		kanbanEmitter.on("loop:quit", mockFn);
+		kanbanEmitter.emit("loop:quit");
+		expect(mockFn).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("useKanbanState — initialCards deduplication guard", () => {
+	afterEach(() => {
+		kanbanEmitter.removeAllListeners();
+	});
+
+	it("the onQueued guard prevents duplicates for pre-existing card IDs", () => {
+		const seen = new Set<string>();
+		const handler = (issue: { id: string; title: string }) => {
+			if (!seen.has(issue.id)) seen.add(issue.id);
+		};
+		kanbanEmitter.on("issue:queued", handler);
+		kanbanEmitter.emit("issue:queued", { id: "DUP-1", title: "First" });
+		kanbanEmitter.emit("issue:queued", { id: "DUP-1", title: "Duplicate" });
+		kanbanEmitter.off("issue:queued", handler);
+		expect(seen.size).toBe(1);
+	});
+});

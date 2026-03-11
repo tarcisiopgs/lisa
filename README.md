@@ -112,6 +112,9 @@ npm install -g @tarcisiopgs/lisa
 ```bash
 # Required for PR creation (at least one)
 export GITHUB_TOKEN=""    # or have `gh` CLI authenticated
+export GITLAB_TOKEN=""    # platform: gitlab
+export BITBUCKET_TOKEN="" # platform: bitbucket
+export BITBUCKET_USERNAME=""
 
 # Required when source = linear
 export LINEAR_API_KEY=""
@@ -139,9 +142,10 @@ export JIRA_BASE_URL=""        # e.g. https://yourcompany.atlassian.net
 export JIRA_EMAIL=""           # Atlassian account email
 export JIRA_API_TOKEN=""       # Atlassian API token
 
-# Required when source = bitbucket (PR platform)
-export BITBUCKET_TOKEN=""
-export BITBUCKET_USERNAME=""
+# Required when provider = aider (one of)
+export GEMINI_API_KEY=""
+export OPENAI_API_KEY=""
+export ANTHROPIC_API_KEY=""
 ```
 
 ## Commands
@@ -226,6 +230,35 @@ lisa context refresh --repo my-api   # regenerate a single repo's context
 ```
 
 If context generation fails, Lisa logs a warning and continues — it is never a blocker.
+
+## Writing Issues
+
+Issue quality is the single biggest factor in PR quality. Lisa validates issues before accepting them — vague tickets without clear criteria are skipped and labelled `needs-spec`.
+
+Issues must contain acceptance criteria: markdown checklists (`- [ ]`) or keywords like `acceptance criteria`, `expected`, `should`.
+
+### Example
+
+```markdown
+Title: Add rate limiting to /api/users endpoint
+
+Description:
+Implement rate limiting on the `/api/users` endpoint to prevent abuse.
+
+Relevant files:
+- src/routes/users.ts
+- src/middleware/auth.ts
+
+Acceptance criteria:
+- [ ] Requests exceeding 100/min per IP return HTTP 429
+- [ ] Rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining) included in all responses
+- [ ] Rate limit state stored in Redis (use existing connection from src/lib/redis.ts)
+- [ ] Existing tests still pass
+
+Stack: Express, Redis
+```
+
+Including **relevant files**, **technical constraints**, and **stack information** in the description leads to better results.
 
 ## Configuration
 

@@ -1,9 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { getGuardrailsPath } from "../paths.js";
 
-const GUARDRAILS_FILE = ".lisa/guardrails.md";
+const LEGACY_GUARDRAILS_FILE = ".lisa/guardrails.md";
 const MAX_ENTRIES = 20;
 const CONTEXT_LINES = 20;
+
+// Simple mutex for thread-safe guardrails writes. Concurrent async operations
+// that call appendEntry in the same event loop tick are serialized via this chain.
+let writeLock: Promise<void> = Promise.resolve();
 
 export interface GuardrailEntry {
 	issueId: string;
@@ -13,12 +18,30 @@ export interface GuardrailEntry {
 	context: string;
 }
 
-export function guardrailsPath(dir: string): string {
-	return join(dir, GUARDRAILS_FILE);
+export function guardrailsPath(cwd: string): string {
+	return getGuardrailsPath(cwd);
 }
 
-export function readGuardrails(dir: string): string {
-	const path = guardrailsPath(dir);
+/**
+ * Migrates legacy .lisa/guardrails.md to the cache directory if it exists.
+ */
+export function migrateGuardrails(cwd: string): void {
+	const legacyPath = join(cwd, LEGACY_GUARDRAILS_FILE);
+	if (!existsSync(legacyPath)) return;
+
+	const cachePath = getGuardrailsPath(cwd);
+	if (existsSync(cachePath)) return;
+
+	const cacheDir = dirname(cachePath);
+	if (!existsSync(cacheDir)) {
+		mkdirSync(cacheDir, { recursive: true });
+	}
+
+	copyFileSync(legacyPath, cachePath);
+}
+
+export function readGuardrails(cwd: string): string {
+	const path = getGuardrailsPath(cwd);
 	if (!existsSync(path)) return "";
 	try {
 		return readFileSync(path, "utf-8");
@@ -27,8 +50,8 @@ export function readGuardrails(dir: string): string {
 	}
 }
 
-export function buildGuardrailsSection(dir: string): string {
-	const content = readGuardrails(dir);
+export function buildGuardrailsSection(cwd: string): string {
+	const content = readGuardrails(cwd);
 	if (!content.trim()) return "";
 	return `\n## Guardrails — Avoid these known pitfalls\n\n${content}\n`;
 }
@@ -49,6 +72,16 @@ export function extractErrorType(output: string): string {
 }
 
 export function appendEntry(dir: string, entry: GuardrailEntry): void {
+	// Serialize writes: when multiple issues run in parallel, each call
+	// chains on the previous write to prevent read-stale-then-overwrite races.
+	writeLock = writeLock.then(() => appendEntrySync(dir, entry)).catch(() => {});
+}
+
+/**
+ * Synchronous variant for tests and single-threaded callers.
+ * @internal exported for testing only
+ */
+export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
 	const path = guardrailsPath(dir);
 	const guardrailsDir = dirname(path);
 
@@ -66,6 +99,42 @@ export function appendEntry(dir: string, entry: GuardrailEntry): void {
 		const header = extractHeader(existing);
 		const entries = splitEntries(existing);
 		entries.push(newEntryText);
+		const rotated = entries.length > MAX_ENTRIES ? entries.slice(-MAX_ENTRIES) : entries;
+		content = `${header}\n\n${rotated.join("\n\n")}`;
+	}
+
+	writeFileSync(path, content, "utf-8");
+}
+
+/**
+ * Appends a pre-formatted markdown entry (e.g. PR feedback) to the guardrails log.
+ * Serialized via the same mutex as appendEntry.
+ */
+export function appendRawEntry(dir: string, entryText: string): void {
+	writeLock = writeLock.then(() => appendRawEntrySync(dir, entryText)).catch(() => {});
+}
+
+/**
+ * Synchronous variant of appendRawEntry for single-threaded callers (CLI command).
+ * @internal exported for testing only
+ */
+export function appendRawEntrySync(dir: string, entryText: string): void {
+	const path = guardrailsPath(dir);
+	const guardrailsDir = dirname(path);
+
+	if (!existsSync(guardrailsDir)) {
+		mkdirSync(guardrailsDir, { recursive: true });
+	}
+
+	const existing = existsSync(path) ? readFileSync(path, "utf-8") : "";
+
+	let content: string;
+	if (!existing.trim()) {
+		content = `# Guardrails — Lições aprendidas\n\n${entryText}`;
+	} else {
+		const header = extractHeader(existing);
+		const entries = splitEntries(existing);
+		entries.push(entryText);
 		const rotated = entries.length > MAX_ENTRIES ? entries.slice(-MAX_ENTRIES) : entries;
 		content = `${header}\n\n${rotated.join("\n\n")}`;
 	}

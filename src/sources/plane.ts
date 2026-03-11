@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const DEFAULT_BASE_URL = "https://api.plane.so";
@@ -83,7 +84,7 @@ interface PlaneIssue {
 	description_stripped: string | null;
 	priority: string;
 	state: string;
-	label_ids: string[];
+	labels: string[];
 	sequence_id: number;
 	project: string;
 }
@@ -97,6 +98,13 @@ interface PlaneProject {
 interface PlaneComment {
 	id: string;
 	comment_html: string;
+}
+
+interface PlaneRelation {
+	id: string;
+	relation_type: string;
+	related_issue: string;
+	issue: string;
 }
 
 // Handles both paginated ({ results: T[] }) and plain array responses
@@ -209,17 +217,77 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.team;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelId = await resolveLabelId(workspaceSlug, projectId, config.label);
-
-		const data = await planeGet<PlanePage<PlaneIssue>>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
 
-		const matching = data.results.filter((i) => i.label_ids.includes(labelId));
+		const data = await planeGet<PlanePage<PlaneIssue>>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
+		);
+
+		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
+		const matching = data.results
+			.filter((i) => i.state === stateId)
+			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)));
 		if (matching.length === 0) return null;
 
+		// Fetch all states to check if blocking issues are completed
+		const allStates = await fetchAll<PlaneState>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/states/`,
+		);
+		const doneGroups = new Set(["completed", "cancelled"]);
+		const doneStateIds = new Set(allStates.filter((s) => doneGroups.has(s.group)).map((s) => s.id));
+
+		// Check blocking relations for each issue
+		const unblocked: PlaneIssue[] = [];
+		const blocked: { id: string; name: string; blockers: string[] }[] = [];
+
+		for (const issue of matching) {
+			const relations = await fetchAll<PlaneRelation>(
+				`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${issue.id}/relations/`,
+			);
+
+			// "blocked_by" means this issue is blocked by the related_issue
+			const blockerIds = relations
+				.filter((r) => r.relation_type === "blocked_by")
+				.map((r) => r.related_issue);
+
+			// Check if blockers are still active (not in a done state)
+			const activeBlockers: string[] = [];
+			for (const blockerId of blockerIds) {
+				try {
+					const blocker = await planeGet<PlaneIssue>(
+						`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${blockerId}/`,
+					);
+					if (!doneStateIds.has(blocker.state)) {
+						activeBlockers.push(blockerId);
+					}
+				} catch {
+					// If we can't fetch the blocker, assume it's still active
+					activeBlockers.push(blockerId);
+				}
+			}
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ id: issue.id, name: issue.name, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(`  ${entry.name} — blocked by: ${entry.blockers.join(", ")}`);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority: urgent=1 < high=2 < medium=3 < low=4 < none=5
-		const sorted = [...matching].sort(
+		const sorted = [...unblocked].sort(
 			(a, b) => priorityRank(a.priority) - priorityRank(b.priority),
 		);
 
@@ -239,7 +307,7 @@ export class PlaneSource implements Source {
 		try {
 			const { workspaceSlug, projectId, issueId } = parseIssueId(id);
 			const issue = await planeGet<PlaneIssue>(
-				`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issueId}/`,
+				`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${issueId}/`,
 			);
 			const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${issue.id}`;
 			return {
@@ -257,7 +325,7 @@ export class PlaneSource implements Source {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 		const stateId = await resolveStateId(workspaceSlug, projectId, stateName);
 		await planePatch<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 			{ state: stateId },
 		);
 	}
@@ -265,7 +333,7 @@ export class PlaneSource implements Source {
 	async attachPullRequest(issueId: string, prUrl: string): Promise<void> {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 		await planePost<PlaneComment>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/comments/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/comments/`,
 			{ comment_html: `<p>Pull request: <a href="${prUrl}">${prUrl}</a></p>` },
 		);
 	}
@@ -281,14 +349,19 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.team;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelId = await resolveLabelId(workspaceSlug, projectId, config.label);
-
-		const data = await planeGet<PlanePage<PlaneIssue>>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/?state=${stateId}&per_page=100`,
+		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
 
+		const data = await planeGet<PlanePage<PlaneIssue>>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
+		);
+
+		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
 		return data.results
-			.filter((i) => i.label_ids.includes(labelId))
+			.filter((i) => i.state === stateId)
+			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)))
 			.map((i) => {
 				const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${i.id}`;
 				return {
@@ -304,18 +377,18 @@ export class PlaneSource implements Source {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 
 		const issue = await planeGet<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 		);
 
 		const labels = await fetchLabels(workspaceSlug, projectId);
 		const labelObj = labels.find((l) => l.name.toLowerCase() === labelName.toLowerCase());
 
-		if (!labelObj || !issue.label_ids.includes(labelObj.id)) return;
+		if (!labelObj || !issue.labels.includes(labelObj.id)) return;
 
-		const updatedLabelIds = issue.label_ids.filter((lid) => lid !== labelObj.id);
+		const updatedLabels = issue.labels.filter((lid) => lid !== labelObj.id);
 		await planePatch<PlaneIssue>(
-			`/workspaces/${workspaceSlug}/projects/${projectId}/issues/${planeIssueId}/`,
-			{ label_ids: updatedLabelIds },
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
+			{ labels: updatedLabels },
 		);
 	}
 }

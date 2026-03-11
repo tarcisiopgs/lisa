@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { createProvider, isCompleteProviderExhaustion, isEligibleForFallback } from "./index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ClaudeProvider } from "./claude.js";
+import {
+	createProvider,
+	isCompleteProviderExhaustion,
+	isEligibleForFallback,
+	runWithFallback,
+} from "./index.js";
 
 describe("createProvider", () => {
 	it("creates a claude provider", () => {
@@ -101,6 +107,7 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("ENOTFOUND")).toBe(true);
 		expect(isEligibleForFallback("connection timed out")).toBe(true);
 		expect(isEligibleForFallback("network error occurred")).toBe(true);
+		expect(isEligibleForFallback("TypeError: fetch failed sending request")).toBe(true);
 	});
 
 	it("returns true for model not found errors", () => {
@@ -112,6 +119,14 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("claude is not installed")).toBe(true);
 		expect(isEligibleForFallback("not in PATH")).toBe(true);
 		expect(isEligibleForFallback("command not found")).toBe(true);
+	});
+
+	it("returns true for lisa-timeout errors", () => {
+		expect(
+			isEligibleForFallback(
+				"[lisa-timeout] Provider killed: exceeded session_timeout. Eligible for fallback.",
+			),
+		).toBe(true);
 	});
 
 	it("returns true for cursor free-plan errors", () => {
@@ -130,6 +145,19 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("TypeError: Cannot read properties")).toBe(false);
 		expect(isEligibleForFallback("Implementation complete")).toBe(false);
 		expect(isEligibleForFallback("Build failed with errors")).toBe(false);
+	});
+
+	it("does not false-positive on setTimeout/clearTimeout identifiers (U-06)", () => {
+		expect(isEligibleForFallback("const timer = setTimeout(() => {}, 1000)")).toBe(false);
+		expect(isEligibleForFallback("clearTimeout(handle)")).toBe(false);
+		expect(isEligibleForFallback("CONNECT_TIMEOUT_MS = 30000")).toBe(false);
+	});
+
+	it("still matches legitimate timeout errors (U-06)", () => {
+		expect(isEligibleForFallback("Error: timeout")).toBe(true);
+		expect(isEligibleForFallback("Request timeout after 30s")).toBe(true);
+		expect(isEligibleForFallback("connection timed out")).toBe(true);
+		expect(isEligibleForFallback("Timeout: request took too long")).toBe(true);
 	});
 });
 
@@ -196,5 +224,64 @@ describe("isCompleteProviderExhaustion", () => {
 				{ provider: "claude", success: false, error: "Non-eligible error", duration: 5 },
 			]),
 		).toBe(false);
+	});
+});
+
+describe("runWithFallback — shouldAbort", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("stops the fallback chain when shouldAbort returns true", async () => {
+		// Use models that won't actually be available — the key test is that it
+		// skips all of them without even checking availability.
+		const result = await runWithFallback(
+			[
+				{ provider: "claude", model: "model-a" },
+				{ provider: "claude", model: "model-b" },
+			],
+			"test prompt",
+			{
+				logFile: "/dev/null",
+				cwd: "/tmp",
+				shouldAbort: () => true,
+			},
+		);
+
+		// When shouldAbort is true from the start, no models should be attempted
+		expect(result.success).toBe(false);
+		expect(result.attempts).toHaveLength(0);
+	});
+
+	it("does not short-circuit when shouldAbort returns false", async () => {
+		vi.spyOn(ClaudeProvider.prototype, "isAvailable").mockResolvedValue(true);
+		vi.spyOn(ClaudeProvider.prototype, "run").mockResolvedValue({
+			success: false,
+			output: "rate limit exceeded",
+			duration: 10,
+		});
+
+		let aborted = false;
+		const result = await runWithFallback(
+			[
+				{ provider: "claude", model: "model-a" },
+				{ provider: "claude", model: "model-b" },
+			],
+			"test prompt",
+			{
+				logFile: "/dev/null",
+				cwd: "/tmp",
+				shouldAbort: () => {
+					// Abort after the first model is attempted
+					if (aborted) return true;
+					aborted = true;
+					return false;
+				},
+			},
+		);
+
+		// First model should be attempted, second should be aborted
+		expect(result.success).toBe(false);
+		expect(result.attempts.length).toBe(1);
 	});
 });

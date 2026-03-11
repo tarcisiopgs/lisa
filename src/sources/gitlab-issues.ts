@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 
 const DEFAULT_BASE_URL = "https://gitlab.com";
@@ -58,6 +59,41 @@ interface GitLabIssue {
 	web_url: string;
 	labels: string[];
 	created_at: string;
+	state: string;
+}
+
+interface GitLabMr {
+	state: string;
+}
+
+export function parseGitLabMrUrl(url: string): { project: string; iid: string } | null {
+	const match = url.match(/gitlab(?:\.com|[^/]*)\/(.+?)\/-\/merge_requests\/(\d+)/);
+	if (match?.[1] && match?.[2]) {
+		return { project: match[1], iid: match[2] };
+	}
+	return null;
+}
+
+export async function checkPrMerged(prUrl: string): Promise<boolean> {
+	const parsed = parseGitLabMrUrl(prUrl);
+	if (!parsed) return false;
+	try {
+		const encodedProject = parseGitLabProject(parsed.project);
+		const mr = await gitlabGet<GitLabMr>(
+			`/projects/${encodedProject}/merge_requests/${parsed.iid}`,
+		);
+		return mr.state === "merged";
+	} catch {
+		return false;
+	}
+}
+
+// GitLab Issue Links API returns the linked issue's fields directly,
+// with link_type appended. There are no nested source/target objects.
+interface GitLabIssueLink {
+	iid: number;
+	state: string;
+	link_type: string;
 }
 
 function priorityRank(labels: string[]): number {
@@ -87,14 +123,61 @@ export class GitLabIssuesSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const project = parseGitLabProject(config.team);
-		const label = encodeURIComponent(config.label);
+		// GitLab valid states: opened, closed, all. If pick_from is a non-empty, non-standard-state
+		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
+		const validStates = ["opened", "closed", "all"];
+		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
+		const filterLabels = isOrphanDetection
+			? [config.pick_from]
+			: Array.isArray(config.label)
+				? config.label
+				: [config.label];
+		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);
 		if (issues.length === 0) return null;
 
+		// Check blocking relations for each issue
+		const unblocked: GitLabIssue[] = [];
+		const blocked: { iid: number; blockers: number[] }[] = [];
+
+		for (const issue of issues) {
+			const links = await gitlabGet<GitLabIssueLink[]>(
+				`/projects/${project}/issues/${issue.iid}/links`,
+			);
+
+			const activeBlockers = links
+				.filter((link) => {
+					// "is_blocked_by": the linked issue blocks this issue
+					if (link.link_type === "is_blocked_by") {
+						return link.state !== "closed";
+					}
+					return false;
+				})
+				.map((link) => link.iid);
+
+			if (activeBlockers.length === 0) {
+				unblocked.push(issue);
+			} else {
+				blocked.push({ iid: issue.iid, blockers: activeBlockers });
+			}
+		}
+
+		if (unblocked.length === 0) {
+			if (blocked.length > 0) {
+				logger.warn("No unblocked issues found. Blocked issues:");
+				for (const entry of blocked) {
+					logger.warn(
+						`  #${entry.iid} — blocked by: ${entry.blockers.map((b) => `#${b}`).join(", ")}`,
+					);
+				}
+			}
+			return null;
+		}
+
 		// Sort by priority labels (p1/p2/p3) first, then by created_at ascending
-		const sorted = [...issues].sort((a, b) => {
+		const sorted = [...unblocked].sort((a, b) => {
 			const pa = priorityRank(a.labels);
 			const pb = priorityRank(b.labels);
 			if (pa !== pb) return pa - pb;
@@ -129,13 +212,38 @@ export class GitLabIssuesSource implements Source {
 		}
 	}
 
-	async updateStatus(issueId: string, labelToAdd: string): Promise<void> {
+	async updateStatus(issueId: string, labelToAdd: string, config?: SourceConfig): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
 		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
-		const labels = [...new Set([...issue.labels, labelToAdd])];
 
+		if (config && config.in_progress !== config.pick_from) {
+			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const isMovingToInProgress = labelToAdd === config.in_progress;
+
+			if (isMovingToInProgress) {
+				// Add in_progress label and remove filter labels (prevent re-picking)
+				const updated = [...new Set([...issue.labels, labelToAdd])].filter(
+					(l) => !filterLabels.includes(l),
+				);
+				await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+					labels: updated.join(","),
+				});
+				return;
+			}
+
+			// Reverting to pick_from: add back filter labels and remove in_progress label
+			const updated = [...new Set([...issue.labels, ...filterLabels])].filter(
+				(l) => l !== config.in_progress,
+			);
+			await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+				labels: updated.join(","),
+			});
+			return;
+		}
+
+		const labels = [...new Set([...issue.labels, labelToAdd])];
 		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, { labels: labels.join(",") });
 	}
 
@@ -148,14 +256,24 @@ export class GitLabIssuesSource implements Source {
 		});
 	}
 
-	async completeIssue(issueId: string, _status: string, labelToRemove?: string): Promise<void> {
+	async completeIssue(
+		issueId: string,
+		_status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
 		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
-		const labels = labelToRemove
+		let labels = labelToRemove
 			? issue.labels.filter((l) => l.toLowerCase() !== labelToRemove.toLowerCase())
 			: issue.labels;
+
+		// Also remove in_progress label if config-aware and in_progress differs from pick_from
+		if (config && config.in_progress !== config.pick_from) {
+			labels = labels.filter((l) => l !== config.in_progress);
+		}
 
 		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
 			state_event: "close",
@@ -165,7 +283,8 @@ export class GitLabIssuesSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const project = parseGitLabProject(config.team);
-		const label = encodeURIComponent(config.label);
+		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
+		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);

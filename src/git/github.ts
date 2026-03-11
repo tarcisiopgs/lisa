@@ -1,5 +1,6 @@
 import { execa } from "execa";
-import type { GitHubMethod } from "../types/index.js";
+import type { PRPlatform } from "../types/index.js";
+import { PROVIDER_ATTRIBUTION_RE, stripProviderAttribution } from "./pr-body.js";
 
 const API_URL = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -35,7 +36,7 @@ export interface PullRequestResult {
 
 export async function createPullRequest(
 	opts: PullRequestOptions,
-	method: GitHubMethod = "cli",
+	method: PRPlatform = "cli",
 ): Promise<PullRequestResult> {
 	if (method === "cli" && (await isGhCliAvailable())) {
 		return createPullRequestWithGhCli(opts);
@@ -88,6 +89,74 @@ async function createPullRequestWithGhCli(opts: PullRequestOptions): Promise<Pul
 	const number = prNumberMatch ? Number.parseInt(prNumberMatch[1] ?? "0", 10) : 0;
 
 	return { number, html_url: url };
+}
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+	claude: "Claude Code",
+	gemini: "Gemini CLI",
+	opencode: "OpenCode",
+	copilot: "GitHub Copilot CLI",
+	cursor: "Cursor Agent",
+	goose: "Goose",
+	aider: "Aider",
+	codex: "OpenAI Codex",
+};
+
+function formatProviderName(providerUsed: string): string {
+	const providerKey = providerUsed.split("/")[0] ?? providerUsed;
+	return PROVIDER_DISPLAY_NAMES[providerKey] ?? providerKey;
+}
+
+async function deleteProviderComments(prUrl: string): Promise<void> {
+	try {
+		const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+		if (!match) return;
+
+		const [, owner, repo, prNumber] = match;
+		const { stdout } = await execa("gh", [
+			"api",
+			"--paginate",
+			"--jq",
+			".[]",
+			`/repos/${owner}/${repo}/issues/${prNumber}/comments`,
+		]);
+		const comments = stdout
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line)) as Array<{ id: number; body: string }>;
+
+		for (const comment of comments) {
+			if (PROVIDER_ATTRIBUTION_RE.test(comment.body)) {
+				try {
+					await execa("gh", [
+						"api",
+						"--method",
+						"DELETE",
+						`/repos/${owner}/${repo}/issues/comments/${comment.id}`,
+					]);
+				} catch {
+					// Best-effort: ignore individual deletion failures
+				}
+			}
+		}
+	} catch {
+		// Non-fatal — comment deletion is best-effort
+	}
+}
+
+export async function appendPrAttribution(prUrl: string, providerUsed: string): Promise<void> {
+	await deleteProviderComments(prUrl);
+	try {
+		const { stdout: bodyJson } = await execa("gh", ["pr", "view", prUrl, "--json", "body"]);
+		const { body } = JSON.parse(bodyJson) as { body: string };
+		const providerName = formatProviderName(providerUsed);
+		const attribution = `\n\n---\n🤖 Resolved by [lisa](https://github.com/tarcisiopgs/lisa) using **${providerName}**`;
+		const newBody = stripProviderAttribution(body ?? "") + attribution;
+		await execa("gh", ["pr", "edit", prUrl, "--body", newBody]);
+	} catch {
+		// Non-fatal — PR body update is best-effort
+	}
 }
 
 export interface RepoInfo {

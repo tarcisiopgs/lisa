@@ -1,4 +1,4 @@
-export type GitHubMethod = "cli" | "token";
+export type PRPlatform = "cli" | "token" | "gitlab" | "bitbucket";
 export type SourceName =
 	| "linear"
 	| "trello"
@@ -14,36 +14,22 @@ export type ProviderName =
 	| "copilot"
 	| "cursor"
 	| "goose"
-	| "aider";
-export type LogFormat = "text" | "json";
+	| "aider"
+	| "codex";
 export type WorkflowMode = "worktree" | "branch";
-
-export interface ResourceConfig {
-	name: string;
-	check_port: number;
-	up: string;
-	down: string;
-	startup_timeout: number;
-	cwd?: string;
-}
-
-export interface LifecycleConfig {
-	resources: ResourceConfig[];
-	setup: string[];
-}
 
 export interface RepoConfig {
 	name: string;
 	path: string;
 	match: string;
 	base_branch: string;
-	lifecycle?: LifecycleConfig;
 }
 
 export interface SourceConfig {
 	team: string;
 	project: string;
-	label: string;
+	label: string | string[];
+	remove_label?: string;
 	pick_from: string;
 	in_progress: string;
 	done: string;
@@ -52,6 +38,8 @@ export interface SourceConfig {
 export interface LoopConfig {
 	cooldown: number;
 	max_sessions: number;
+	concurrency?: number;
+	session_timeout?: number; // seconds per provider run, 0 = disabled (default)
 }
 
 export interface OverseerConfig {
@@ -60,24 +48,41 @@ export interface OverseerConfig {
 	stuck_threshold: number;
 }
 
-export interface LogsConfig {
-	dir: string;
-	format: LogFormat;
+export interface ValidationConfig {
+	require_acceptance_criteria?: boolean;
+}
+
+export type LifecycleMode = "auto" | "skip" | "validate-only";
+
+export interface LifecycleConfig {
+	mode?: LifecycleMode; // default: "auto"
+	timeout?: number; // seconds per resource, default: 30
 }
 
 export interface LisaConfig {
 	provider: ProviderName;
-	models?: string[];
+	provider_options?: Partial<
+		Record<ProviderName, { model?: string; models?: string[]; goose_provider?: string }>
+	>;
+	bell?: boolean;
 	source: SourceName;
 	source_config: SourceConfig;
-	github: GitHubMethod;
+	platform: PRPlatform;
 	workflow: WorkflowMode;
 	workspace: string;
 	base_branch: string;
 	repos: RepoConfig[];
 	loop: LoopConfig;
-	logs: LogsConfig;
 	overseer?: OverseerConfig;
+	validation?: ValidationConfig;
+	lifecycle?: LifecycleConfig;
+}
+
+export interface DependencyContext {
+	issueId: string;
+	branch: string;
+	prUrl: string;
+	changedFiles: string[];
 }
 
 export interface Issue {
@@ -86,6 +91,9 @@ export interface Issue {
 	description: string;
 	url: string;
 	repo?: string;
+	dependency?: DependencyContext;
+	completedBlockerIds?: string[];
+	specWarning?: string;
 }
 
 export interface ModelSpec {
@@ -99,9 +107,12 @@ export interface RunOptions {
 	guardrailsDir?: string;
 	issueId?: string;
 	overseer?: OverseerConfig;
+	sessionTimeout?: number; // seconds per provider run, 0 = disabled
 	useNativeWorktree?: boolean;
 	model?: string; // model name to pass to the provider CLI
+	env?: Record<string, string>; // additional env vars to inject into the provider process
 	onProcess?: (pid: number) => void; // called when the provider spawns its child process
+	shouldAbort?: () => boolean; // checked between fallback attempts to stop the chain early
 }
 
 export interface RunResult {
@@ -148,9 +159,15 @@ export interface Source {
 	name: SourceName;
 	fetchNextIssue(config: SourceConfig): Promise<Issue | null>;
 	fetchIssueById(id: string): Promise<Issue | null>;
-	updateStatus(issueId: string, status: string): Promise<void>;
+	updateStatus(issueId: string, status: string, config?: SourceConfig): Promise<void>;
 	removeLabel(issueId: string, label: string): Promise<void>;
+	addLabel?(issueId: string, label: string): Promise<void>;
 	attachPullRequest(issueId: string, prUrl: string): Promise<void>;
-	completeIssue(issueId: string, status: string, labelToRemove?: string): Promise<void>;
+	completeIssue(
+		issueId: string,
+		status: string,
+		labelToRemove?: string,
+		config?: SourceConfig,
+	): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
 }

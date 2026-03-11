@@ -1,37 +1,84 @@
 import { Box, Text } from "ink";
 import { Card } from "./card.js";
 import type { KanbanCard } from "./state.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 interface ColumnProps {
 	label: string;
 	cards: KanbanCard[];
 	isFocused?: boolean;
 	activeCardIndex?: number;
+	paused?: boolean;
 }
 
-// Each card: border (2) + content rows (3) + marginBottom (0) = 5 rows total
-const CARD_HEIGHT = 5;
-const HEADER_ROWS = 4; // column header band + spacing
+// Each card: border (2) + ID row (1) + title line 1 (1) + title line 2 (1) + output line (1) + status row (1) = 7 rows total
+const CARD_HEIGHT = 7;
+// Overhead: outer kanban border (2) + sidebar padding + general header band (8 total).
+// Previously underestimated at 4, which caused visibleCount to exceed the real terminal space,
+// leaving an empty gap at the bottom of each column.
+const HEADER_ROWS = 8; // adjusted to reflect real terminal overhead
 
-export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }: ColumnProps) {
-	const terminalRows = process.stdout.rows ?? 24;
-	const visibleCount = Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
+// Layout constants for dynamic card width calculation.
+// Sidebar has a fixed width of 28 cols (see sidebar.tsx: width={28}).
+const SIDEBAR_WIDTH = 28;
+// Per-column overhead: border (2) + paddingX (2).
+const COLUMN_OVERHEAD = 4;
+// Per-card overhead: card border (2) + selection bar (1) + card paddingX (2).
+const CARD_OVERHEAD = 5;
+// Minimum card content width regardless of terminal size.
+const MIN_CARD_WIDTH = 1;
+
+export function calcVisibleCount(terminalRows: number): number {
+	return Math.max(1, Math.floor((terminalRows - HEADER_ROWS) / CARD_HEIGHT));
+}
+
+/**
+ * Calculate the available content width for card titles based on the terminal column count.
+ * Each of the 3 kanban columns gets (terminalCols - SIDEBAR_WIDTH) / 3 total width.
+ * Card content width = column width - COLUMN_OVERHEAD - CARD_OVERHEAD, clamped to MIN_CARD_WIDTH.
+ */
+export function calcCardWidth(terminalCols: number): number {
+	return Math.max(
+		MIN_CARD_WIDTH,
+		Math.floor((terminalCols - SIDEBAR_WIDTH) / 3) - COLUMN_OVERHEAD - CARD_OVERHEAD,
+	);
+}
+
+export function Column({
+	label,
+	cards,
+	isFocused = false,
+	activeCardIndex = 0,
+	paused = false,
+}: ColumnProps) {
+	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
+	const visibleCount = calcVisibleCount(terminalRows);
+	const cardWidth = calcCardWidth(terminalCols);
+
+	// Sort merged cards to the bottom (only affects done column in practice)
+	const sortedCards = [...cards].sort((a, b) => {
+		if (a.merged && !b.merged) return 1;
+		if (!a.merged && b.merged) return -1;
+		return 0;
+	});
 
 	let scrollOffset = 0;
 	if (activeCardIndex >= visibleCount) {
 		scrollOffset = activeCardIndex - visibleCount + 1;
 	}
-	scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, cards.length - visibleCount)));
+	scrollOffset = Math.max(
+		0,
+		Math.min(scrollOffset, Math.max(0, sortedCards.length - visibleCount)),
+	);
 
-	const visibleCards = cards.slice(scrollOffset, scrollOffset + visibleCount);
+	const visibleCards = sortedCards.slice(scrollOffset, scrollOffset + visibleCount);
 	const hiddenAbove = scrollOffset;
-	const hiddenBelow = Math.max(0, cards.length - scrollOffset - visibleCount);
+	const hiddenBelow = Math.max(0, sortedCards.length - scrollOffset - visibleCount);
 
 	const borderColor = isFocused ? "yellow" : "gray";
 	const headerColor = isFocused ? "yellow" : "white";
 
 	// Status summary counts for the header
-	const runningCount = cards.filter((c) => c.column === "in_progress").length;
 	const errorCount = cards.filter((c) => c.hasError).length;
 
 	return (
@@ -58,8 +105,7 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 					</Text>
 				</Box>
 				<Box flexDirection="row">
-					{errorCount > 0 && <Text color="red" bold>{`!${errorCount} `}</Text>}
-					{runningCount > 0 && <Text color="yellow">{`~${runningCount} `}</Text>}
+					{errorCount > 0 && <Text color="red" bold>{`✖${errorCount} `}</Text>}
 					<Text color={headerColor}>{`[${cards.length}]`}</Text>
 				</Box>
 			</Box>
@@ -67,7 +113,7 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 			{/* Scroll hint above */}
 			{hiddenAbove > 0 && (
 				<Box justifyContent="center">
-					<Text color="yellow" dimColor>{`↑ ${hiddenAbove} more`}</Text>
+					<Text color="yellow" dimColor>{`↑ ${hiddenAbove}`}</Text>
 				</Box>
 			)}
 
@@ -75,7 +121,15 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 			{visibleCards.map((card, idx) => {
 				const absoluteIdx = scrollOffset + idx;
 				const isSelected = isFocused && absoluteIdx === activeCardIndex;
-				return <Card key={card.id} card={card} isSelected={isSelected} />;
+				return (
+					<Card
+						key={card.id}
+						card={card}
+						isSelected={isSelected}
+						paused={paused}
+						cardWidth={cardWidth}
+					/>
+				);
 			})}
 
 			{/* Empty state */}
@@ -90,7 +144,7 @@ export function Column({ label, cards, isFocused = false, activeCardIndex = 0 }:
 			{/* Scroll hint below */}
 			{hiddenBelow > 0 && (
 				<Box justifyContent="center">
-					<Text color="yellow" dimColor>{`↓ ${hiddenBelow} more`}</Text>
+					<Text color="yellow" dimColor>{`↓ ${hiddenBelow}`}</Text>
 				</Box>
 			)}
 		</Box>
