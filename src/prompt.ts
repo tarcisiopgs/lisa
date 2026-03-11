@@ -232,7 +232,7 @@ Do NOT use interactive skills, ask clarifying questions, or wait for user input.
 
 You are already inside the correct repository worktree on the correct branch.
 Do NOT create a new branch — just work on the current one.
-
+${cwd ? `\n**Working directory:** \`${cwd}\`\nAll file paths are relative to this directory. Use this as the base for any absolute paths.\n` : ""}
 ## Issue
 
 - **ID:** ${issue.id}
@@ -410,7 +410,7 @@ Do NOT use interactive skills, ask clarifying questions, or wait for user input.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
-
+${repoPath ? `\n**Working directory:** \`${repoPath}\`\nAll file paths are relative to this directory. Use this as the base for any absolute paths.\n` : ""}
 ## Issue
 
 - **ID:** ${issue.id}
@@ -572,7 +572,7 @@ export function buildScopedImplementPrompt(
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
-
+${cwd ? `\n**Working directory:** \`${cwd}\`\nAll file paths are relative to this directory. Use this as the base for any absolute paths.\n` : ""}
 ## Issue
 
 - **ID:** ${issue.id}

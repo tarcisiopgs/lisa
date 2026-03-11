@@ -47,7 +47,7 @@ export class CopilotProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`${`$ copilot --allow-all ${modelFlag || "(default model)"} -p\n`.trim()}\n`,
+					`$ copilot --allow-all ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

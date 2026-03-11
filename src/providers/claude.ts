@@ -46,7 +46,11 @@ export class ClaudeProvider implements Provider {
 			const command = `claude ${flags.join(" ")} "$(cat '${promptFile}')"`;
 			logger.log(`[claude] Running: claude ${flags.join(" ")}`.trim());
 			if (opts.issueId) {
-				kanbanEmitter.emit("issue:output", opts.issueId, `$ claude ${flags.join(" ")}\n`);
+				kanbanEmitter.emit(
+					"issue:output",
+					opts.issueId,
+					`$ claude ${flags.join(" ")} <prompt: ${prompt.length} chars>\n`,
+				);
 			}
 			const spawnEnv = { ...process.env, ...opts.env, CLAUDECODE: undefined };
 			// When Lisa itself runs inside an active Claude Code session (CLAUDECODE is set in the

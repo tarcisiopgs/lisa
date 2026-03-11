@@ -43,7 +43,7 @@ export class OpenCodeProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`${`$ opencode run ${modelFlag || "(default model)"}\n`.trim()}\n`,
+					`$ opencode run ${modelFlag || "(default model)"} <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

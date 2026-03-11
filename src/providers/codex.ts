@@ -45,8 +45,7 @@ export class CodexProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`$ codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag || "(default model)"}\n`.trim() +
-						"\n",
+					`$ codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral ${modelFlag || "(default model)"} <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 

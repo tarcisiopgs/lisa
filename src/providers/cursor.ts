@@ -65,8 +65,7 @@ export class CursorProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`$ ${bin} -p --output-format text --force ${modelFlag || "(default model)"}\n`.trim() +
-						"\n",
+					`$ ${bin} -p --output-format text --force ${modelFlag || "(default model)"} <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

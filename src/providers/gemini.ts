@@ -46,7 +46,7 @@ export class GeminiProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`${`$ gemini --yolo ${modelFlag || "(default model)"} -p\n`.trim()}\n`,
+					`$ gemini --yolo ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

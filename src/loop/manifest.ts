@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
+import { dirname } from "node:path";
 import { warn } from "../output/logger.js";
 import { getManifestPath } from "../paths.js";
 import type { ExecutionPlan } from "../types/index.js";
@@ -55,4 +56,19 @@ export function readPlanFile(filePath: string): ExecutionPlan | null {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Remove a plan file and clean up the parent directory if it becomes empty.
+ */
+export function cleanupPlanFile(filePath: string): void {
+	try {
+		unlinkSync(filePath);
+	} catch {}
+	try {
+		const dir = dirname(filePath);
+		if (existsSync(dir) && readdirSync(dir).length === 0) {
+			rmdirSync(dir);
+		}
+	} catch {}
 }

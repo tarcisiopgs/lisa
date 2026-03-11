@@ -71,7 +71,7 @@ export class AiderProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`${`$ aider --message-file --yes-always ${modelFlag || "(default model)"}\n`.trim()}\n`,
+					`$ aider --message-file --yes-always ${modelFlag || "(default model)"} <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

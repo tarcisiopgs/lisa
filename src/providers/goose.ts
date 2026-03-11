@@ -50,7 +50,7 @@ export class GooseProvider implements Provider {
 				kanbanEmitter.emit(
 					"issue:output",
 					opts.issueId,
-					`${`$ goose run ${providerFlag} ${modelFlag || "(default model)"} --text\n`.trim()}\n`,
+					`$ goose run ${providerFlag} ${modelFlag || "(default model)"} --text <prompt: ${prompt.length} chars>\n`,
 				);
 			}
 			const { proc, isPty } = spawnWithPty(command, {

@@ -1,4 +1,4 @@
-import { appendFileSync, unlinkSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
@@ -20,7 +20,12 @@ import { resolveInfraStatus, runLifecycle, stopResources } from "../session/life
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch } from "./helpers.js";
-import { extractPrUrlFromOutput, readManifestFile, readPlanFile } from "./manifest.js";
+import {
+	cleanupPlanFile,
+	extractPrUrlFromOutput,
+	readManifestFile,
+	readPlanFile,
+} from "./manifest.js";
 import type { SessionResult } from "./result.js";
 import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
 import { cleanupWorktree } from "./worktree-session.js";
@@ -44,9 +49,7 @@ export async function runWorktreeMultiRepoSession(
 	const planPath = getPlanPath(workspace, issue.id);
 
 	// Clean stale plan from a previous interrupted run
-	try {
-		unlinkSync(planPath);
-	} catch {}
+	cleanupPlanFile(planPath);
 
 	// Phase 1: Planning — agent analyzes issue and produces execution plan
 	logger.initLogFile(logFile);
@@ -80,9 +83,7 @@ export async function runWorktreeMultiRepoSession(
 
 	if (!planResult.success) {
 		logger.error(`Planning phase failed for ${issue.id}. Check ${logFile}`);
-		try {
-			unlinkSync(planPath);
-		} catch {}
+		cleanupPlanFile(planPath);
 		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
@@ -96,9 +97,7 @@ export async function runWorktreeMultiRepoSession(
 	const plan = readPlanFile(planPath);
 	if (!plan?.steps || plan.steps.length === 0) {
 		logger.error(`Agent did not produce a valid execution plan for ${issue.id}. Aborting.`);
-		try {
-			unlinkSync(planPath);
-		} catch {}
+		cleanupPlanFile(planPath);
 		activeProviderPids.delete(issue.id);
 		return {
 			success: false,
@@ -113,9 +112,7 @@ export async function runWorktreeMultiRepoSession(
 	logger.ok(
 		`Plan produced ${sortedSteps.length} step(s): ${sortedSteps.map((s) => s.repoPath).join(" → ")}`,
 	);
-	try {
-		unlinkSync(planPath);
-	} catch {}
+	cleanupPlanFile(planPath);
 
 	// Phase 2: Sequential implementation — one session per repo step
 	const prUrls: string[] = [];
