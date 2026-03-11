@@ -20,11 +20,14 @@ const ANSI_REGEX = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07]*\x07|\([A-Z0-9]|[A-Z])/g
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: required for stripping ^D (EOF) leaked by PTY
 const CTRL_D_REGEX = /\x04/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: required for stripping "^D\b\b" sequence from PTY output
+const CARET_D_BACKSPACE_REGEX = /\^D\x08\x08/g;
 
 export function stripAnsi(text: string): string {
 	return text
 		.replace(ANSI_REGEX, "")
 		.replace(CTRL_D_REGEX, "")
+		.replace(CARET_D_BACKSPACE_REGEX, "")
 		.replace(/\r\n/g, "\n")
 		.replace(/\r/g, "");
 }
@@ -38,11 +41,17 @@ export function stripAnsi(text: string): string {
  */
 export function buildPtyArgs(command: string, os?: NodeJS.Platform): PtySpawnArgs | null {
 	const currentOs = os ?? platform();
-	// Redirect the child's stdin from /dev/null so that when `script` forwards
-	// EOF (^D) from its own closed stdin to the PTY master, the child process
-	// doesn't receive it (its stdin is /dev/null, not the PTY slave).
-	// stdout/stderr still go through the PTY slave, so isatty(1) remains true.
-	const wrappedCommand = `${command} < /dev/null`;
+	// Two layers of protection against `script` forwarding EOF (^D) when its
+	// own stdin is /dev/null (stdio: ["ignore", ...]):
+	//
+	// 1. `stty eof undef` — disables the EOF special character on the PTY slave,
+	//    so the line discipline never interprets ^D as EOF. This also prevents
+	//    `script` from echoing "^D\b\b" to the PTY output stream.
+	//
+	// 2. `< /dev/null` — redirects the child's stdin away from the PTY slave to
+	//    /dev/null, as a belt-and-suspenders defense. stdout/stderr still go
+	//    through the PTY slave, so isatty(1) remains true.
+	const wrappedCommand = `stty eof undef 2>/dev/null; ${command} < /dev/null`;
 	if (currentOs === "darwin") {
 		// -q: quiet (no "Script started" message)
 		// -F: flush output after each write (real-time streaming)
