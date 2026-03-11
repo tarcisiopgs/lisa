@@ -156,4 +156,31 @@ describe("KanbanPersistence.load()", () => {
 		const cards = p.load();
 		expect(cards.find((c) => c.id === "E")?.outputLog).toBe("a\nb\nc");
 	});
+
+	it("demotes in_progress card without prUrls: resets skipped flag", () => {
+		const p = createKanbanPersistence(tmpDir);
+		const path = getKanbanStatePath(tmpDir);
+		mkdirSync(getCacheDir(tmpDir), { recursive: true });
+		writeFileSync(
+			path,
+			JSON.stringify({
+				version: 1,
+				updatedAt: Date.now(),
+				cards: [
+					{
+						id: "F",
+						title: "Skipped card",
+						column: "in_progress",
+						prUrls: [],
+						skipped: true,
+						outputLogTail: [],
+					},
+				],
+			}),
+		);
+		const cards = p.load();
+		const card = cards.find((c) => c.id === "F")!;
+		expect(card.column).toBe("backlog");
+		expect(card.skipped).toBe(false);
+	});
 });

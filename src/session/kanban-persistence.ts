@@ -49,6 +49,7 @@ function resolveCard(card: PersistedCard): KanbanCard {
 			column: "backlog",
 			prUrls: [],
 			hasError: false,
+			skipped: false,
 			killed: false,
 			outputLog: "",
 		};
