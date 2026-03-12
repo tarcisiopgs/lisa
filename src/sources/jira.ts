@@ -59,6 +59,10 @@ async function jiraPut<T>(path: string, body: unknown): Promise<T> {
 	return jiraFetch<T>("PUT", path, body);
 }
 
+async function jiraSearchJql<T>(jql: string, fields: string, maxResults: number): Promise<T> {
+	return jiraPost<T>("/search/jql", { jql, fields: fields.split(","), maxResults });
+}
+
 interface JiraIssueLink {
 	type: { name: string; inward: string; outward: string };
 	inwardIssue?: {
@@ -142,14 +146,10 @@ export class JiraSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
-		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
-		);
+		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
-		const data = await jiraGet<JiraSearchResult>(
-			`/search/jql?jql=${jql}&fields=${fields}&maxResults=50`,
-		);
+		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 50);
 
 		const issues = data.issues ?? [];
 		if (issues.length === 0) return null;
@@ -261,14 +261,10 @@ export class JiraSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
-		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
-		);
+		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels";
 
-		const data = await jiraGet<JiraSearchResult>(
-			`/search/jql?jql=${jql}&fields=${fields}&maxResults=100`,
-		);
+		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 100);
 
 		const baseUrl = getBaseUrl();
 		return (data.issues ?? []).map((issue) => ({
