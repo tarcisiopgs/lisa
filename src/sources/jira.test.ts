@@ -59,11 +59,18 @@ interface JiraIssue {
 	};
 }
 
-function makeTransitions(names: string[] = ["In Progress", "Done", "Backlog"]): {
-	transitions: { id: string; name: string }[];
+function makeTransitions(
+	names: string[] = ["In Progress", "Done", "Backlog"],
+	opts?: { transitionNames?: string[] },
+): {
+	transitions: { id: string; name: string; to: { id: string; name: string } }[];
 } {
 	return {
-		transitions: names.map((name, i) => ({ id: String(i + 1), name })),
+		transitions: names.map((name, i) => ({
+			id: String(i + 1),
+			name: opts?.transitionNames?.[i] ?? name,
+			to: { id: String(10000 + i), name },
+		})),
 	};
 }
 
@@ -548,6 +555,65 @@ describe("JiraSource", () => {
 				});
 
 			await source.updateStatus("ENG-1", "in progress");
+
+			expect((capturedBody as { transition: { id: string } }).transition.id).toBe("1");
+		});
+
+		it("matches by target status name when transition name differs", async () => {
+			let capturedBody: unknown;
+
+			// Transition name is "Start Progress" but target status is "Em andamento"
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce({
+					ok: true,
+					status: 200,
+					json: async () =>
+						makeTransitions(["Em andamento", "Concluído"], {
+							transitionNames: ["Iniciar progresso", "Concluído"],
+						}),
+					text: async () => "",
+				})
+				.mockImplementationOnce((_url: string, init?: RequestInit) => {
+					capturedBody = JSON.parse(init?.body as string);
+					return Promise.resolve({
+						ok: true,
+						status: 204,
+						json: async () => undefined,
+						text: async () => "",
+					});
+				});
+
+			// User config says "Em andamento" (status name), not "Iniciar progresso" (transition name)
+			await source.updateStatus("ENG-1", "Em andamento");
+
+			expect((capturedBody as { transition: { id: string } }).transition.id).toBe("1");
+		});
+
+		it("prefers target status name match over transition name match", async () => {
+			let capturedBody: unknown;
+
+			// Edge case: transition name "Done" targets status "Concluído",
+			// and we search for "Concluído" — should match by to.name
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce({
+					ok: true,
+					status: 200,
+					json: async () => makeTransitions(["Concluído"], { transitionNames: ["Done"] }),
+					text: async () => "",
+				})
+				.mockImplementationOnce((_url: string, init?: RequestInit) => {
+					capturedBody = JSON.parse(init?.body as string);
+					return Promise.resolve({
+						ok: true,
+						status: 204,
+						json: async () => undefined,
+						text: async () => "",
+					});
+				});
+
+			await source.updateStatus("ENG-1", "Concluído");
 
 			expect((capturedBody as { transition: { id: string } }).transition.id).toBe("1");
 		});

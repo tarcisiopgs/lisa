@@ -106,6 +106,7 @@ interface JiraIssueTypeStatuses {
 interface JiraTransition {
 	id: string;
 	name: string;
+	to: { id: string; name: string };
 }
 
 interface JiraTransitionsResult {
@@ -259,11 +260,13 @@ export class JiraSource implements Source {
 		const key = parseJiraIdentifier(issueId);
 		const data = await jiraGet<JiraTransitionsResult>(`/issue/${key}/transitions`);
 
-		const transition = data.transitions.find(
-			(t) => t.name.toLowerCase() === statusName.toLowerCase(),
-		);
+		// Match by target status name first (what the user sees), then by transition name
+		const lowerName = statusName.toLowerCase();
+		const transition =
+			data.transitions.find((t) => t.to.name.toLowerCase() === lowerName) ??
+			data.transitions.find((t) => t.name.toLowerCase() === lowerName);
 		if (!transition) {
-			const available = data.transitions.map((t) => t.name).join(", ");
+			const available = data.transitions.map((t) => `${t.name} → ${t.to.name}`).join(", ");
 			throw new Error(`Jira transition "${statusName}" not found. Available: ${available}`);
 		}
 
