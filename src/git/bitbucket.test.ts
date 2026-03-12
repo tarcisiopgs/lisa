@@ -138,8 +138,7 @@ describe("createPullRequest", () => {
 		expect(url).toContain("api.bitbucket.org");
 		expect(url).toContain("pullrequests");
 		expect(options.method).toBe("POST");
-		const expectedCreds = Buffer.from("myuser:test-app-password").toString("base64");
-		expect(options.headers).toMatchObject({ Authorization: `Basic ${expectedCreds}` });
+		expect(options.headers).toMatchObject({ Authorization: "Bearer test-app-password" });
 	});
 
 	it("throws when BITBUCKET_TOKEN is not set", async () => {
@@ -154,20 +153,6 @@ describe("createPullRequest", () => {
 				description: "desc",
 			}),
 		).rejects.toThrow("BITBUCKET_TOKEN is not set");
-	});
-
-	it("throws when BITBUCKET_USERNAME is not set", async () => {
-		delete process.env.BITBUCKET_USERNAME;
-		await expect(
-			createPullRequest({
-				workspace: "ws",
-				repoSlug: "repo",
-				sourceBranch: "feat/x",
-				destinationBranch: "main",
-				title: "title",
-				description: "desc",
-			}),
-		).rejects.toThrow("BITBUCKET_USERNAME is not set");
 	});
 
 	it("throws on API error response", async () => {

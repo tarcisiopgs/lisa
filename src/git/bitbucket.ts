@@ -23,10 +23,7 @@ function formatProviderName(providerUsed: string): string {
 function getAuthHeader(): string {
 	const token = process.env.BITBUCKET_TOKEN;
 	if (!token) throw new Error("BITBUCKET_TOKEN is not set");
-	const username = process.env.BITBUCKET_USERNAME;
-	if (!username) throw new Error("BITBUCKET_USERNAME is not set");
-	const credentials = Buffer.from(`${username}:${token}`).toString("base64");
-	return `Basic ${credentials}`;
+	return `Bearer ${token}`;
 }
 
 export interface BitbucketRepoInfo {
@@ -128,7 +125,7 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 		if (!match) return;
 
 		const [, workspace, repoSlug, prId] = match;
-		if (!process.env.BITBUCKET_TOKEN || !process.env.BITBUCKET_USERNAME) return;
+		if (!process.env.BITBUCKET_TOKEN) return;
 		const authHeader = getAuthHeader();
 
 		// Fetch current PR description
