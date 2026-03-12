@@ -11,6 +11,7 @@ import {
 	detectDefaultBranch,
 	detectGitRepos,
 	detectPlatform,
+	fetchCopilotModels,
 	fetchCursorModels,
 	fetchOpenCodeModels,
 	getMissingEnvVars,
@@ -46,10 +47,17 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			"gemini-2.5-flash-lite",
 		],
 		// opencode: populated dynamically below (fetchOpenCodeModels)
-		copilot: ["claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2"],
-		goose: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
-		aider: ["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"],
-		codex: ["gpt-5.1-codex-mini", "gpt-5.1-codex-max", "gpt-5.2-codex", "gpt-5.2", "gpt-5.3-codex"],
+		// copilot: populated dynamically below (fetchCopilotModels)
+		goose: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+		aider: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+		codex: [
+			"gpt-5.3-codex",
+			"gpt-5.2-codex",
+			"gpt-5.2",
+			"gpt-5.1-codex-max",
+			"gpt-5.1-codex-mini",
+			"gpt-5.4",
+		],
 		// cursor: populated dynamically below (fetchCursorModels)
 	};
 
@@ -166,12 +174,14 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 				"gemini-2.0-flash",
 				"gemini-2.5-flash-lite",
 			],
-			anthropic: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
-			openai: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+			anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
+			openai: ["gpt-5.2", "gpt-5.1", "gpt-4.1", "o4-mini", "o3"],
 			google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
 			ollama: ["llama3.3", "qwen2.5-coder", "mistral"],
 		};
 		availableModels = gooseModelsByBackend[gooseProvider] ?? [];
+	} else if (providerName === "copilot") {
+		availableModels = fetchCopilotModels();
 	} else if (providerName === "cursor") {
 		const isFree = await isCursorFreePlan();
 		if (isFree) {
