@@ -13,6 +13,8 @@ import {
 } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { buildNodeOptions } from "./heap.js";
+import { OutputBuffer } from "./output-buffer.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
@@ -49,17 +51,11 @@ export class GeminiProvider implements Provider {
 					`$ gemini --yolo ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
 				);
 			}
-			// Increase Node.js heap limit to 8 GB to prevent OOM crashes when
-			// Gemini CLI indexes large workspaces. Preserves any existing NODE_OPTIONS.
-			const existingNodeOpts = process.env.NODE_OPTIONS ?? "";
-			const heapFlag = "--max-old-space-size=8192";
-			const nodeOptions = existingNodeOpts.includes("max-old-space-size")
-				? existingNodeOpts
-				: `${existingNodeOpts} ${heapFlag}`.trim();
+			// Heap limit centralized in buildNodeOptions()
 
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				env: { ...process.env, ...opts.env, NODE_OPTIONS: nodeOptions },
+				env: { ...process.env, ...opts.env, NODE_OPTIONS: buildNodeOptions() },
 			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
@@ -68,8 +64,8 @@ export class GeminiProvider implements Provider {
 			const errorLoopDetector = createErrorLoopDetector(proc, GEMINI_ERROR_PATTERN);
 			const outputStall = createOutputStallDetector(proc, opts.outputStallTimeout);
 
-			const chunks: string[] = [];
-			const stderrChunks: string[] = [];
+			const chunks = new OutputBuffer();
+			const stderrChunks = new OutputBuffer();
 
 			proc.stdout?.on("data", (chunk: Buffer) => {
 				const raw = chunk.toString();
@@ -121,13 +117,14 @@ export class GeminiProvider implements Provider {
 				!errorLoopDetector.wasKilled() &&
 				!outputStall.wasKilled() &&
 				!sessionTimeout.wasTimedOut();
-			if (!success && stderrChunks.length > 0) {
-				chunks.push("\n[stderr]\n", ...stderrChunks);
+			const stderrOutput = stderrChunks.toString();
+			if (!success && stderrOutput) {
+				chunks.push(`\n[stderr]\n${stderrOutput}`);
 			}
 
 			return {
 				success,
-				output: chunks.join(""),
+				output: chunks.toString(),
 				duration: Date.now() - start,
 				exitCode,
 			};

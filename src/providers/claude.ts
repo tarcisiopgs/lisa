@@ -13,6 +13,8 @@ import {
 } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { buildNodeOptions } from "./heap.js";
+import { OutputBuffer } from "./output-buffer.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
@@ -55,7 +57,12 @@ export class ClaudeProvider implements Provider {
 					`$ claude ${flags.join(" ")} <prompt: ${prompt.length} chars>\n`,
 				);
 			}
-			const spawnEnv = { ...process.env, ...opts.env, CLAUDECODE: undefined };
+			const spawnEnv = {
+				...process.env,
+				...opts.env,
+				CLAUDECODE: undefined,
+				NODE_OPTIONS: buildNodeOptions(),
+			};
 			// When Lisa itself runs inside an active Claude Code session (CLAUDECODE is set in the
 			// parent environment), the script PTY wrapper reads EOF from its closed stdin and
 			// forwards ^D to Claude, causing it to exit. Use a plain spawn without PTY instead.
@@ -79,8 +86,8 @@ export class ClaudeProvider implements Provider {
 			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 			const outputStall = createOutputStallDetector(proc, opts.outputStallTimeout);
 
-			const chunks: string[] = [];
-			const stderrChunks: string[] = [];
+			const chunks = new OutputBuffer();
+			const stderrChunks = new OutputBuffer();
 
 			proc.stdout?.on("data", (chunk: Buffer) => {
 				const raw = chunk.toString();
@@ -130,13 +137,14 @@ export class ClaudeProvider implements Provider {
 				!errorLoopDetector.wasKilled() &&
 				!outputStall.wasKilled() &&
 				!sessionTimeout.wasTimedOut();
-			if (!success && stderrChunks.length > 0) {
-				chunks.push("\n[stderr]\n", ...stderrChunks);
+			const stderrOutput = stderrChunks.toString();
+			if (!success && stderrOutput) {
+				chunks.push(`\n[stderr]\n${stderrOutput}`);
 			}
 
 			return {
 				success,
-				output: chunks.join(""),
+				output: chunks.toString(),
 				duration: Date.now() - start,
 				exitCode,
 			};

@@ -86,7 +86,7 @@ function spawnResource(
 		stdio: "ignore",
 		detached: true,
 	});
-	child.unref();
+	// Don't unref() — keep child attached so it's cleaned up when Lisa exits
 	return child;
 }
 

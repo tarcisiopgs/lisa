@@ -228,8 +228,11 @@ export class ShortcutSource implements Source {
 					if (!doneStateIds.has(blocker.workflow_state_id)) {
 						activeBlockers.push(blockerId);
 					}
-				} catch {
+				} catch (err) {
 					// If we can't fetch, assume still active
+					logger.warn(
+						`Could not fetch blocker ${blockerId}: ${err instanceof Error ? err.message : String(err)}`,
+					);
 					activeBlockers.push(blockerId);
 				}
 			}

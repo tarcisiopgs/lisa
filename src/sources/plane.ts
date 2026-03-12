@@ -263,8 +263,11 @@ export class PlaneSource implements Source {
 					if (!doneStateIds.has(blocker.state)) {
 						activeBlockers.push(blockerId);
 					}
-				} catch {
+				} catch (err) {
 					// If we can't fetch the blocker, assume it's still active
+					logger.warn(
+						`Could not fetch blocker ${blockerId}: ${err instanceof Error ? err.message : String(err)}`,
+					);
 					activeBlockers.push(blockerId);
 				}
 			}

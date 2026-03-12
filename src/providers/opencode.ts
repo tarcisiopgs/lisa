@@ -13,6 +13,8 @@ import {
 } from "../session/overseer.js";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { buildNodeOptions } from "./heap.js";
+import { OutputBuffer } from "./output-buffer.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
@@ -48,7 +50,7 @@ export class OpenCodeProvider implements Provider {
 			}
 			const { proc, isPty } = spawnWithPty(command, {
 				cwd: opts.cwd,
-				env: { ...process.env, ...opts.env },
+				env: { ...process.env, ...opts.env, NODE_OPTIONS: buildNodeOptions() },
 			});
 
 			if (proc.pid) opts.onProcess?.(proc.pid);
@@ -57,8 +59,8 @@ export class OpenCodeProvider implements Provider {
 			const errorLoopDetector = createErrorLoopDetector(proc, /^Error /);
 			const outputStall = createOutputStallDetector(proc, opts.outputStallTimeout);
 
-			const chunks: string[] = [];
-			const stderrChunks: string[] = [];
+			const chunks = new OutputBuffer();
+			const stderrChunks = new OutputBuffer();
 
 			proc.stdout?.on("data", (chunk: Buffer) => {
 				const raw = chunk.toString();
@@ -108,13 +110,14 @@ export class OpenCodeProvider implements Provider {
 				!errorLoopDetector.wasKilled() &&
 				!outputStall.wasKilled() &&
 				!sessionTimeout.wasTimedOut();
-			if (!success && stderrChunks.length > 0) {
-				chunks.push("\n[stderr]\n", ...stderrChunks);
+			const stderrOutput = stderrChunks.toString();
+			if (!success && stderrOutput) {
+				chunks.push(`\n[stderr]\n${stderrOutput}`);
 			}
 
 			return {
 				success,
-				output: chunks.join(""),
+				output: chunks.toString(),
 				duration: Date.now() - start,
 				exitCode,
 			};

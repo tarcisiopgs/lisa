@@ -74,7 +74,11 @@ export function extractErrorType(output: string): string {
 export function appendEntry(dir: string, entry: GuardrailEntry): void {
 	// Serialize writes: when multiple issues run in parallel, each call
 	// chains on the previous write to prevent read-stale-then-overwrite races.
-	writeLock = writeLock.then(() => appendEntrySync(dir, entry)).catch(() => {});
+	writeLock = writeLock
+		.then(() => appendEntrySync(dir, entry))
+		.catch(() => {
+			// Swallow to keep the promise chain alive for subsequent writes
+		});
 }
 
 /**
@@ -111,7 +115,11 @@ export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
  * Serialized via the same mutex as appendEntry.
  */
 export function appendRawEntry(dir: string, entryText: string): void {
-	writeLock = writeLock.then(() => appendRawEntrySync(dir, entryText)).catch(() => {});
+	writeLock = writeLock
+		.then(() => appendRawEntrySync(dir, entryText))
+		.catch(() => {
+			// Swallow to keep the promise chain alive for subsequent writes
+		});
 }
 
 /**
