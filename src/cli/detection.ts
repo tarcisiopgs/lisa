@@ -101,19 +101,10 @@ export function fetchCursorModels(): string[] {
 	}
 }
 
-// Curated list of Copilot models — top-tier coding models only
-const COPILOT_PREFERRED_MODELS = [
-	"claude-opus-4.6",
-	"claude-opus-4.6-fast",
-	"claude-sonnet-4.6",
-	"claude-sonnet-4.5",
-	"claude-haiku-4.5",
-	"gpt-5.3-codex",
-	"gpt-5.2-codex",
-	"gpt-5.2",
-	"gpt-5.1-codex-max",
-	"gemini-3-pro-preview",
-];
+// Models that work in non-interactive mode (`copilot -p`) without requiring
+// interactive enablement first. Other models from `copilot --help` exist but
+// need `copilot --model X` run interactively once to accept terms.
+const COPILOT_PREFERRED_MODELS = ["claude-haiku-4.5", "gpt-5-mini", "gpt-4.1"];
 
 export function fetchCopilotModels(): string[] {
 	return COPILOT_PREFERRED_MODELS;
