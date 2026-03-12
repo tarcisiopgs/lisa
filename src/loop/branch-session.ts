@@ -46,12 +46,10 @@ export async function runBranchSession(
 	// Detect infrastructure
 	const infra = discoverInfra(workspace);
 	let lifecycleEnv: Record<string, string> = {};
-	let lifecycleSuccess = true;
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const started = await runLifecycle(infra, config.lifecycle, workspace);
 		stopSpinner();
-		lifecycleSuccess = started.success;
 		if (!started.success) {
 			logger.warn(
 				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,

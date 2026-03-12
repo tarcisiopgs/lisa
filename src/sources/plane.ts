@@ -22,6 +22,14 @@ function getAuthHeaders(): Record<string, string> {
 	return { "X-Api-Key": token };
 }
 
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
 async function planeFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const url = `${getBaseUrl()}/api/v1${path}`;
 	const headers: Record<string, string> = {
@@ -337,7 +345,9 @@ export class PlaneSource implements Source {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 		await planePost<PlaneComment>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/comments/`,
-			{ comment_html: `<p>Pull request: <a href="${prUrl}">${prUrl}</a></p>` },
+			{
+				comment_html: `<p>Pull request: <a href="${escapeHtml(prUrl)}">${escapeHtml(prUrl)}</a></p>`,
+			},
 		);
 	}
 

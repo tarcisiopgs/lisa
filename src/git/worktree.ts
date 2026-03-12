@@ -1,20 +1,8 @@
 import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { execa } from "execa";
 
 const WORKTREES_DIR = ".worktrees";
-
-export async function getDefaultBranch(repoRoot: string): Promise<string> {
-	const { stdout } = await execa("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], {
-		cwd: repoRoot,
-		reject: false,
-	}).then(
-		(r) => r,
-		() => ({ stdout: "origin/main" }),
-	);
-
-	return stdout.replace("origin/", "").trim();
-}
 
 export function generateBranchName(issueId: string, title: string): string {
 	const slug = title
@@ -188,67 +176,6 @@ export function determineRepoPath(
 	// Default to first repo
 	const first = repos[0];
 	return first ? join(workspace, first.path) : undefined;
-}
-
-/**
- * Scan all repos in the workspace to find where feature branches were created.
- * Returns ALL repos that have a matching feature branch — the agent may work
- * across multiple repos in a single session.
- *
- * Detection per repo (in priority order):
- * 1. Current branch contains the issue ID (strongest signal)
- * 2. Current branch differs from the repo's base branch (agent is still on it)
- * 3. Any local/remote branch contains the issue ID (agent switched back)
- */
-export async function detectFeatureBranches(
-	repos: { path: string; base_branch: string }[],
-	issueId: string,
-	workspace: string,
-	globalBaseBranch: string,
-): Promise<{ repoPath: string; branch: string }[]> {
-	const entries =
-		repos.length > 0
-			? repos.map((r) => ({ path: resolve(workspace, r.path), baseBranch: r.base_branch }))
-			: [{ path: workspace, baseBranch: globalBaseBranch }];
-
-	const needle = issueId.toLowerCase();
-	const results: { repoPath: string; branch: string }[] = [];
-	const matched = new Set<string>();
-
-	// Pass 1: current branch contains the issue ID (strongest signal)
-	const currentBranches: { path: string; baseBranch: string; current: string }[] = [];
-	for (const entry of entries) {
-		try {
-			const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: entry.path });
-			const current = stdout.trim();
-			currentBranches.push({ ...entry, current });
-			if (current?.toLowerCase().includes(needle)) {
-				results.push({ repoPath: entry.path, branch: current });
-				matched.add(entry.path);
-			}
-		} catch {
-			// Not a git repo or other error — skip
-		}
-	}
-
-	// Pass 2: current branch differs from base branch (agent stayed on feature branch)
-	for (const entry of currentBranches) {
-		if (!matched.has(entry.path) && entry.current && entry.current !== entry.baseBranch) {
-			results.push({ repoPath: entry.path, branch: entry.current });
-			matched.add(entry.path);
-		}
-	}
-
-	// Pass 3: search for any branch containing the issue ID (agent may have switched back)
-	for (const entry of entries) {
-		if (matched.has(entry.path)) continue;
-		const branch = await findBranchByIssueId(entry.path, issueId);
-		if (branch) {
-			results.push({ repoPath: entry.path, branch });
-		}
-	}
-
-	return results;
 }
 
 /**
