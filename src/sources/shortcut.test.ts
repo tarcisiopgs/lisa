@@ -653,7 +653,7 @@ describe("ShortcutSource", () => {
 
 			await source.removeLabel("12345", "lisa");
 
-			expect((capturedBody as { label_ids: number[] }).label_ids).toEqual([200]);
+			expect((capturedBody as { labels: { name: string }[] }).labels).toEqual([{ name: "wip" }]);
 		});
 
 		it("skips API call if label is not on the story", async () => {
@@ -709,7 +709,7 @@ describe("ShortcutSource", () => {
 
 			await source.removeLabel("12345", "lisa");
 
-			expect((capturedBody as { label_ids: number[] }).label_ids).toEqual([]);
+			expect((capturedBody as { labels: { name: string }[] }).labels).toEqual([]);
 		});
 
 		it("skips archived labels when finding label to remove", async () => {
