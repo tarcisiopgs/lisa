@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
-import { CursorProvider } from "./cursor.js";
+import { CursorProvider, createStreamJsonTransform } from "./cursor.js";
 import { spawnWithPty } from "./pty.js";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -24,6 +24,64 @@ function makeFakeProc(exitCode = 0) {
 	setImmediate(() => proc.emit("close", exitCode));
 	return { proc, isPty: false as const };
 }
+
+describe("createStreamJsonTransform", () => {
+	it("formats assistant messages as plain text", () => {
+		const transform = createStreamJsonTransform();
+		const input = `${JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "I'll read the file" }] } })}\n`;
+		expect(transform(input)).toBe("I'll read the file\n");
+	});
+
+	it("formats tool_call started events with path", () => {
+		const transform = createStreamJsonTransform();
+		const input = `${JSON.stringify({ type: "tool_call", subtype: "started", call_id: "1", tool_call: { readToolCall: { args: { path: "src/index.ts" } } } })}\n`;
+		expect(transform(input)).toBe("● Read src/index.ts\n");
+	});
+
+	it("formats tool_call started events with command", () => {
+		const transform = createStreamJsonTransform();
+		const input = `${JSON.stringify({ type: "tool_call", subtype: "started", call_id: "1", tool_call: { runCommandToolCall: { args: { command: "npm test" } } } })}\n`;
+		expect(transform(input)).toBe("● Run npm test\n");
+	});
+
+	it("formats tool_call completed errors", () => {
+		const transform = createStreamJsonTransform();
+		const input = `${JSON.stringify({ type: "tool_call", subtype: "completed", call_id: "1", tool_call: { editToolCall: { args: { path: "file.ts" }, result: { error: "No match found" } } } })}\n`;
+		expect(transform(input)).toBe("✗ Edit — No match found\n");
+	});
+
+	it("suppresses tool_call completed success events", () => {
+		const transform = createStreamJsonTransform();
+		const input = `${JSON.stringify({ type: "tool_call", subtype: "completed", call_id: "1", tool_call: { readToolCall: { args: { path: "file.ts" }, result: { success: { content: "..." } } } } })}\n`;
+		expect(transform(input)).toBe("");
+	});
+
+	it("suppresses system and user events", () => {
+		const transform = createStreamJsonTransform();
+		const sys = `${JSON.stringify({ type: "system", subtype: "init" })}\n`;
+		const user = `${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "prompt" }] } })}\n`;
+		expect(transform(sys)).toBe("");
+		expect(transform(user)).toBe("");
+	});
+
+	it("handles partial lines across chunks", () => {
+		const transform = createStreamJsonTransform();
+		const full = JSON.stringify({
+			type: "assistant",
+			message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+		});
+		// Split in the middle
+		const part1 = full.slice(0, 20);
+		const part2 = `${full.slice(20)}\n`;
+		expect(transform(part1)).toBe("");
+		expect(transform(part2)).toBe("hello\n");
+	});
+
+	it("passes through non-JSON lines", () => {
+		const transform = createStreamJsonTransform();
+		expect(transform("some plain text output\n")).toBe("some plain text output\n");
+	});
+});
 
 describe("CursorProvider", () => {
 	beforeEach(() => {
@@ -123,7 +181,7 @@ describe("CursorProvider", () => {
 			expect(vi.mocked(execSync)).toHaveBeenCalledTimes(1);
 		});
 
-		it("includes --output-format text --force in command", async () => {
+		it("includes --output-format stream-json --force in command", async () => {
 			const { execSync } = await import("node:child_process");
 			vi.mocked(execSync).mockReturnValue(Buffer.from(""));
 
@@ -135,7 +193,7 @@ describe("CursorProvider", () => {
 			});
 
 			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
-			expect(command).toContain("--output-format text");
+			expect(command).toContain("--output-format stream-json");
 			expect(command).toContain("--force");
 		});
 	});
