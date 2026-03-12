@@ -49,7 +49,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		// opencode: populated dynamically below (fetchOpenCodeModels)
 		// copilot: populated from static list below (fetchCopilotModels)
 		// goose: populated per backend below
-		aider: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+		// aider: populated per available API keys below
 		codex: [
 			"gpt-5.3-codex",
 			"gpt-5.2-codex",
@@ -175,6 +175,32 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			ollama: ["llama3.3", "qwen2.5-coder", "mistral"],
 		};
 		availableModels = gooseModelsByBackend[gooseProvider] ?? [];
+	} else if (providerName === "aider") {
+		// Aider uses direct API keys — show models matching the user's available keys
+		const aiderModels: string[] = [];
+		if (process.env.ANTHROPIC_API_KEY) {
+			aiderModels.push(
+				"anthropic/claude-opus-4-6",
+				"anthropic/claude-sonnet-4-6",
+				"anthropic/claude-haiku-4-5",
+			);
+		}
+		if (process.env.OPENAI_API_KEY) {
+			aiderModels.push("openai/gpt-5.2", "openai/gpt-4o", "openai/o4-mini", "openai/o3");
+		}
+		if (process.env.GEMINI_API_KEY) {
+			aiderModels.push(
+				"gemini/gemini-2.5-pro",
+				"gemini/gemini-2.5-flash",
+				"gemini/gemini-2.5-flash-lite",
+			);
+		}
+		if (aiderModels.length === 0) {
+			clack.log.warning(
+				"No API key found for Aider. Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY",
+			);
+		}
+		availableModels = aiderModels;
 	} else if (providerName === "copilot") {
 		availableModels = fetchCopilotModels();
 	} else if (providerName === "cursor") {
