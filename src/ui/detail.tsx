@@ -2,6 +2,7 @@ import { exec } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { logLineColor } from "../output/line-color.js";
 import type { KanbanCard } from "./state.js";
 import { useTerminalSize } from "./use-terminal-size.js";
 
@@ -77,13 +78,6 @@ function processOutputLines(raw: string): string[] {
 		const parts = line.split("\r");
 		return parts[parts.length - 1] ?? "";
 	});
-}
-
-function logLineColor(line: string): string {
-	if (/\berror\b|✖/i.test(line)) return "red";
-	if (/\bwarn(ing)?\b/i.test(line)) return "yellow";
-	if (/✔|\bsuccess\b/i.test(line)) return "green";
-	return "white";
 }
 
 function scrollBar(pct: number, width = 8): string {
