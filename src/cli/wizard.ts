@@ -47,8 +47,8 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			"gemini-2.5-flash-lite",
 		],
 		// opencode: populated dynamically below (fetchOpenCodeModels)
-		// copilot: populated dynamically below (fetchCopilotModels)
-		goose: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+		// copilot: populated from static list below (fetchCopilotModels)
+		// goose: populated per backend below
 		aider: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
 		codex: [
 			"gpt-5.3-codex",
@@ -168,15 +168,10 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	if (providerName === "goose" && gooseProvider) {
 		const gooseModelsByBackend: Record<string, string[]> = {
-			"gemini-cli": [
-				"gemini-2.5-pro",
-				"gemini-2.5-flash",
-				"gemini-2.0-flash",
-				"gemini-2.5-flash-lite",
-			],
+			"gemini-cli": ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"],
 			anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
 			openai: ["gpt-5.2", "gpt-5.1", "gpt-4.1", "o4-mini", "o3"],
-			google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+			google: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
 			ollama: ["llama3.3", "qwen2.5-coder", "mistral"],
 		};
 		availableModels = gooseModelsByBackend[gooseProvider] ?? [];
