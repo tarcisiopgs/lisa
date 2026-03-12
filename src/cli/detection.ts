@@ -115,7 +115,28 @@ const COPILOT_PREFERRED_MODELS = [
 	"gemini-3-pro-preview",
 ];
 
+/**
+ * Tests whether a copilot model can run non-interactively.
+ * Some models require `copilot --model X` in interactive mode first to accept terms.
+ * The check is fast (~200ms) because copilot rejects immediately without network calls.
+ */
+function isCopilotModelReady(model: string): boolean {
+	try {
+		const output = execSync(`copilot --model ${model} -p "test" 2>&1`, {
+			encoding: "utf-8",
+			timeout: 5000,
+			shell: "/bin/sh",
+		});
+		return !output.includes("interactive mode");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return !msg.includes("interactive mode");
+	}
+}
+
 export function fetchCopilotModels(): string[] {
+	let candidates: string[];
+
 	try {
 		// copilot --model with an invalid value prints the allowed choices in the error message
 		execSync("copilot --model __invalid__ 2>&1", {
@@ -123,7 +144,7 @@ export function fetchCopilotModels(): string[] {
 			timeout: 10000,
 			shell: "/bin/sh",
 		});
-		return COPILOT_PREFERRED_MODELS;
+		candidates = COPILOT_PREFERRED_MODELS;
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		// Parse: "Allowed choices are model-a, model-b, model-c."
@@ -137,11 +158,18 @@ export function fetchCopilotModels(): string[] {
 			if (all.length > 0) {
 				// Filter to curated list, preserving preferred order
 				const filtered = COPILOT_PREFERRED_MODELS.filter((m) => all.includes(m));
-				return filtered.length > 0 ? filtered : all;
+				candidates = filtered.length > 0 ? filtered : all;
+			} else {
+				candidates = COPILOT_PREFERRED_MODELS;
 			}
+		} else {
+			candidates = COPILOT_PREFERRED_MODELS;
 		}
-		return COPILOT_PREFERRED_MODELS;
 	}
+
+	// Filter out models that require interactive enablement
+	const ready = candidates.filter((m) => isCopilotModelReady(m));
+	return ready.length > 0 ? ready : candidates;
 }
 
 export function fetchOpenCodeModels(): string[] {
