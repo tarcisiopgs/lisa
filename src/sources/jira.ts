@@ -143,7 +143,7 @@ export class JiraSource implements Source {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.team)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
+			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
@@ -262,7 +262,7 @@ export class JiraSource implements Source {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.team)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
+			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels";
 
@@ -277,6 +277,41 @@ export class JiraSource implements Source {
 			description: extractDescription(issue.fields.description),
 			url: issueUrl(baseUrl, issue.key),
 		}));
+	}
+
+	async listScopes(): Promise<{ value: string; label: string }[]> {
+		const data = await jiraGet<{ values: { key: string; name: string }[] }>(
+			"/project/search?maxResults=50",
+		);
+		return (data.values ?? []).map((p) => ({
+			value: p.key,
+			label: `${p.key} — ${p.name}`,
+		}));
+	}
+
+	async listLabels(): Promise<{ value: string; label: string }[]> {
+		const data = await jiraGet<{ values: string[] }>("/label?maxResults=100");
+		return (data.values ?? []).map((l) => ({
+			value: l,
+			label: l,
+		}));
+	}
+
+	async listStatuses(scope: string): Promise<{ value: string; label: string }[]> {
+		const data = await jiraGet<{ statuses: { name: string }[] }[]>(
+			`/project/${encodeURIComponent(scope)}/statuses`,
+		);
+		const seen = new Set<string>();
+		const results: { value: string; label: string }[] = [];
+		for (const issueType of data) {
+			for (const status of issueType.statuses) {
+				if (!seen.has(status.name)) {
+					seen.add(status.name);
+					results.push({ value: status.name, label: status.name });
+				}
+			}
+		}
+		return results;
 	}
 
 	async removeLabel(issueId: string, labelName: string): Promise<void> {

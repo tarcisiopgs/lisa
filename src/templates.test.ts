@@ -75,7 +75,7 @@ describe("templateToPartialConfig", () => {
 		// biome-ignore lint/style/noNonNullAssertion: template is known to exist in tests
 		const template = getTemplateById("linear-claude")!;
 		const config = templateToPartialConfig(template);
-		expect(config.source_config.team).toBe("");
+		expect(config.source_config.scope).toBe("");
 		expect(config.source_config.project).toBe("");
 	});
 

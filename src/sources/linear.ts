@@ -92,7 +92,7 @@ export class LinearSource implements Source {
 				}
 			}`,
 			{
-				teamName: config.team,
+				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,
@@ -361,7 +361,7 @@ export class LinearSource implements Source {
 				}
 			}`,
 			{
-				teamName: config.team,
+				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,
@@ -476,6 +476,67 @@ export class LinearSource implements Source {
 				`issueUpdate returned success=false when adding label "${labelName}" to ${issueId}`,
 			);
 		}
+	}
+
+	async listProjects(scope: string): Promise<{ value: string; label: string }[]> {
+		const data = await gql<{
+			teams: { nodes: { id: string }[] };
+		}>(
+			`query($teamName: String!) {
+				teams(filter: { name: { eq: $teamName } }) {
+					nodes { id }
+				}
+			}`,
+			{ teamName: scope },
+		);
+
+		const team = data.teams.nodes[0];
+		if (!team) throw new Error(`Team "${scope}" not found`);
+
+		const projectData = await gql<{
+			projects: { nodes: { name: string }[] };
+		}>(
+			`query($teamId: ID!) {
+				projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) {
+					nodes { name }
+				}
+			}`,
+			{ teamId: team.id },
+		);
+
+		return projectData.projects.nodes.map((p) => ({ value: p.name, label: p.name }));
+	}
+
+	async listStatuses(scope: string): Promise<{ value: string; label: string }[]> {
+		const data = await gql<{
+			teams: { nodes: { id: string }[] };
+		}>(
+			`query($teamName: String!) {
+				teams(filter: { name: { eq: $teamName } }) {
+					nodes { id }
+				}
+			}`,
+			{ teamName: scope },
+		);
+
+		const team = data.teams.nodes[0];
+		if (!team) throw new Error(`Team "${scope}" not found`);
+
+		const statesData = await gql<{
+			workflowStates: { nodes: { name: string; type: string }[] };
+		}>(
+			`query($teamId: ID!) {
+				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
+					nodes { name type }
+				}
+			}`,
+			{ teamId: team.id },
+		);
+
+		return statesData.workflowStates.nodes.map((s) => ({
+			value: s.name,
+			label: `${s.name} (${s.type})`,
+		}));
 	}
 
 	async removeLabel(issueId: string, labelName: string): Promise<void> {

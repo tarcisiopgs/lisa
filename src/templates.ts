@@ -102,7 +102,7 @@ export function templateToPartialConfig(template: ConfigTemplate): LisaConfig {
 		provider_options: {},
 		source: template.source,
 		source_config: {
-			team: "",
+			scope: "",
 			project: "",
 			label: template.sourceDefaults.label,
 			pick_from: template.sourceDefaults.pick_from,

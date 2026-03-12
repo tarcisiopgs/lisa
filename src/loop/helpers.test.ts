@@ -14,7 +14,7 @@ function makeConfig(overrides: Partial<LisaConfig> = {}): LisaConfig {
 		provider: "claude",
 		source: "linear",
 		source_config: {
-			team: "t",
+			scope: "t",
 			project: "p",
 			label: "ready",
 			pick_from: "todo",

@@ -346,6 +346,21 @@ export class ShortcutSource implements Source {
 		}));
 	}
 
+	async listStatuses(): Promise<{ value: string; label: string }[]> {
+		const workflows = await shortcutGet<ShortcutWorkflow[]>("/api/v3/workflows");
+		const seen = new Set<string>();
+		const result: { value: string; label: string }[] = [];
+		for (const workflow of workflows) {
+			for (const state of workflow.states) {
+				if (!seen.has(state.name)) {
+					seen.add(state.name);
+					result.push({ value: state.name, label: `${state.name} (${state.type})` });
+				}
+			}
+		}
+		return result;
+	}
+
 	async removeLabel(storyId: string, labelName: string): Promise<void> {
 		const story = await shortcutGet<ShortcutStory>(`/api/v3/stories/${storyId}`);
 		const labels = await shortcutGet<ShortcutLabel[]>("/api/v3/labels");

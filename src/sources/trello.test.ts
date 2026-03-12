@@ -16,7 +16,7 @@ function mockFetchSequence(...responses: unknown[]) {
 }
 
 const config = {
-	team: "My Board",
+	scope: "My Board",
 	project: "Backlog",
 	label: "lisa",
 	pick_from: "Backlog",
@@ -86,5 +86,81 @@ describe("TrelloSource.listIssues", () => {
 		const result = await source.listIssues(config);
 
 		expect(result).toEqual([]);
+	});
+});
+
+describe("wizard helpers", () => {
+	beforeEach(() => {
+		process.env.TRELLO_API_KEY = "test-key";
+		process.env.TRELLO_TOKEN = "test-token";
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		delete process.env.TRELLO_API_KEY;
+		delete process.env.TRELLO_TOKEN;
+	});
+
+	it("listScopes returns board names", async () => {
+		vi.stubGlobal(
+			"fetch",
+			mockFetchSequence([
+				{ id: "board1", name: "My Board" },
+				{ id: "board2", name: "Other Board" },
+			]),
+		);
+
+		const source = new TrelloSource();
+		const result = await source.listScopes();
+
+		expect(result).toEqual([
+			{ value: "My Board", label: "My Board" },
+			{ value: "Other Board", label: "Other Board" },
+		]);
+	});
+
+	it("listLabels returns labels with non-empty names", async () => {
+		vi.stubGlobal(
+			"fetch",
+			mockFetchSequence(
+				[{ id: "board1", name: "My Board" }],
+				[
+					{ id: "l1", name: "lisa" },
+					{ id: "l2", name: "" },
+					{ id: "l3", name: "bug" },
+				],
+			),
+		);
+
+		const source = new TrelloSource();
+		const result = await source.listLabels("My Board");
+
+		expect(result).toEqual([
+			{ value: "lisa", label: "lisa" },
+			{ value: "bug", label: "bug" },
+		]);
+	});
+
+	it("listStatuses returns list names", async () => {
+		vi.stubGlobal(
+			"fetch",
+			mockFetchSequence(
+				[{ id: "board1", name: "My Board" }],
+				[
+					{ id: "list1", name: "Backlog" },
+					{ id: "list2", name: "In Progress" },
+					{ id: "list3", name: "Done" },
+				],
+			),
+		);
+
+		const source = new TrelloSource();
+		const result = await source.listStatuses("My Board");
+
+		expect(result).toEqual([
+			{ value: "Backlog", label: "Backlog" },
+			{ value: "In Progress", label: "In Progress" },
+			{ value: "Done", label: "Done" },
+		]);
 	});
 });

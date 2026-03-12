@@ -95,7 +95,7 @@ function err(status: number, text = "Error") {
 }
 
 const baseConfig = {
-	team: "",
+	scope: "",
 	project: "",
 	label: "lisa",
 	pick_from: "Ready for Development",
@@ -734,6 +734,77 @@ describe("ShortcutSource", () => {
 
 			// No PUT since archived label is skipped
 			expect(fetchMock).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// wizard helpers
+	// -------------------------------------------------------------------------
+
+	describe("wizard helpers", () => {
+		describe("listStatuses", () => {
+			it("returns unique state names with type labels", async () => {
+				global.fetch = mockFetchSequence([
+					ok([
+						makeWorkflow({
+							id: 1,
+							name: "Engineering",
+							states: [
+								{ id: 1, name: "Backlog", type: "unstarted" },
+								{ id: 2, name: "In Progress", type: "started" },
+								{ id: 3, name: "Done", type: "done" },
+							],
+						}),
+					]),
+				]);
+
+				const result = await source.listStatuses();
+				expect(result).toEqual([
+					{ value: "Backlog", label: "Backlog (unstarted)" },
+					{ value: "In Progress", label: "In Progress (started)" },
+					{ value: "Done", label: "Done (done)" },
+				]);
+			});
+
+			it("deduplicates states with the same name across workflows", async () => {
+				global.fetch = mockFetchSequence([
+					ok([
+						makeWorkflow({
+							id: 1,
+							name: "Engineering",
+							states: [
+								{ id: 1, name: "Backlog", type: "unstarted" },
+								{ id: 2, name: "In Progress", type: "started" },
+								{ id: 3, name: "Done", type: "done" },
+							],
+						}),
+						makeWorkflow({
+							id: 2,
+							name: "Design",
+							states: [
+								{ id: 10, name: "Backlog", type: "unstarted" },
+								{ id: 11, name: "In Review", type: "started" },
+								{ id: 12, name: "Done", type: "done" },
+							],
+						}),
+					]),
+				]);
+
+				const result = await source.listStatuses();
+				expect(result).toEqual([
+					{ value: "Backlog", label: "Backlog (unstarted)" },
+					{ value: "In Progress", label: "In Progress (started)" },
+					{ value: "Done", label: "Done (done)" },
+					{ value: "In Review", label: "In Review (started)" },
+				]);
+			});
+
+			it("returns empty array when no workflows exist", async () => {
+				global.fetch = mockFetchSequence([ok([])]);
+
+				const result = await source.listStatuses();
+				expect(result).toEqual([]);
+			});
 		});
 	});
 });

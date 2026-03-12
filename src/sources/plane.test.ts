@@ -83,7 +83,7 @@ function err(status: number, text = "Error") {
 }
 
 const baseConfig = {
-	team: "my-workspace",
+	scope: "my-workspace",
 	project: "DEV",
 	label: "ready",
 	pick_from: "Todo",
@@ -790,6 +790,112 @@ describe("PlaneSource", () => {
 
 			const result = await source.listIssues(baseConfig);
 			expect(result).toEqual([]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// wizard helpers
+	// -------------------------------------------------------------------------
+
+	describe("wizard helpers", () => {
+		describe("listProjects", () => {
+			it("returns projects with identifier as value and name as label", async () => {
+				const projects = [
+					makeProject({ id: "p1", name: "Frontend", identifier: "FE" }),
+					makeProject({ id: "p2", name: "Backend", identifier: "BE" }),
+				];
+
+				global.fetch = mockFetchSequence([ok(projects)]);
+
+				const result = await source.listProjects("my-workspace");
+				expect(result).toEqual([
+					{ value: "FE", label: "Frontend" },
+					{ value: "BE", label: "Backend" },
+				]);
+			});
+
+			it("returns empty array when no projects exist", async () => {
+				global.fetch = mockFetchSequence([ok([])]);
+
+				const result = await source.listProjects("my-workspace");
+				expect(result).toEqual([]);
+			});
+
+			it("handles paginated response", async () => {
+				global.fetch = mockFetchSequence([
+					ok(makePage([makeProject({ identifier: "DEV", name: "Development" })])),
+				]);
+
+				const result = await source.listProjects("my-workspace");
+				expect(result).toEqual([{ value: "DEV", label: "Development" }]);
+			});
+		});
+
+		describe("listLabels", () => {
+			it("returns labels with name as both value and label", async () => {
+				global.fetch = mockFetchSequence([
+					ok(makePage([makeProject()])), // resolveProjectId
+					ok([makeLabel({ name: "ready" }), makeLabel({ id: "l2", name: "bug" })]),
+				]);
+
+				const result = await source.listLabels("my-workspace", "DEV");
+				expect(result).toEqual([
+					{ value: "ready", label: "ready" },
+					{ value: "bug", label: "bug" },
+				]);
+			});
+
+			it("returns empty array when project is not provided", async () => {
+				global.fetch = vi.fn();
+
+				const result = await source.listLabels("my-workspace");
+				expect(result).toEqual([]);
+				expect(global.fetch).not.toHaveBeenCalled();
+			});
+
+			it("throws when project not found", async () => {
+				global.fetch = mockFetchSequence([ok(makePage([makeProject({ identifier: "OTHER" })]))]);
+
+				await expect(source.listLabels("my-workspace", "DEV")).rejects.toThrow(
+					'Plane project "DEV" not found',
+				);
+			});
+		});
+
+		describe("listStatuses", () => {
+			it("returns statuses with name as value and name (group) as label", async () => {
+				global.fetch = mockFetchSequence([
+					ok(makePage([makeProject()])), // resolveProjectId
+					ok([
+						makeState({ name: "Todo", group: "unstarted" }),
+						makeState({ id: "s2", name: "In Progress", group: "started" }),
+						makeState({ id: "s3", name: "Done", group: "completed" }),
+					]),
+				]);
+
+				const result = await source.listStatuses("my-workspace", "DEV");
+				expect(result).toEqual([
+					{ value: "Todo", label: "Todo (unstarted)" },
+					{ value: "In Progress", label: "In Progress (started)" },
+					{ value: "Done", label: "Done (completed)" },
+				]);
+			});
+
+			it("returns empty array when project is not provided", async () => {
+				global.fetch = vi.fn();
+
+				const result = await source.listStatuses("my-workspace");
+				expect(result).toEqual([]);
+				expect(global.fetch).not.toHaveBeenCalled();
+			});
+
+			it("throws when project not found", async () => {
+				global.fetch = mockFetchSequence([ok(makePage([makeProject({ identifier: "OTHER" })]))]);
+
+				await expect(source.listStatuses("my-workspace", "DEV")).rejects.toThrow(
+					'Plane project "DEV" not found',
+				);
+			});
 		});
 	});
 

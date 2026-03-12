@@ -91,7 +91,7 @@ source: linear
 workflow: worktree       # "worktree" (isolated) or "branch" (in-place)
 
 source_config:
-  team: Engineering
+  scope: Engineering
   project: Web App
   label: ready
   pick_from: Backlog
@@ -129,7 +129,7 @@ JIRA_BASE_URL="" && JIRA_EMAIL="" && JIRA_API_TOKEN=""
 
 | Field | Linear | Trello | Plane | Shortcut | GitLab Issues | GitHub Issues | Jira |
 |-------|--------|--------|-------|----------|---------------|---------------|------|
-| `team` | Team name | Board name | Workspace slug | Group name | Project path | `owner/repo` | Project key |
+| `scope` | Team name | Board name | Workspace slug | — | Project path | `owner/repo` | Project key |
 | `project` | Project name | — | Project ID | — | — | — | — |
 | `pick_from` | Status name | List name | State name | Workflow state | — | — | Status name |
 | `label` | Label | Label | Label | Label | Label | Label | Label |

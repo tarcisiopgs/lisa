@@ -122,7 +122,7 @@ describe("GitHubIssuesSource", () => {
 	});
 
 	const baseConfig = {
-		team: "my-org/my-repo",
+		scope: "my-org/my-repo",
 		project: "",
 		label: "ready",
 		pick_from: "",
@@ -273,7 +273,7 @@ describe("GitHubIssuesSource", () => {
 		});
 
 		it("throws on invalid owner/repo format", async () => {
-			const badConfig = { ...baseConfig, team: "invalid-format" };
+			const badConfig = { ...baseConfig, scope: "invalid-format" };
 			await expect(source.fetchNextIssue(badConfig)).rejects.toThrow(
 				'Invalid owner/repo format: "invalid-format"',
 			);
@@ -564,7 +564,7 @@ describe("GitHubIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch(issues));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -581,7 +581,7 @@ describe("GitHubIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch([]));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -640,6 +640,99 @@ describe("GitHubIssuesSource", () => {
 
 			// Should not throw
 			await expect(source.removeLabel("my-org/my-repo#42", "nonexistent")).resolves.toBeUndefined();
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// wizard helpers
+// ---------------------------------------------------------------------------
+
+describe("wizard helpers", () => {
+	let source: GitHubIssuesSource;
+
+	beforeEach(() => {
+		source = new GitHubIssuesSource();
+		process.env.GITHUB_TOKEN = "test-token";
+	});
+
+	afterEach(() => {
+		delete process.env.GITHUB_TOKEN;
+		vi.restoreAllMocks();
+	});
+
+	describe("listLabels", () => {
+		it("returns labels with name and description", async () => {
+			global.fetch = mockFetch([
+				{ name: "bug", description: "Something isn't working" },
+				{ name: "enhancement", description: "New feature or request" },
+			]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([
+				{ value: "bug", label: "bug — Something isn't working" },
+				{ value: "enhancement", label: "enhancement — New feature or request" },
+			]);
+		});
+
+		it("returns label name only when description is null", async () => {
+			global.fetch = mockFetch([{ name: "ready", description: null }]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([{ value: "ready", label: "ready" }]);
+		});
+
+		it("returns empty array when no labels exist", async () => {
+			global.fetch = mockFetch([]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([]);
+		});
+
+		it("calls the correct API endpoint", async () => {
+			let capturedUrl: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				capturedUrl = url;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => [],
+					text: async () => "[]",
+				});
+			});
+
+			await source.listLabels("my-org/my-repo");
+			expect(capturedUrl).toContain("/repos/my-org/my-repo/labels?per_page=100&page=1");
+		});
+
+		it("paginates when first page is full", async () => {
+			const page1 = Array.from({ length: 100 }, (_, i) => ({
+				name: `label-${i}`,
+				description: null,
+			}));
+			const page2 = [{ name: "label-100", description: "last one" }];
+
+			let callCount = 0;
+			global.fetch = vi.fn().mockImplementation(() => {
+				callCount++;
+				const data = callCount === 1 ? page1 : page2;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toHaveLength(101);
+			expect(callCount).toBe(2);
+		});
+
+		it("throws on invalid owner/repo format", async () => {
+			await expect(source.listLabels("invalid")).rejects.toThrow(
+				'Invalid owner/repo format: "invalid"',
+			);
 		});
 	});
 });
@@ -764,7 +857,7 @@ describe("gh CLI token fallback", () => {
 		});
 
 		await source.fetchNextIssue({
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -783,7 +876,7 @@ describe("gh CLI token fallback", () => {
 
 		await expect(
 			source.fetchNextIssue({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "",
@@ -808,7 +901,7 @@ describe("gh CLI token fallback", () => {
 		});
 
 		await source.fetchNextIssue({
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",

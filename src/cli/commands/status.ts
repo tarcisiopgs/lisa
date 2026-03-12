@@ -16,7 +16,7 @@ export const status = defineCommand({
 		console.log(`  Source:      ${pc.bold(config.source)}`);
 		console.log(`  Workflow:    ${pc.bold(config.workflow)}`);
 		console.log(`  Label:       ${pc.bold(formatLabels(config.source_config))}`);
-		console.log(`  ${isLinear ? "Team" : "Board"}:       ${pc.bold(config.source_config.team)}`);
+		console.log(`  Scope:       ${pc.bold(config.source_config.scope)}`);
 		if (isLinear) {
 			console.log(`  Project:     ${pc.bold(config.source_config.project)}`);
 		}

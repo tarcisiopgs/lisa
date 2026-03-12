@@ -26,7 +26,7 @@ export interface RepoConfig {
 }
 
 export interface SourceConfig {
-	team: string;
+	scope: string;
 	project: string;
 	label: string | string[];
 	remove_label?: string;
@@ -178,4 +178,10 @@ export interface Source {
 		config?: SourceConfig,
 	): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
+
+	// Wizard helpers — optional, used by lisa init to present select options
+	listScopes?(): Promise<{ value: string; label: string }[]>;
+	listProjects?(scope: string): Promise<{ value: string; label: string }[]>;
+	listLabels?(scope: string, project?: string): Promise<{ value: string; label: string }[]>;
+	listStatuses?(scope: string, project?: string): Promise<{ value: string; label: string }[]>;
 }

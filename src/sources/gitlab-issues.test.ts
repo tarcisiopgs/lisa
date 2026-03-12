@@ -146,7 +146,7 @@ describe("GitLabIssuesSource", () => {
 
 	describe("fetchNextIssue", () => {
 		const config = {
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -194,7 +194,7 @@ describe("GitLabIssuesSource", () => {
 		});
 
 		it("uses numeric project ID as-is", async () => {
-			const numericConfig = { ...config, team: "12345" };
+			const numericConfig = { ...config, scope: "12345" };
 			global.fetch = mockFetchByUrl({ "/issues?": [makeIssue({ iid: 7 })], "/links": [] });
 
 			const result = await source.fetchNextIssue(numericConfig);
@@ -518,7 +518,7 @@ describe("GitLabIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch(issues));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -534,7 +534,7 @@ describe("GitLabIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch([]));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -619,6 +619,111 @@ describe("GitLabIssuesSource", () => {
 			await source.removeLabel("org/project#42", "ready");
 			const labels = (capturedBody as { labels: string }).labels.split(",");
 			expect(labels).not.toContain("Ready");
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// wizard helpers
+// ---------------------------------------------------------------------------
+
+describe("wizard helpers", () => {
+	let source: GitLabIssuesSource;
+
+	beforeEach(() => {
+		source = new GitLabIssuesSource();
+		process.env.GITLAB_TOKEN = "test-token";
+		process.env.GITLAB_BASE_URL = "https://gitlab.example.com";
+	});
+
+	afterEach(() => {
+		delete process.env.GITLAB_TOKEN;
+		delete process.env.GITLAB_BASE_URL;
+		vi.restoreAllMocks();
+	});
+
+	describe("listLabels", () => {
+		it("returns labels with name and description", async () => {
+			global.fetch = mockFetch([
+				{ name: "bug", description: "Something isn't working" },
+				{ name: "feature", description: "New feature request" },
+			]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([
+				{ value: "bug", label: "bug — Something isn't working" },
+				{ value: "feature", label: "feature — New feature request" },
+			]);
+		});
+
+		it("returns label name only when description is null", async () => {
+			global.fetch = mockFetch([{ name: "ready", description: null }]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([{ value: "ready", label: "ready" }]);
+		});
+
+		it("returns empty array when no labels exist", async () => {
+			global.fetch = mockFetch([]);
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toEqual([]);
+		});
+
+		it("calls the correct API endpoint with URL-encoded project", async () => {
+			let capturedUrl: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				capturedUrl = url;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => [],
+					text: async () => "[]",
+				});
+			});
+
+			await source.listLabels("my-org/my-repo");
+			expect(capturedUrl).toContain("/projects/my-org%2Fmy-repo/labels?per_page=100&page=1");
+		});
+
+		it("uses numeric project ID as-is", async () => {
+			let capturedUrl: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string) => {
+				capturedUrl = url;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => [],
+					text: async () => "[]",
+				});
+			});
+
+			await source.listLabels("12345");
+			expect(capturedUrl).toContain("/projects/12345/labels?per_page=100&page=1");
+		});
+
+		it("paginates when first page is full", async () => {
+			const page1 = Array.from({ length: 100 }, (_, i) => ({
+				name: `label-${i}`,
+				description: null,
+			}));
+			const page2 = [{ name: "label-100", description: "last one" }];
+
+			let callCount = 0;
+			global.fetch = vi.fn().mockImplementation(() => {
+				callCount++;
+				const data = callCount === 1 ? page1 : page2;
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => data,
+					text: async () => JSON.stringify(data),
+				});
+			});
+
+			const result = await source.listLabels("my-org/my-repo");
+			expect(result).toHaveLength(101);
+			expect(callCount).toBe(2);
 		});
 	});
 });
