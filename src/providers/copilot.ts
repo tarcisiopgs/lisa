@@ -26,9 +26,10 @@ export class CopilotProvider implements Provider {
 
 			const config: ProviderProcessConfig = {
 				name: "copilot",
-				buildCommand: (promptCatExpr) => `copilot --allow-all ${modelFlag} -p ${promptCatExpr}`,
-				logLine: `copilot --allow-all ${modelFlag || "(default model)"} -p`,
-				kanbanLine: `$ copilot --allow-all ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
+				buildCommand: (promptCatExpr) =>
+					`copilot --allow-all --no-alt-screen ${modelFlag} -p ${promptCatExpr}`,
+				logLine: `copilot --allow-all --no-alt-screen ${modelFlag || "(default model)"} -p`,
+				kanbanLine: `$ copilot --allow-all --no-alt-screen ${modelFlag || "(default model)"} -p <prompt: ${prompt.length} chars>\n`,
 				errorPattern: /^Error /,
 			};
 
