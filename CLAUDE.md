@@ -192,13 +192,13 @@ These are NOT interchangeable — wrong types cause silent validation failures.
 The two core abstractions are `Provider` and `Source` (both in `types/index.ts`).
 
 - `Provider`: `name`, `supportsNativeWorktree?`, `isAvailable(): Promise<boolean>`, `run(prompt, opts): Promise<RunResult>`
-- `Source`: `fetchNextIssue()`, `fetchIssueById()`, `updateStatus()`, `removeLabel()`, `attachPullRequest()`, `completeIssue()`
+- `Source`: `fetchNextIssue()`, `fetchIssueById()`, `updateStatus()`, `removeLabel()`, `attachPullRequest()`, `completeIssue()`, plus optional wizard helpers: `listScopes()`, `listProjects()`, `listLabels()`, `listStatuses()`
 
 Adding a new provider: implement `Provider`, register in `providers/index.ts` registry. Adding a new source: implement `Source`, register in `sources/index.ts` factory.
 
 ## Configuration
 
-YAML config at `.lisa/config.yaml`. `config.ts` handles backward compatibility (old field names `board`→`team`, `list`→`project`), derives `models[]` from `provider` if not set, and merges CLI flag overrides.
+YAML config at `.lisa/config.yaml`. `config.ts` handles backward compatibility (old field names `board`→`scope`, `team`→`scope`, `list`→`project`), derives `models[]` from `provider` if not set, and merges CLI flag overrides.
 
 Key config fields:
 - `provider` + `models[]`: provider name + optional list of model names within that provider (v1.4.0+). First model = primary, rest = fallbacks.

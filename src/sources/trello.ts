@@ -182,6 +182,23 @@ export class TrelloSource implements Source {
 			}));
 	}
 
+	async listScopes(): Promise<{ value: string; label: string }[]> {
+		const boards = await trelloGet<TrelloBoard[]>("/members/me/boards", "fields=name");
+		return boards.map((b) => ({ value: b.name, label: b.name }));
+	}
+
+	async listLabels(scope: string): Promise<{ value: string; label: string }[]> {
+		const board = await findBoardByName(scope);
+		const labels = await trelloGet<TrelloLabel[]>(`/boards/${board.id}/labels`, "fields=name");
+		return labels.filter((l) => l.name.length > 0).map((l) => ({ value: l.name, label: l.name }));
+	}
+
+	async listStatuses(scope: string): Promise<{ value: string; label: string }[]> {
+		const board = await findBoardByName(scope);
+		const lists = await trelloGet<TrelloList[]>(`/boards/${board.id}/lists`, "fields=name");
+		return lists.map((l) => ({ value: l.name, label: l.name }));
+	}
+
 	async removeLabel(cardId: string, labelName: string): Promise<void> {
 		const card = await trelloGet<{ idBoard: string; idLabels: string[] }>(
 			`/cards/${cardId}`,

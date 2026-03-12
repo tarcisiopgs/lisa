@@ -577,3 +577,134 @@ describe("LinearSource.addLabel", () => {
 		expect(callCount).toBe(3);
 	});
 });
+
+describe("wizard helpers", () => {
+	beforeEach(() => {
+		process.env.LINEAR_API_KEY = "test-key";
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	describe("listProjects", () => {
+		it("returns projects for the given team", async () => {
+			let callCount = 0;
+			global.fetch = vi.fn().mockImplementation(async () => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						ok: true,
+						json: async () => ({
+							data: { teams: { nodes: [{ id: "team-1" }] } },
+						}),
+					};
+				}
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							projects: {
+								nodes: [{ name: "Backend" }, { name: "Frontend" }],
+							},
+						},
+					}),
+				};
+			});
+
+			const source = new LinearSource();
+			const projects = await source.listProjects("Engineering");
+
+			expect(projects).toEqual([
+				{ value: "Backend", label: "Backend" },
+				{ value: "Frontend", label: "Frontend" },
+			]);
+			expect(callCount).toBe(2);
+		});
+
+		it("throws when team is not found", async () => {
+			vi.stubGlobal("fetch", mockFetch({ data: { teams: { nodes: [] } } }));
+
+			const source = new LinearSource();
+			await expect(source.listProjects("NonExistent")).rejects.toThrow(
+				'Team "NonExistent" not found',
+			);
+		});
+
+		it("returns empty array when team has no projects", async () => {
+			let callCount = 0;
+			global.fetch = vi.fn().mockImplementation(async () => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						ok: true,
+						json: async () => ({
+							data: { teams: { nodes: [{ id: "team-1" }] } },
+						}),
+					};
+				}
+				return {
+					ok: true,
+					json: async () => ({
+						data: { projects: { nodes: [] } },
+					}),
+				};
+			});
+
+			const source = new LinearSource();
+			const projects = await source.listProjects("Engineering");
+
+			expect(projects).toEqual([]);
+		});
+	});
+
+	describe("listStatuses", () => {
+		it("returns statuses with type annotations for the given team", async () => {
+			let callCount = 0;
+			global.fetch = vi.fn().mockImplementation(async () => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						ok: true,
+						json: async () => ({
+							data: { teams: { nodes: [{ id: "team-1" }] } },
+						}),
+					};
+				}
+				return {
+					ok: true,
+					json: async () => ({
+						data: {
+							workflowStates: {
+								nodes: [
+									{ name: "Backlog", type: "backlog" },
+									{ name: "In Progress", type: "started" },
+									{ name: "Done", type: "completed" },
+								],
+							},
+						},
+					}),
+				};
+			});
+
+			const source = new LinearSource();
+			const statuses = await source.listStatuses("Engineering");
+
+			expect(statuses).toEqual([
+				{ value: "Backlog", label: "Backlog (backlog)" },
+				{ value: "In Progress", label: "In Progress (started)" },
+				{ value: "Done", label: "Done (completed)" },
+			]);
+			expect(callCount).toBe(2);
+		});
+
+		it("throws when team is not found", async () => {
+			vi.stubGlobal("fetch", mockFetch({ data: { teams: { nodes: [] } } }));
+
+			const source = new LinearSource();
+			await expect(source.listStatuses("NonExistent")).rejects.toThrow(
+				'Team "NonExistent" not found',
+			);
+		});
+	});
+});

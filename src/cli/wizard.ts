@@ -5,6 +5,7 @@ import { saveConfig } from "../config.js";
 import { isGhCliAvailable } from "../git/github.js";
 import { ensureWorktreeGitignore } from "../git/worktree.js";
 import { getAllProvidersWithAvailability } from "../providers/index.js";
+import { createSource } from "../sources/index.js";
 import { getTemplateById, getTemplates, templateToPartialConfig } from "../templates.js";
 import type { LisaConfig, ProviderName, SourceName, WorkflowMode } from "../types/index.js";
 import {
@@ -17,6 +18,57 @@ import {
 	getMissingEnvVars,
 	isCursorFreePlan,
 } from "./detection.js";
+
+async function selectOrInput(opts: {
+	listFn?: () => Promise<{ value: string; label: string }[]>;
+	message: string;
+	placeholder?: string;
+	initialValue?: string;
+	multi?: boolean;
+	spinnerMessage?: string;
+}): Promise<string | string[]> {
+	if (opts.listFn) {
+		const spinner = clack.spinner();
+		spinner.start(opts.spinnerMessage ?? "Fetching options...");
+		try {
+			const items = await Promise.race([
+				opts.listFn(),
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+			]);
+			spinner.stop(pc.dim(`Found ${items.length} options`));
+
+			if (items.length > 0) {
+				if (opts.multi) {
+					const selected = await clack.multiselect({
+						message: opts.message,
+						options: items.map((i) => ({ value: i.value, label: i.label })),
+						required: false,
+					});
+					if (clack.isCancel(selected)) return process.exit(0);
+					return selected as string[];
+				}
+				const selected = await clack.select({
+					message: opts.message,
+					initialValue: opts.initialValue,
+					options: items.map((i) => ({ value: i.value, label: i.label })),
+				});
+				if (clack.isCancel(selected)) return process.exit(0);
+				return selected as string;
+			}
+		} catch {
+			spinner.stop(pc.yellow("Could not fetch options — entering manually"));
+		}
+	}
+
+	// Fallback to text input
+	const answer = await clack.text({
+		message: opts.message,
+		initialValue: opts.initialValue ?? "",
+		placeholder: opts.placeholder,
+	});
+	if (clack.isCancel(answer)) return process.exit(0);
+	return answer as string;
+}
 
 export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	clack.intro(
@@ -337,38 +389,91 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	// Detect platform
 	const platform = await detectPlatform();
 
-	// --- Issue source config ---
+	// --- Issue source config (API-driven where possible) ---
 
-	const scopeAnswer = await clack.text({
-		message:
-			source === "linear"
-				? "What is your Linear team name?"
-				: source === "trello"
-					? "What is your Trello board name?"
-					: source === "jira"
-						? "What is your Jira project key?"
-						: "What is your team or project name?",
-		initialValue: initial?.source_config.scope ?? "",
-		placeholder: source === "linear" ? "e.g. Engineering" : undefined,
-	});
-	if (clack.isCancel(scopeAnswer)) return process.exit(0);
-	const scope = scopeAnswer as string;
+	const sourceKey = source as SourceName;
+	const sourceInstance = createSource(sourceKey);
 
+	// Scope
+	let scope: string;
+	if (sourceKey === "shortcut") {
+		scope = "";
+		clack.log.info("Shortcut workspace is determined by your API token — no scope needed.");
+	} else {
+		scope = (await selectOrInput({
+			listFn: sourceInstance.listScopes?.bind(sourceInstance),
+			message:
+				sourceKey === "linear"
+					? "What is your Linear team name?"
+					: sourceKey === "trello"
+						? "Which Trello board?"
+						: sourceKey === "jira"
+							? "Which Jira project?"
+							: sourceKey === "plane"
+								? "What is your Plane workspace slug?"
+								: sourceKey === "github-issues"
+									? "Which GitHub repository? (owner/repo)"
+									: sourceKey === "gitlab-issues"
+										? "Which GitLab project? (namespace/project)"
+										: "What is your scope?",
+			placeholder:
+				sourceKey === "linear"
+					? "e.g. Engineering"
+					: sourceKey === "github-issues"
+						? "e.g. owner/repo"
+						: sourceKey === "gitlab-issues"
+							? "e.g. namespace/project"
+							: undefined,
+			initialValue: initial?.source_config.scope ?? "",
+			spinnerMessage:
+				sourceKey === "trello"
+					? "Fetching boards..."
+					: sourceKey === "jira"
+						? "Fetching projects..."
+						: "Fetching...",
+		})) as string;
+	}
+
+	// Project (non-Trello sources)
+	let project: string;
+	if (sourceKey === "trello") {
+		project = "";
+	} else {
+		project = (await selectOrInput({
+			listFn: sourceInstance.listProjects ? () => sourceInstance.listProjects!(scope) : undefined,
+			message:
+				sourceKey === "linear"
+					? "Which Linear project? (leave empty for all team issues)"
+					: "Which project?",
+			initialValue: initial?.source_config.project ?? "",
+			placeholder: sourceKey === "linear" ? "e.g. Q1 Roadmap  (optional)" : undefined,
+			spinnerMessage: "Fetching projects...",
+		})) as string;
+	}
+
+	// Labels
 	const initialLabelStr = initial
 		? Array.isArray(initial.source_config.label)
 			? initial.source_config.label.join(", ")
 			: initial.source_config.label
 		: "";
-	const labelAnswer = await clack.text({
-		message: "Which label(s) mark issues as ready? (comma-separated for multiple, e.g. ready,api)",
+	const labelValue = await selectOrInput({
+		listFn: sourceInstance.listLabels
+			? () => sourceInstance.listLabels!(scope, project)
+			: undefined,
+		message: "Which label(s) mark issues as ready?",
+		multi: true,
 		initialValue: initialLabelStr || "ready",
 		placeholder: "e.g. ready  or  ready, api",
+		spinnerMessage: "Fetching labels...",
 	});
-	if (clack.isCancel(labelAnswer)) return process.exit(0);
-	const labelParts = (labelAnswer as string)
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
+
+	const labelParts = Array.isArray(labelValue)
+		? labelValue
+		: (labelValue as string)
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
 	const label: string | string[] = labelParts.length === 1 ? (labelParts[0] as string) : labelParts;
 
 	let removeLabel: string | undefined;
@@ -383,65 +488,58 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		removeLabel = (removeLabelAnswer as string) || undefined;
 	}
 
-	let project: string;
+	// Statuses
+	const isLabelBasedSource = sourceKey === "github-issues" || sourceKey === "gitlab-issues";
+	const statusListFn = sourceInstance.listStatuses
+		? () => sourceInstance.listStatuses!(scope, project)
+		: undefined;
+
 	let pickFrom: string;
 	let inProgress: string;
 	let done: string;
 
-	if (source === "trello") {
-		const pickFromAnswer = await clack.text({
+	if (sourceKey === "trello") {
+		pickFrom = (await selectOrInput({
+			listFn: statusListFn,
 			message: "Pick up cards from which list?",
 			initialValue: initial?.source_config.pick_from ?? "Backlog",
-		});
-		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
-		pickFrom = pickFromAnswer as string;
+			spinnerMessage: "Fetching lists...",
+		})) as string;
 		project = pickFrom;
 
-		const inProgressAnswer = await clack.text({
+		inProgress = (await selectOrInput({
+			listFn: statusListFn,
 			message: "Move the card to which list while the agent is working?",
 			initialValue: initial?.source_config.in_progress ?? "In Progress",
-		});
-		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
-		inProgress = inProgressAnswer as string;
+			spinnerMessage: "Fetching lists...",
+		})) as string;
 
-		const doneAnswer = await clack.text({
+		done = (await selectOrInput({
+			listFn: statusListFn,
 			message: "Move the card to which list after the PR is created?",
 			initialValue: initial?.source_config.done ?? "Code Review",
-		});
-		if (clack.isCancel(doneAnswer)) return process.exit(0);
-		done = doneAnswer as string;
+			spinnerMessage: "Fetching lists...",
+		})) as string;
 	} else {
-		const projectAnswer = await clack.text({
-			message:
-				source === "linear"
-					? "Which Linear project should Lisa work on? (leave empty for all team issues)"
-					: "Which project should Lisa work on?",
-			initialValue: initial?.source_config.project ?? "",
-			placeholder: source === "linear" ? "e.g. Q1 Roadmap  (optional)" : undefined,
-		});
-		if (clack.isCancel(projectAnswer)) return process.exit(0);
-		project = projectAnswer as string;
-
-		const isLabelBasedSource = source === "github-issues" || source === "gitlab-issues";
-
-		const pickFromAnswer = await clack.text({
+		pickFrom = (await selectOrInput({
+			listFn: statusListFn,
 			message: isLabelBasedSource
 				? "Pick up issues in which state? (open, closed, or a label name)"
 				: "Pick up issues in which status?",
 			initialValue: initial?.source_config.pick_from ?? (isLabelBasedSource ? "open" : "Backlog"),
 			placeholder: isLabelBasedSource ? "e.g. open" : "e.g. Backlog, Todo",
-		});
-		if (clack.isCancel(pickFromAnswer)) return process.exit(0);
-		pickFrom = pickFromAnswer as string;
-		const inProgressAnswer = await clack.text({
+			spinnerMessage: "Fetching statuses...",
+		})) as string;
+
+		inProgress = (await selectOrInput({
+			listFn: statusListFn,
 			message: isLabelBasedSource
-				? "Which label to apply while the agent is working? (must differ from pick_from label)"
+				? "Which label to apply while the agent is working?"
 				: "Move to which status while the agent is working?",
 			initialValue: initial?.source_config.in_progress ?? "In Progress",
 			placeholder: isLabelBasedSource ? "e.g. in-progress" : undefined,
-		});
-		if (clack.isCancel(inProgressAnswer)) return process.exit(0);
-		inProgress = inProgressAnswer as string;
+			spinnerMessage: "Fetching statuses...",
+		})) as string;
 
 		if (isLabelBasedSource && inProgress === pickFrom) {
 			clack.log.warning(
@@ -450,14 +548,14 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			);
 		}
 
-		const doneAnswer = await clack.text({
+		done = (await selectOrInput({
+			listFn: statusListFn,
 			message: isLabelBasedSource
 				? "Which label to apply after the PR is created?"
 				: "Move to which status after the PR is created?",
 			initialValue: initial?.source_config.done ?? "In Review",
-		});
-		if (clack.isCancel(doneAnswer)) return process.exit(0);
-		done = doneAnswer as string;
+			spinnerMessage: "Fetching statuses...",
+		})) as string;
 	}
 
 	// --- Git workflow ---

@@ -636,6 +636,136 @@ describe("JiraSource", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// wizard helpers
+	// -------------------------------------------------------------------------
+
+	describe("wizard helpers", () => {
+		describe("listScopes", () => {
+			it("returns projects as value/label pairs", async () => {
+				global.fetch = mockFetchSequence([
+					ok({
+						values: [
+							{ key: "ENG", name: "Engineering" },
+							{ key: "OPS", name: "Operations" },
+						],
+					}),
+				]);
+
+				const result = await source.listScopes();
+				expect(result).toEqual([
+					{ value: "ENG", label: "ENG — Engineering" },
+					{ value: "OPS", label: "OPS — Operations" },
+				]);
+			});
+
+			it("returns empty array when no projects", async () => {
+				global.fetch = mockFetchSequence([ok({ values: [] })]);
+
+				const result = await source.listScopes();
+				expect(result).toEqual([]);
+			});
+
+			it("calls the correct API endpoint", async () => {
+				let capturedUrl: string | undefined;
+				global.fetch = vi.fn().mockImplementation((url: string) => {
+					capturedUrl = url;
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => ({ values: [] }),
+						text: async () => "",
+					});
+				});
+
+				await source.listScopes();
+				expect(capturedUrl).toContain("/rest/api/3/project/search?maxResults=50");
+			});
+		});
+
+		describe("listLabels", () => {
+			it("returns labels as value/label pairs", async () => {
+				global.fetch = mockFetchSequence([ok({ values: ["lisa", "ready", "wip"] })]);
+
+				const result = await source.listLabels();
+				expect(result).toEqual([
+					{ value: "lisa", label: "lisa" },
+					{ value: "ready", label: "ready" },
+					{ value: "wip", label: "wip" },
+				]);
+			});
+
+			it("returns empty array when no labels", async () => {
+				global.fetch = mockFetchSequence([ok({ values: [] })]);
+
+				const result = await source.listLabels();
+				expect(result).toEqual([]);
+			});
+
+			it("calls the correct API endpoint", async () => {
+				let capturedUrl: string | undefined;
+				global.fetch = vi.fn().mockImplementation((url: string) => {
+					capturedUrl = url;
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => ({ values: [] }),
+						text: async () => "",
+					});
+				});
+
+				await source.listLabels();
+				expect(capturedUrl).toContain("/rest/api/3/label?maxResults=100");
+			});
+		});
+
+		describe("listStatuses", () => {
+			it("returns unique statuses across issue types", async () => {
+				global.fetch = mockFetchSequence([
+					ok([
+						{
+							statuses: [{ name: "Backlog" }, { name: "In Progress" }, { name: "Done" }],
+						},
+						{
+							statuses: [{ name: "Backlog" }, { name: "In Review" }, { name: "Done" }],
+						},
+					]),
+				]);
+
+				const result = await source.listStatuses("ENG");
+				expect(result).toEqual([
+					{ value: "Backlog", label: "Backlog" },
+					{ value: "In Progress", label: "In Progress" },
+					{ value: "Done", label: "Done" },
+					{ value: "In Review", label: "In Review" },
+				]);
+			});
+
+			it("returns empty array when no issue types", async () => {
+				global.fetch = mockFetchSequence([ok([])]);
+
+				const result = await source.listStatuses("ENG");
+				expect(result).toEqual([]);
+			});
+
+			it("calls the correct API endpoint", async () => {
+				let capturedUrl: string | undefined;
+				global.fetch = vi.fn().mockImplementation((url: string) => {
+					capturedUrl = url;
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => [],
+						text: async () => "",
+					});
+				});
+
+				await source.listStatuses("ENG");
+				expect(capturedUrl).toContain("/rest/api/3/project/ENG/statuses");
+			});
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// removeLabel
 	// -------------------------------------------------------------------------
 

@@ -386,6 +386,25 @@ export class PlaneSource implements Source {
 			});
 	}
 
+	async listProjects(scope: string): Promise<{ value: string; label: string }[]> {
+		const projects = await fetchAll<PlaneProject>(`/workspaces/${scope}/projects/`);
+		return projects.map((p) => ({ value: p.identifier, label: p.name }));
+	}
+
+	async listLabels(scope: string, project?: string): Promise<{ value: string; label: string }[]> {
+		if (!project) return [];
+		const projectId = await resolveProjectId(scope, project);
+		const labels = await fetchAll<PlaneLabel>(`/workspaces/${scope}/projects/${projectId}/labels/`);
+		return labels.map((l) => ({ value: l.name, label: l.name }));
+	}
+
+	async listStatuses(scope: string, project?: string): Promise<{ value: string; label: string }[]> {
+		if (!project) return [];
+		const projectId = await resolveProjectId(scope, project);
+		const states = await fetchAll<PlaneState>(`/workspaces/${scope}/projects/${projectId}/states/`);
+		return states.map((s) => ({ value: s.name, label: `${s.name} (${s.group})` }));
+	}
+
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
 

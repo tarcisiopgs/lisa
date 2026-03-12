@@ -367,6 +367,28 @@ export class GitHubIssuesSource implements Source {
 		}));
 	}
 
+	async listLabels(scope: string): Promise<{ value: string; label: string }[]> {
+		const { owner, repo } = parseOwnerRepo(scope);
+		const results: { value: string; label: string }[] = [];
+		let page = 1;
+
+		while (true) {
+			const labels = await githubGet<{ name: string; description: string | null }[]>(
+				`/repos/${owner}/${repo}/labels?per_page=100&page=${page}`,
+			);
+			for (const l of labels) {
+				results.push({
+					value: l.name,
+					label: l.description ? `${l.name} — ${l.description}` : l.name,
+				});
+			}
+			if (labels.length < 100) break;
+			page++;
+		}
+
+		return results;
+	}
+
 	async removeLabel(issueId: string, labelToRemove: string): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		try {

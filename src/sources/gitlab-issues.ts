@@ -296,6 +296,28 @@ export class GitLabIssuesSource implements Source {
 		}));
 	}
 
+	async listLabels(scope: string): Promise<{ value: string; label: string }[]> {
+		const project = parseGitLabProject(scope);
+		const results: { value: string; label: string }[] = [];
+		let page = 1;
+
+		while (true) {
+			const labels = await gitlabGet<{ name: string; description: string | null }[]>(
+				`/projects/${project}/labels?per_page=100&page=${page}`,
+			);
+			for (const l of labels) {
+				results.push({
+					value: l.name,
+					label: l.description ? `${l.name} — ${l.description}` : l.name,
+				});
+			}
+			if (labels.length < 100) break;
+			page++;
+		}
+
+		return results;
+	}
+
 	async removeLabel(issueId: string, labelToRemove: string): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
