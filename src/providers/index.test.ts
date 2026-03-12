@@ -115,6 +115,15 @@ describe("isEligibleForFallback", () => {
 		expect(isEligibleForFallback("The model does not exist")).toBe(true);
 	});
 
+	it("returns true for copilot model errors", () => {
+		expect(isEligibleForFallback('Model "gpt-5.2" from --model flag is not available.')).toBe(true);
+		expect(
+			isEligibleForFallback(
+				"Run `copilot --model claude-opus-4.6-fast` in interactive mode to enable this model",
+			),
+		).toBe(true);
+	});
+
 	it("returns true for installation errors", () => {
 		expect(isEligibleForFallback("claude is not installed")).toBe(true);
 		expect(isEligibleForFallback("not in PATH")).toBe(true);
