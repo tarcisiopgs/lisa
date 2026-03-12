@@ -122,7 +122,7 @@ describe("GitHubIssuesSource", () => {
 	});
 
 	const baseConfig = {
-		team: "my-org/my-repo",
+		scope: "my-org/my-repo",
 		project: "",
 		label: "ready",
 		pick_from: "",
@@ -273,7 +273,7 @@ describe("GitHubIssuesSource", () => {
 		});
 
 		it("throws on invalid owner/repo format", async () => {
-			const badConfig = { ...baseConfig, team: "invalid-format" };
+			const badConfig = { ...baseConfig, scope: "invalid-format" };
 			await expect(source.fetchNextIssue(badConfig)).rejects.toThrow(
 				'Invalid owner/repo format: "invalid-format"',
 			);
@@ -564,7 +564,7 @@ describe("GitHubIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch(issues));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -581,7 +581,7 @@ describe("GitHubIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch([]));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -764,7 +764,7 @@ describe("gh CLI token fallback", () => {
 		});
 
 		await source.fetchNextIssue({
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -783,7 +783,7 @@ describe("gh CLI token fallback", () => {
 
 		await expect(
 			source.fetchNextIssue({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "",
@@ -808,7 +808,7 @@ describe("gh CLI token fallback", () => {
 		});
 
 		await source.fetchNextIssue({
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",

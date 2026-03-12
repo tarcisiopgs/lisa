@@ -95,7 +95,7 @@ function err(status: number, text = "Error") {
 }
 
 const baseConfig = {
-	team: "",
+	scope: "",
 	project: "",
 	label: "lisa",
 	pick_from: "Ready for Development",

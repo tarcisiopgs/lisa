@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: LisaConfig = {
 	provider_options: {} as LisaConfig["provider_options"],
 	source: "" as SourceName,
 	source_config: {
-		team: "",
+		scope: "",
 		project: "",
 		label: "",
 		pick_from: "",
@@ -81,7 +81,9 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			? rawLabel
 			: "";
 	const sourceConfig: SourceConfig = {
-		team: ((rawSource.team as string) ?? (rawSource.board as string)) || "",
+		scope:
+			((rawSource.scope as string) ?? (rawSource.team as string) ?? (rawSource.board as string)) ||
+			"",
 		project:
 			((rawSource.project as string) ??
 				(rawSource.list as string) ??
@@ -100,23 +102,23 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	}
 
 	// For Plane, team holds the workspace slug; fall back to PLANE_WORKSPACE env var
-	if (parsed.source === "plane" && !sourceConfig.team && process.env.PLANE_WORKSPACE) {
-		sourceConfig.team = process.env.PLANE_WORKSPACE;
+	if (parsed.source === "plane" && !sourceConfig.scope && process.env.PLANE_WORKSPACE) {
+		sourceConfig.scope = process.env.PLANE_WORKSPACE;
 	}
 
 	// For GitLab Issues, team holds the project path/ID
-	if (parsed.source === "gitlab-issues" && !sourceConfig.team && rawSource.project) {
-		sourceConfig.team = rawSource.project as string;
+	if (parsed.source === "gitlab-issues" && !sourceConfig.scope && rawSource.project) {
+		sourceConfig.scope = rawSource.project as string;
 	}
 
 	// For GitHub Issues, team holds the owner/repo (e.g. "owner/repo")
-	if (parsed.source === "github-issues" && !sourceConfig.team && rawSource.project) {
-		sourceConfig.team = rawSource.project as string;
+	if (parsed.source === "github-issues" && !sourceConfig.scope && rawSource.project) {
+		sourceConfig.scope = rawSource.project as string;
 	}
 
 	// For Jira, team holds the project key
-	if (parsed.source === "jira" && !sourceConfig.team && rawSource.project) {
-		sourceConfig.team = rawSource.project as string;
+	if (parsed.source === "jira" && !sourceConfig.scope && rawSource.project) {
+		sourceConfig.scope = rawSource.project as string;
 	}
 
 	// Strip legacy `logs` field from parsed YAML (moved to system cache)
@@ -192,7 +194,7 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 	const sourceYaml =
 		config.source === "trello"
 			? {
-					board: sc.team,
+					board: sc.scope,
 					pick_from: sc.pick_from || sc.project,
 					label: sc.label,
 					...removeLabelEntry,
@@ -201,7 +203,7 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 				}
 			: config.source === "gitlab-issues"
 				? {
-						team: sc.team,
+						scope: sc.scope,
 						label: sc.label,
 						...removeLabelEntry,
 						in_progress: sc.in_progress,
@@ -209,7 +211,7 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 					}
 				: config.source === "github-issues"
 					? {
-							team: sc.team,
+							scope: sc.scope,
 							label: sc.label,
 							...removeLabelEntry,
 							in_progress: sc.in_progress,
@@ -217,7 +219,7 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 						}
 					: config.source === "jira"
 						? {
-								team: sc.team,
+								scope: sc.scope,
 								label: sc.label,
 								...removeLabelEntry,
 								pick_from: sc.pick_from,
@@ -225,7 +227,7 @@ export function saveConfig(config: LisaConfig, cwd: string = process.cwd()): voi
 								done: sc.done,
 							}
 						: {
-								team: sc.team,
+								scope: sc.scope,
 								project: sc.project,
 								label: sc.label,
 								...removeLabelEntry,

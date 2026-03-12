@@ -169,7 +169,7 @@ export class GitHubIssuesSource implements Source {
 	name = "github-issues" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const { owner, repo } = parseOwnerRepo(config.team);
+		const { owner, repo } = parseOwnerRepo(config.scope);
 		// GitHub valid states: open, closed, all. If pick_from is a non-empty, non-standard-state
 		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
 		const validStates = ["open", "closed", "all"];
@@ -353,7 +353,7 @@ export class GitHubIssuesSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const { owner, repo } = parseOwnerRepo(config.team);
+		const { owner, repo } = parseOwnerRepo(config.scope);
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;

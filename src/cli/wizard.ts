@@ -339,7 +339,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 
 	// --- Issue source config ---
 
-	const teamAnswer = await clack.text({
+	const scopeAnswer = await clack.text({
 		message:
 			source === "linear"
 				? "What is your Linear team name?"
@@ -348,11 +348,11 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 					: source === "jira"
 						? "What is your Jira project key?"
 						: "What is your team or project name?",
-		initialValue: initial?.source_config.team ?? "",
+		initialValue: initial?.source_config.scope ?? "",
 		placeholder: source === "linear" ? "e.g. Engineering" : undefined,
 	});
-	if (clack.isCancel(teamAnswer)) return process.exit(0);
-	const team = teamAnswer as string;
+	if (clack.isCancel(scopeAnswer)) return process.exit(0);
+	const scope = scopeAnswer as string;
 
 	const initialLabelStr = initial
 		? Array.isArray(initial.source_config.label)
@@ -532,7 +532,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		},
 		source: source as SourceName,
 		source_config: {
-			team,
+			scope,
 			project,
 			label,
 			...(removeLabel ? { remove_label: removeLabel } : {}),

@@ -222,7 +222,7 @@ export class PlaneSource implements Source {
 	name = "plane" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const workspaceSlug = config.team;
+		const workspaceSlug = config.scope;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
@@ -359,7 +359,7 @@ export class PlaneSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const workspaceSlug = config.team;
+		const workspaceSlug = config.scope;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];

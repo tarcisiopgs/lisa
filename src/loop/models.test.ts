@@ -90,7 +90,7 @@ describe("resolveModels — provider-prefixed model warning", () => {
 			provider_options: { [provider]: { models } },
 			source: "linear",
 			source_config: {
-				team: "",
+				scope: "",
 				project: "",
 				label: "",
 				pick_from: "",

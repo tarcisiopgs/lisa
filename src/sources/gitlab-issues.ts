@@ -122,7 +122,7 @@ export class GitLabIssuesSource implements Source {
 	name = "gitlab-issues" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const project = parseGitLabProject(config.team);
+		const project = parseGitLabProject(config.scope);
 		// GitLab valid states: opened, closed, all. If pick_from is a non-empty, non-standard-state
 		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
 		const validStates = ["opened", "closed", "all"];
@@ -188,7 +188,7 @@ export class GitLabIssuesSource implements Source {
 		if (!issue) return null;
 
 		return {
-			id: makeIssueId(config.team, issue.iid),
+			id: makeIssueId(config.scope, issue.iid),
 			title: issue.title,
 			description: issue.description ?? "",
 			url: issue.web_url,
@@ -282,14 +282,14 @@ export class GitLabIssuesSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const project = parseGitLabProject(config.team);
+		const project = parseGitLabProject(config.scope);
 		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
 		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
 		const issues = await gitlabGet<GitLabIssue[]>(path);
 		return issues.map((issue) => ({
-			id: makeIssueId(config.team, issue.iid),
+			id: makeIssueId(config.scope, issue.iid),
 			title: issue.title,
 			description: issue.description ?? "",
 			url: issue.web_url,

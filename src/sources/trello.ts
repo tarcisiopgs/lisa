@@ -96,7 +96,7 @@ export class TrelloSource implements Source {
 	name = "trello" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const board = await findBoardByName(config.team);
+		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
 		const labelIds = await Promise.all(
@@ -160,7 +160,7 @@ export class TrelloSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const board = await findBoardByName(config.team);
+		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
 		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
 		const labelIds = await Promise.all(

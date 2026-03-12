@@ -94,7 +94,7 @@ logs:
 		const config = loadConfig(tmpDir);
 		expect(config.provider).toBe("claude");
 		expect(config.source).toBe("linear");
-		expect(config.source_config.team).toBe("MyTeam");
+		expect(config.source_config.scope).toBe("MyTeam");
 		expect(config.source_config.project).toBe("MyProject");
 		expect(config.loop.cooldown).toBe(30);
 		expect(config.provider_options?.claude?.models).toEqual(["claude"]);
@@ -117,7 +117,7 @@ source_config:
 		);
 
 		const config = loadConfig(tmpDir);
-		expect(config.source_config.team).toBe("MyBoard");
+		expect(config.source_config.scope).toBe("MyBoard");
 		expect(config.source_config.project).toBe("MyList");
 		// For Trello, pick_from defaults to project when empty
 		expect(config.source_config.pick_from).toBe("MyList");
@@ -274,7 +274,7 @@ describe("saveConfig", () => {
 			provider: "claude",
 			source: "linear",
 			source_config: {
-				team: "MyTeam",
+				scope: "MyTeam",
 				project: "MyProject",
 				label: "lisa",
 				pick_from: "Todo",
@@ -292,7 +292,7 @@ describe("saveConfig", () => {
 		saveConfig(config, tmpDir);
 
 		const content = readFileSync(join(tmpDir, ".lisa", "config.yaml"), "utf-8");
-		expect(content).toContain("team: MyTeam");
+		expect(content).toContain("scope: MyTeam");
 		expect(content).toContain("project: MyProject");
 	});
 
@@ -301,7 +301,7 @@ describe("saveConfig", () => {
 			provider: "claude",
 			source: "trello",
 			source_config: {
-				team: "MyBoard",
+				scope: "MyBoard",
 				project: "MyList",
 				label: "lisa",
 				pick_from: "MyList",
@@ -334,7 +334,7 @@ describe("saveConfig", () => {
 			},
 			source: "linear",
 			source_config: {
-				team: "T",
+				scope: "T",
 				project: "P",
 				label: "ready",
 				pick_from: "Todo",
@@ -371,7 +371,7 @@ describe("mergeWithFlags", () => {
 		provider: "claude",
 		source: "linear",
 		source_config: {
-			team: "Team",
+			scope: "Team",
 			project: "Project",
 			label: "lisa",
 			pick_from: "Todo",
@@ -513,7 +513,7 @@ describe("saveConfig multi-label", () => {
 			provider: "claude",
 			source: "linear",
 			source_config: {
-				team: "MyTeam",
+				scope: "MyTeam",
 				project: "MyProject",
 				label: ["ready", "api"],
 				remove_label: "ready",
@@ -540,7 +540,7 @@ describe("saveConfig multi-label", () => {
 			provider: "claude",
 			source: "linear",
 			source_config: {
-				team: "MyTeam",
+				scope: "MyTeam",
 				project: "MyProject",
 				label: "ready",
 				pick_from: "Todo",
@@ -567,7 +567,7 @@ describe("mergeWithFlags multi-label", () => {
 		provider: "claude",
 		source: "linear",
 		source_config: {
-			team: "Team",
+			scope: "Team",
 			project: "Project",
 			label: "lisa",
 			pick_from: "Todo",
@@ -596,7 +596,7 @@ describe("mergeWithFlags multi-label", () => {
 describe("getRemoveLabel", () => {
 	it("returns remove_label when set", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: ["ready", "api"],
 			remove_label: "ready",
@@ -609,7 +609,7 @@ describe("getRemoveLabel", () => {
 
 	it("returns single string label when remove_label is not set", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -621,7 +621,7 @@ describe("getRemoveLabel", () => {
 
 	it("returns undefined for array label without remove_label", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: ["ready", "api"],
 			pick_from: "",
@@ -635,7 +635,7 @@ describe("getRemoveLabel", () => {
 describe("getLabelsArray", () => {
 	it("returns array as-is", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: ["ready", "api"],
 			pick_from: "",
@@ -647,7 +647,7 @@ describe("getLabelsArray", () => {
 
 	it("wraps single string in array", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -659,7 +659,7 @@ describe("getLabelsArray", () => {
 
 	it("returns empty array for empty string", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: "",
 			pick_from: "",
@@ -673,7 +673,7 @@ describe("getLabelsArray", () => {
 describe("formatLabels", () => {
 	it("formats array labels as comma-separated", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: ["ready", "api"],
 			pick_from: "",
@@ -685,7 +685,7 @@ describe("formatLabels", () => {
 
 	it("formats single string label", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -697,7 +697,7 @@ describe("formatLabels", () => {
 
 	it("returns (none) for empty label", () => {
 		const sc: SourceConfig = {
-			team: "",
+			scope: "",
 			project: "",
 			label: "",
 			pick_from: "",

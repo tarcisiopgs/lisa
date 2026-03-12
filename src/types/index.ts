@@ -26,7 +26,7 @@ export interface RepoConfig {
 }
 
 export interface SourceConfig {
-	team: string;
+	scope: string;
 	project: string;
 	label: string | string[];
 	remove_label?: string;

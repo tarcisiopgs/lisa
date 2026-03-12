@@ -74,7 +74,7 @@ export async function runSequentialLoop(
 				logger.log(`[dry-run] Would fetch issue '${opts.issueId}' from ${config.source}`);
 			} else {
 				logger.log(
-					`[dry-run] Would fetch issue from ${config.source} (${config.source_config.team}/${config.source_config.project})`,
+					`[dry-run] Would fetch issue from ${config.source} (${config.source_config.scope}/${config.source_config.project})`,
 				);
 			}
 			logger.log(`[dry-run] Workflow mode: ${config.workflow}`);

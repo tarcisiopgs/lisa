@@ -16,7 +16,7 @@ function mockFetchSequence(...responses: unknown[]) {
 }
 
 const config = {
-	team: "My Board",
+	scope: "My Board",
 	project: "Backlog",
 	label: "lisa",
 	pick_from: "Backlog",

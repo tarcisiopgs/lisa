@@ -146,7 +146,7 @@ describe("GitLabIssuesSource", () => {
 
 	describe("fetchNextIssue", () => {
 		const config = {
-			team: "my-org/my-repo",
+			scope: "my-org/my-repo",
 			project: "",
 			label: "ready",
 			pick_from: "",
@@ -194,7 +194,7 @@ describe("GitLabIssuesSource", () => {
 		});
 
 		it("uses numeric project ID as-is", async () => {
-			const numericConfig = { ...config, team: "12345" };
+			const numericConfig = { ...config, scope: "12345" };
 			global.fetch = mockFetchByUrl({ "/issues?": [makeIssue({ iid: 7 })], "/links": [] });
 
 			const result = await source.fetchNextIssue(numericConfig);
@@ -518,7 +518,7 @@ describe("GitLabIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch(issues));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",
@@ -534,7 +534,7 @@ describe("GitLabIssuesSource", () => {
 			vi.stubGlobal("fetch", mockFetch([]));
 
 			const result = await source.listIssues({
-				team: "my-org/my-repo",
+				scope: "my-org/my-repo",
 				project: "",
 				label: "ready",
 				pick_from: "Backlog",

@@ -92,7 +92,7 @@ export class LinearSource implements Source {
 				}
 			}`,
 			{
-				teamName: config.team,
+				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,
@@ -361,7 +361,7 @@ export class LinearSource implements Source {
 				}
 			}`,
 			{
-				teamName: config.team,
+				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,

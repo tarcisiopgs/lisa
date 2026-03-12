@@ -11,7 +11,7 @@ function mockFetch(response: unknown, ok = true) {
 }
 
 const config = {
-	team: "Engineering",
+	scope: "Engineering",
 	project: "Backend",
 	label: "lisa",
 	pick_from: "Backlog",
@@ -62,7 +62,7 @@ describe("LinearSource.fetchNextIssue multi-label", () => {
 
 		const source = new LinearSource();
 		const result = await source.fetchNextIssue({
-			team: "Engineering",
+			scope: "Engineering",
 			project: "Backend",
 			label: ["ready", "api"],
 			pick_from: "Backlog",
@@ -99,7 +99,7 @@ describe("LinearSource.fetchNextIssue multi-label", () => {
 
 		const source = new LinearSource();
 		const result = await source.fetchNextIssue({
-			team: "Engineering",
+			scope: "Engineering",
 			project: "Backend",
 			label: ["ready", "api"],
 			pick_from: "Backlog",

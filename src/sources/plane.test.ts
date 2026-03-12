@@ -83,7 +83,7 @@ function err(status: number, text = "Error") {
 }
 
 const baseConfig = {
-	team: "my-workspace",
+	scope: "my-workspace",
 	project: "DEV",
 	label: "ready",
 	pick_from: "Todo",

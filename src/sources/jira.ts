@@ -143,7 +143,7 @@ export class JiraSource implements Source {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.team)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
+			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
@@ -262,7 +262,7 @@ export class JiraSource implements Source {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 		const jql = encodeURIComponent(
-			`project = "${escapeJql(config.team)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
+			`project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`,
 		);
 		const fields = "summary,description,priority,status,labels";
 
