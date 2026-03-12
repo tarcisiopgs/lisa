@@ -2,11 +2,12 @@ import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
-import { createWorktree, generateBranchName } from "../git/worktree.js";
+import { createWorktree, generateBranchName, getDiffStat } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { getManifestPath, getPlanPath } from "../paths.js";
 import {
+	buildContinuationPrompt,
 	buildPlanningPrompt,
 	buildScopedImplementPrompt,
 	detectPackageManager,
@@ -315,9 +316,58 @@ export async function runMultiRepoStep(
 			);
 			prUrl = extractedUrl;
 		} else {
-			logger.error(`Agent did not produce a manifest with prUrl for step ${stepNum}.`);
-			await cleanupWorktree(repoPath, worktreePath);
-			return { ...failResult(result.providerUsed, result), branch: branchName };
+			logger.warn(
+				`Agent completed with code changes but no PR for step ${stepNum}. Attempting continuation...`,
+			);
+
+			const diffStat = await getDiffStat(worktreePath, baseBranch);
+			const continuationPrompt = buildContinuationPrompt({
+				issue: { id: issue.id, title: issue.title },
+				diffStat,
+				previousOutput: result.output,
+				platform: config.platform,
+				baseBranch,
+				manifestPath,
+			});
+
+			startSpinner(`${issue.id} step ${stepNum} — continuation...`);
+			const contResult = await runWithFallback(models, continuationPrompt, {
+				logFile,
+				cwd: worktreePath,
+				guardrailsDir: workspace,
+				issueId: issue.id,
+				overseer: config.overseer,
+				sessionTimeout: config.loop.session_timeout,
+				outputStallTimeout: config.loop.output_stall_timeout,
+				providerOptions: resolveProviderOptions(config),
+				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
+				onProcess: (pid) => {
+					activeProviderPids.set(issue.id, pid);
+				},
+				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+			});
+			stopSpinner();
+
+			try {
+				appendFileSync(
+					logFile,
+					`\n${"=".repeat(80)}\nStep ${stepNum} continuation — provider: ${contResult.providerUsed}\n${contResult.output}\n`,
+				);
+			} catch {}
+
+			if (contResult.success) {
+				const contManifest = readManifestFile(manifestPath);
+				prUrl = contManifest?.prUrl;
+				if (!prUrl) {
+					prUrl = extractPrUrlFromOutput(contResult.output) ?? undefined;
+				}
+			}
+
+			if (!prUrl) {
+				logger.error(`Continuation also failed to produce PR for step ${stepNum}. Aborting.`);
+				await cleanupWorktree(repoPath, worktreePath);
+				return { ...failResult(result.providerUsed, result), branch: branchName };
+			}
 		}
 	}
 

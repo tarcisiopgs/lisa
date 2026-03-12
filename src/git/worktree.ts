@@ -194,3 +194,15 @@ export async function hasCodeChanges(repoPath: string, baseBranch: string): Prom
 		return false;
 	}
 }
+
+export async function getDiffStat(repoPath: string, baseBranch: string): Promise<string> {
+	try {
+		const { stdout } = await execa("git", ["diff", "--stat", `${baseBranch}..HEAD`], {
+			cwd: repoPath,
+			reject: false,
+		});
+		return stdout.trim();
+	} catch {
+		return "";
+	}
+}

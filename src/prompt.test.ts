@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectContext } from "./context.js";
 import {
 	buildContextMdBlock,
+	buildContinuationPrompt,
 	buildDependencyContext,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
@@ -13,7 +14,7 @@ import {
 	detectTestRunner,
 	extractReadmeHeadings,
 } from "./prompt.js";
-import type { DependencyContext, Issue, LisaConfig, PlanStep } from "./types/index.js";
+import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
 	return {
@@ -877,5 +878,65 @@ describe("dependency context in prompts", () => {
 		const instrIndex = prompt.indexOf("## Instructions");
 		expect(descIndex).toBeLessThan(depIndex);
 		expect(depIndex).toBeLessThan(instrIndex);
+	});
+});
+
+describe("buildContinuationPrompt", () => {
+	const baseOpts = {
+		issue: { id: "INT-100", title: "Add feature" },
+		diffStat: " src/index.ts | 5 +++++\n 1 file changed",
+		previousOutput: "I implemented the feature...",
+		platform: "cli" as PRPlatform,
+		baseBranch: "main",
+		manifestPath: ".lisa/manifests/default.json",
+	};
+
+	it("includes issue ID and title", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("INT-100");
+		expect(result).toContain("Add feature");
+	});
+
+	it("includes diff stat", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("src/index.ts");
+		expect(result).toContain("1 file changed");
+	});
+
+	it("truncates previous output to last 50 lines", () => {
+		const longOutput = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");
+		const result = buildContinuationPrompt({ ...baseOpts, previousOutput: longOutput });
+		expect(result).toContain("line 199");
+		expect(result).not.toContain("line 0\n");
+	});
+
+	it("includes PR creation instruction", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("gh pr create");
+	});
+
+	it("includes completion checklist", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("Completion Checklist");
+		expect(result).toContain("prUrl");
+	});
+
+	it("includes manifest path", () => {
+		const result = buildContinuationPrompt({
+			...baseOpts,
+			manifestPath: "/worktree/.lisa/manifests/INT-100.json",
+		});
+		expect(result).toContain("/worktree/.lisa/manifests/INT-100.json");
+	});
+
+	it("includes CRITICAL block before delivery steps", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("CRITICAL");
+		expect(result).toContain("MANDATORY");
+	});
+
+	it("instructs not to re-implement", () => {
+		const result = buildContinuationPrompt(baseOpts);
+		expect(result).toContain("Do NOT re-implement or undo existing changes");
 	});
 });

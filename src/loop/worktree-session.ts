@@ -7,6 +7,7 @@ import {
 	createWorktree,
 	determineRepoPath,
 	generateBranchName,
+	getDiffStat,
 	hasCodeChanges,
 	removeWorktree,
 } from "../git/worktree.js";
@@ -14,6 +15,7 @@ import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { getManifestPath } from "../paths.js";
 import {
+	buildContinuationPrompt,
 	buildImplementPrompt,
 	buildNativeWorktreePrompt,
 	detectPackageManager,
@@ -435,9 +437,64 @@ export async function runManualWorktreeSession(
 			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
 			prUrl = extractedUrl;
 		} else {
-			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
-			await cleanupWorktree(repoPath, worktreePath);
-			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+			// Attempt continuation: provider succeeded with code changes but no PR
+			logger.warn(
+				`Agent completed with code changes but no PR for ${issue.id}. Attempting continuation...`,
+			);
+
+			const diffStat = await getDiffStat(worktreePath, baseBranch);
+			const continuationPrompt = buildContinuationPrompt({
+				issue: { id: issue.id, title: issue.title },
+				diffStat,
+				previousOutput: result.output,
+				platform: config.platform,
+				baseBranch,
+				manifestPath,
+			});
+
+			startSpinner(`${issue.id} \u2014 continuation...`);
+			const contResult = await runWithFallback(models, continuationPrompt, {
+				logFile,
+				cwd: worktreePath,
+				guardrailsDir: workspace,
+				issueId: issue.id,
+				overseer: config.overseer,
+				sessionTimeout: config.loop.session_timeout,
+				outputStallTimeout: config.loop.output_stall_timeout,
+				providerOptions: resolveProviderOptions(config),
+				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
+				onProcess: (pid) => {
+					activeProviderPids.set(issue.id, pid);
+				},
+				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+			});
+			stopSpinner();
+
+			try {
+				appendFileSync(
+					logFile,
+					`\n${"=".repeat(80)}\nContinuation \u2014 provider: ${contResult.providerUsed}\n${contResult.output}\n`,
+				);
+			} catch {}
+
+			if (contResult.success) {
+				const contManifest = readManifestFile(manifestPath);
+				prUrl = contManifest?.prUrl;
+				if (!prUrl) {
+					prUrl = extractPrUrlFromOutput(contResult.output) ?? undefined;
+				}
+			}
+
+			if (!prUrl) {
+				logger.error(`Continuation also failed to produce PR for ${issue.id}. Aborting.`);
+				await cleanupWorktree(repoPath, worktreePath);
+				return {
+					success: false,
+					providerUsed: result.providerUsed,
+					prUrls: [],
+					fallback: contResult,
+				};
+			}
 		}
 	}
 

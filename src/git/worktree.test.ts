@@ -5,6 +5,7 @@ import {
 	createWorktree,
 	determineRepoPath,
 	generateBranchName,
+	getDiffStat,
 	hasCodeChanges,
 } from "./worktree.js";
 
@@ -309,5 +310,39 @@ describe("hasCodeChanges", () => {
 		const result = await hasCodeChanges("/repo", "main");
 
 		expect(result).toBe(false);
+	});
+});
+
+describe("getDiffStat", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns diff stat output for changed files", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({
+			stdout:
+				" src/index.ts | 5 +++++\n src/utils.ts | 3 ++-\n 2 files changed, 7 insertions(+), 1 deletion(-)",
+		} as never);
+
+		const result = await getDiffStat("/repo", "main");
+		expect(result).toContain("src/index.ts");
+		expect(result).toContain("2 files changed");
+	});
+
+	it("returns empty string when no changes", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockResolvedValueOnce({ stdout: "" } as never);
+
+		const result = await getDiffStat("/repo", "main");
+		expect(result).toBe("");
+	});
+
+	it("returns empty string on git error", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa).mockRejectedValueOnce(new Error("not a git repo"));
+
+		const result = await getDiffStat("/repo", "main");
+		expect(result).toBe("");
 	});
 });
