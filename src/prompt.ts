@@ -227,8 +227,9 @@ function buildWorktreePrompt(
 		: "`.lisa/manifests/default.json` in the **current directory**";
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
-	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
-Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
+	return `You are an autonomous implementation agent. You MUST complete ALL steps below — implementation, commit, push, PR creation, and manifest file — before finishing.
+Do NOT stop after implementing code. The task is NOT complete until the manifest file is written with the PR URL.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. No human will see your output or respond to questions. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are already inside the correct repository worktree on the correct branch.
 Do NOT create a new branch — just work on the current one.
@@ -256,6 +257,8 @@ ${testBlock}${apiClientBlock}${hookBlock}
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 ${readmeBlock}
+**CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
+
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it before committing using the single-argument form:
@@ -280,7 +283,16 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-${buildRulesSection(projectContext?.environment)}`;
+${buildRulesSection(projectContext?.environment)}
+
+## Completion Checklist
+
+Before finishing, verify ALL of the following are true:
+- [ ] Code changes are committed (no uncommitted changes)
+- [ ] Branch is pushed to origin
+- [ ] Pull request is created and URL is captured
+- [ ] Manifest file is written with \`prUrl\` field
+If ANY item is unchecked, go back and complete it. Do NOT finish with incomplete steps.`;
 }
 
 function buildBranchPrompt(
@@ -321,8 +333,9 @@ function buildBranchPrompt(
 	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
 
-	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
-Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
+	return `You are an autonomous implementation agent. You MUST complete ALL steps below — implementation, commit, push, PR creation, and manifest file — before finishing.
+Do NOT stop after implementing code. The task is NOT complete until the manifest file is written with the PR URL.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. No human will see your output or respond to questions. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 ## Issue
 
@@ -356,6 +369,8 @@ ${testBlock}${apiClientBlock}${hookBlock}
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 ${readmeBlock}
+**CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
+
 5. **Commit & Push**: Make atomic commits with conventional commit messages.
    Push the branch to origin:
    \`git push -u origin <branch-name>\`
@@ -376,7 +391,16 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-${buildRulesSection(projectContext?.environment, "issue", "- Do NOT modify files outside the target repo.\n")}`;
+${buildRulesSection(projectContext?.environment, "issue", "- Do NOT modify files outside the target repo.\n")}
+
+## Completion Checklist
+
+Before finishing, verify ALL of the following are true:
+- [ ] Code changes are committed (no uncommitted changes)
+- [ ] Branch is pushed to origin
+- [ ] Pull request is created and URL is captured
+- [ ] Manifest file is written with \`prUrl\` field
+If ANY item is unchecked, go back and complete it. Do NOT finish with incomplete steps.`;
 }
 
 export function buildNativeWorktreePrompt(
@@ -405,8 +429,9 @@ export function buildNativeWorktreePrompt(
 		: "`.lisa/manifests/default.json` in the **current directory**";
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
-	return `You are an autonomous implementation agent. Your job is to implement an issue end-to-end: code, push, PR, and tracker update.
-Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
+	return `You are an autonomous implementation agent. You MUST complete ALL steps below — implementation, commit, push, PR creation, and manifest file — before finishing.
+Do NOT stop after implementing code. The task is NOT complete until the manifest file is written with the PR URL.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. No human will see your output or respond to questions. If the issue is too ambiguous to implement, you MUST STOP and provide a clear explanation.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
@@ -434,6 +459,8 @@ ${testBlock}${apiClientBlock}${hookBlock}
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 ${readmeBlock}
+**CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
+
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
@@ -457,7 +484,16 @@ ${readmeBlock}
    \`\`\`
    Do NOT commit this file.
 
-${buildRulesSection(projectContext?.environment)}`;
+${buildRulesSection(projectContext?.environment)}
+
+## Completion Checklist
+
+Before finishing, verify ALL of the following are true:
+- [ ] Code changes are committed (no uncommitted changes)
+- [ ] Branch is pushed to origin
+- [ ] Pull request is created and URL is captured
+- [ ] Manifest file is written with \`prUrl\` field
+If ANY item is unchecked, go back and complete it. Do NOT finish with incomplete steps.`;
 }
 
 export function buildPlanningPrompt(
@@ -568,7 +604,9 @@ export function buildScopedImplementPrompt(
 		? `\n6. **Update tracker**: Call \`lisa issue done ${issue.id} --pr-url <pr-url>\` (wait 1 second before calling).\n`
 		: `\n6. **Skip tracker update**: This is not the last step. The caller handles the tracker update after all steps complete.\n`;
 
-	return `You are an autonomous implementation agent. Your job is to implement a specific part of an issue in a single repository.
+	return `You are an autonomous implementation agent. You MUST complete ALL steps below — implementation, commit, push, PR creation, and manifest file — before finishing.
+Do NOT stop after implementing code. The task is NOT complete until the manifest file is written with the PR URL.
+Do NOT use interactive skills, ask clarifying questions, or wait for user input. You are running unattended. No human will see your output or respond to questions.
 
 You are working inside a git worktree that was automatically created for this task.
 Work on the current branch — it was created for you.
@@ -603,6 +641,8 @@ ${testBlock}${apiClientBlock}${hookBlock}
    - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
    - Fix any errors before proceeding.
 ${readmeBlock}
+**CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
+
 3. **Commit**: Make atomic commits with conventional commit messages.
    **Branch name must be in English.** If the current branch name contains non-English words,
    rename it: \`git branch -m <current-name> feat/${issue.id.toLowerCase()}-short-english-slug\`
@@ -622,5 +662,14 @@ ${trackerStep}
    \`\`\`
    Do NOT commit this file.
 
-${buildRulesSection(projectContext?.environment, "scope")}`;
+${buildRulesSection(projectContext?.environment, "scope")}
+
+## Completion Checklist
+
+Before finishing, verify ALL of the following are true:
+- [ ] Code changes are committed (no uncommitted changes)
+- [ ] Branch is pushed to origin
+- [ ] Pull request is created and URL is captured
+- [ ] Manifest file is written with \`prUrl\` field
+If ANY item is unchecked, go back and complete it. Do NOT finish with incomplete steps.`;
 }
