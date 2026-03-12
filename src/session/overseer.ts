@@ -193,6 +193,10 @@ export function startOverseer(
 	};
 
 	timer = setInterval(check, config.check_interval * 1000);
+	// Prevent the timer from keeping the process alive if stop() is never called
+	if (timer && typeof timer === "object" && "unref" in timer) {
+		timer.unref();
+	}
 
 	return {
 		stop() {

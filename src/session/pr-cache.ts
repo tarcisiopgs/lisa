@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import { getPrCachePath } from "../paths.js";
 
@@ -14,13 +21,25 @@ function readCache(cwd: string): PrCache {
 	}
 }
 
-function writeCache(cwd: string, cache: PrCache): void {
+function writeCacheSafe(cwd: string, cache: PrCache): void {
 	const path = getPrCachePath(cwd);
 	const dir = dirname(path);
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}
-	writeFileSync(path, JSON.stringify(cache, null, 2), "utf-8");
+	// Write to a temp file then rename for atomicity (prevents concurrent corruption)
+	const tmpPath = `${path}.tmp.${process.pid}`;
+	const data = JSON.stringify(cache, null, 2);
+	writeFileSync(tmpPath, data, "utf-8");
+	try {
+		renameSync(tmpPath, path);
+	} catch {
+		// Fallback: direct write if rename fails (e.g., cross-device)
+		writeFileSync(path, data, "utf-8");
+		try {
+			unlinkSync(tmpPath);
+		} catch {}
+	}
 }
 
 /**
@@ -29,7 +48,7 @@ function writeCache(cwd: string, cache: PrCache): void {
 export function storePrUrls(cwd: string, issueId: string, prUrls: string[]): void {
 	const cache = readCache(cwd);
 	cache[issueId] = prUrls;
-	writeCache(cwd, cache);
+	writeCacheSafe(cwd, cache);
 }
 
 /**
@@ -48,5 +67,5 @@ export function loadPrUrls(cwd: string, issueId: string): string[] {
 export function clearPrUrl(cwd: string, issueId: string): void {
 	const cache = readCache(cwd);
 	delete cache[issueId];
-	writeCache(cwd, cache);
+	writeCacheSafe(cwd, cache);
 }

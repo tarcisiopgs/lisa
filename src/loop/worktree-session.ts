@@ -58,6 +58,34 @@ export async function findWorktreeForBranch(
 	}
 }
 
+/**
+ * Fallback: find a worktree whose branch name contains the issue ID slug.
+ * Used when the manifest is missing the branch name in native worktree mode.
+ */
+export async function findWorktreeByIssueId(
+	repoRoot: string,
+	issueId: string,
+): Promise<string | null> {
+	if (!issueId) return null;
+	const needle = issueId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+	try {
+		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
+		const lines = stdout.split("\n");
+		let currentPath: string | null = null;
+		for (const line of lines) {
+			if (line.startsWith("worktree ")) {
+				currentPath = line.slice("worktree ".length);
+			}
+			if (line.startsWith("branch ") && line.toLowerCase().includes(needle)) {
+				return currentPath;
+			}
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<void> {
 	try {
 		await removeWorktree(repoRoot, worktreePath);
@@ -235,7 +263,13 @@ export async function runNativeWorktreeSession(
 		}
 	}
 
-	const worktreePath = await findWorktreeForBranch(repoPath, manifest?.branch ?? "");
+	let worktreePath = manifest?.branch
+		? await findWorktreeForBranch(repoPath, manifest.branch)
+		: null;
+	// Fallback: scan worktrees by issue ID slug when manifest branch is missing
+	if (!worktreePath) {
+		worktreePath = await findWorktreeByIssueId(repoPath, issue.id);
+	}
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);

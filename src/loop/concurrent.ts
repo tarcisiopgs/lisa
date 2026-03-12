@@ -153,9 +153,9 @@ export async function runConcurrentLoop(
 
 		// Fill available slots
 		while (activeWorkers.size < concurrency && !noMoreIssues && !exhausted) {
-			sessionCounter++;
+			const tentativeSession = sessionCounter + 1;
 
-			if (opts.limit > 0 && sessionCounter > opts.limit) {
+			if (opts.limit > 0 && tentativeSession > opts.limit) {
 				logger.ok(`Reached limit of ${opts.limit} issues. Stopping.`);
 				noMoreIssues = true;
 				break;
@@ -169,7 +169,7 @@ export async function runConcurrentLoop(
 			} catch (err) {
 				consecutiveFetchErrors++;
 				logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
-				sessionCounter--; // Don't count failed fetches
+				// Don't count failed fetches — tentativeSession was never committed
 				if (consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
 					logger.error(
 						`Stopping after ${MAX_CONSECUTIVE_FETCH_ERRORS} consecutive fetch failures.`,
@@ -184,7 +184,6 @@ export async function runConcurrentLoop(
 			// Skip issues already claimed by another worker (race between fetch and status update)
 			if (issue && claimedIssueIds.has(issue.id)) {
 				logger.log(`Issue ${issue.id} already claimed by another worker. Skipping.`);
-				sessionCounter--;
 				break;
 			}
 
@@ -211,12 +210,12 @@ export async function runConcurrentLoop(
 						await sleep(WATCH_POLL_INTERVAL_MS);
 						kanbanEmitter.emit("work:watch-resume");
 					}
-					sessionCounter--; // Don't count this as a session
+					// Don't count this as a session — tentativeSession was never committed
 					break; // Break inner fill loop; noMoreIssues stays false → outer while re-enters
 				}
 				if (activeWorkers.size === 0) {
 					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
-					if (sessionCounter === 1) {
+					if (tentativeSession === 1) {
 						kanbanEmitter.emit("work:empty");
 					}
 				}
@@ -224,6 +223,7 @@ export async function runConcurrentLoop(
 				break;
 			}
 
+			sessionCounter = tentativeSession;
 			const session = sessionCounter;
 			claimedIssueIds.add(issue.id);
 			const promise = processIssue(issue, session).finally(() => {

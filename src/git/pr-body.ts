@@ -33,7 +33,9 @@ export function sanitizePrBody(raw: string): string {
 	let text = raw.trim();
 	if (!text) return "";
 
-	// Strip HTML tags
+	// Strip dangerous HTML tags and their content first (script, style, iframe)
+	text = text.replace(/<(script|style|iframe)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+	// Strip remaining HTML tags (keep their text content)
 	text = text.replace(/<[^>]*>/g, "");
 
 	// Normalize * bullets to - bullets (only at line start, with optional leading whitespace)
