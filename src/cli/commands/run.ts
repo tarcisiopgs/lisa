@@ -41,21 +41,17 @@ export const run = defineCommand({
 		source: { type: "string", description: "Issue source (linear, trello)" },
 		label: { type: "string", description: "Label to filter issues" },
 		platform: { type: "string", description: "PR platform: cli, token, gitlab, or bitbucket" },
-		lifecycle: {
-			type: "string",
-			description: "Lifecycle mode: auto | skip | validate-only",
-		},
-		"lifecycle-timeout": {
-			type: "string",
-			description: "Startup timeout per resource in seconds (default: 30)",
-		},
-		demo: {
-			type: "boolean",
-			description: "Run an animated demo of the kanban UI with fake issues",
-			default: false,
-		},
 	},
 	async run({ args }) {
+		// Hidden flags: accessible but not shown in --help
+		const argv = process.argv.slice(2);
+		const lifecycleIdx = argv.indexOf("--lifecycle");
+		const lifecycleValue = lifecycleIdx !== -1 ? argv[lifecycleIdx + 1] : undefined;
+		const lifecycleTimeoutIdx = argv.indexOf("--lifecycle-timeout");
+		const lifecycleTimeoutValue =
+			lifecycleTimeoutIdx !== -1 ? argv[lifecycleTimeoutIdx + 1] : undefined;
+		const isDemo = argv.includes("--demo");
+
 		const isTTY = !!process.stdout.isTTY;
 
 		setOutputMode(isTTY ? "tui" : "default");
@@ -68,7 +64,7 @@ export const run = defineCommand({
 			updateNotice(updateInfo);
 		}
 
-		if (args.demo) {
+		if (isDemo) {
 			if (isTTY) {
 				const { render } = await import("ink");
 				const { createElement } = await import("react");
@@ -79,7 +75,7 @@ export const run = defineCommand({
 					workflow: "worktree" as const,
 					platform: "cli" as const,
 					source_config: {
-						team: "Engineering",
+						scope: "Engineering",
 						project: "Web App",
 						label: "ready",
 						pick_from: "Backlog",
@@ -120,14 +116,14 @@ export const run = defineCommand({
 		}
 
 		// Apply lifecycle overrides from CLI flags
-		if (args.lifecycle || args["lifecycle-timeout"]) {
-			const lifecycleTimeout = args["lifecycle-timeout"]
-				? Number.parseInt(args["lifecycle-timeout"], 10)
+		if (lifecycleValue || lifecycleTimeoutValue) {
+			const lifecycleTimeout = lifecycleTimeoutValue
+				? Number.parseInt(lifecycleTimeoutValue, 10)
 				: undefined;
 			merged.lifecycle = {
 				...merged.lifecycle,
-				...(args.lifecycle && {
-					mode: args.lifecycle as LifecycleMode,
+				...(lifecycleValue && {
+					mode: lifecycleValue as LifecycleMode,
 				}),
 				...(lifecycleTimeout !== undefined &&
 					!Number.isNaN(lifecycleTimeout) && {

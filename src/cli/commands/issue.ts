@@ -74,6 +74,10 @@ const issueDone = defineCommand({
 });
 
 export const issue = defineCommand({
-	meta: { name: "issue", description: "Issue tracker operations for use inside worktrees" },
+	meta: {
+		name: "issue",
+		description: "Issue tracker operations for use inside worktrees",
+		hidden: true,
+	},
 	subCommands: { get: issueGet, done: issueDone },
 });
