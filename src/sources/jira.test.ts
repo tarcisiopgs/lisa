@@ -246,10 +246,12 @@ describe("JiraSource", () => {
 			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow("Jira API error (401)");
 		});
 
-		it("sends correct JQL query", async () => {
+		it("sends correct JQL query via POST", async () => {
 			let capturedUrl: string | undefined;
-			global.fetch = vi.fn().mockImplementation((url: string) => {
+			let capturedBody: string | undefined;
+			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
 				capturedUrl = url;
+				capturedBody = opts?.body as string | undefined;
 				return Promise.resolve({
 					ok: true,
 					status: 200,
@@ -260,10 +262,11 @@ describe("JiraSource", () => {
 
 			await source.fetchNextIssue(baseConfig);
 
-			expect(capturedUrl).toContain("jql=");
-			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`project = "ENG"`);
-			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`labels = "lisa"`);
-			expect(decodeURIComponent(capturedUrl ?? "")).toContain(`status = "Backlog"`);
+			expect(capturedUrl).toContain("/search/jql");
+			const body = JSON.parse(capturedBody ?? "{}") as { jql: string };
+			expect(body.jql).toContain(`project = "ENG"`);
+			expect(body.jql).toContain(`labels = "lisa"`);
+			expect(body.jql).toContain(`status = "Backlog"`);
 		});
 
 		it("skips blocked issues and returns unblocked one", async () => {
