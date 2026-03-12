@@ -101,6 +101,49 @@ export function fetchCursorModels(): string[] {
 	}
 }
 
+// Curated list of Copilot models — top-tier coding models only
+const COPILOT_PREFERRED_MODELS = [
+	"claude-opus-4.6",
+	"claude-opus-4.6-fast",
+	"claude-sonnet-4.6",
+	"claude-sonnet-4.5",
+	"claude-haiku-4.5",
+	"gpt-5.3-codex",
+	"gpt-5.2-codex",
+	"gpt-5.2",
+	"gpt-5.1-codex-max",
+	"gemini-3-pro-preview",
+];
+
+export function fetchCopilotModels(): string[] {
+	try {
+		// copilot --model with an invalid value prints the allowed choices in the error message
+		execSync("copilot --model __invalid__ 2>&1", {
+			encoding: "utf-8",
+			timeout: 10000,
+			shell: "/bin/sh",
+		});
+		return COPILOT_PREFERRED_MODELS;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		// Parse: "Allowed choices are model-a, model-b, model-c."
+		const match = msg.match(/Allowed choices are (.+)/i);
+		if (match?.[1]) {
+			const all = match[1]
+				.replace(/\.$/, "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+			if (all.length > 0) {
+				// Filter to curated list, preserving preferred order
+				const filtered = COPILOT_PREFERRED_MODELS.filter((m) => all.includes(m));
+				return filtered.length > 0 ? filtered : all;
+			}
+		}
+		return COPILOT_PREFERRED_MODELS;
+	}
+}
+
 export function fetchOpenCodeModels(): string[] {
 	try {
 		const raw = execSync("opencode models", { encoding: "utf-8", timeout: 10000 });
