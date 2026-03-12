@@ -1,3 +1,34 @@
+import { appendFileSync } from "node:fs";
+import * as logger from "../output/logger.js";
+
+let logWriteWarned = false;
+
+/**
+ * Appends text to the log file, logging a warning on the first failure
+ * instead of silently swallowing errors.
+ */
+export function safeAppendLog(logFile: string, text: string): void {
+	try {
+		appendFileSync(logFile, text);
+	} catch (err) {
+		if (!logWriteWarned) {
+			logWriteWarned = true;
+			logger.warn(
+				`Failed to write to log file ${logFile}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+}
+
+/**
+ * Escapes a file path for safe use inside single-quoted shell strings.
+ * Handles paths containing single quotes by breaking out of the quote,
+ * inserting an escaped quote, and resuming the quoted string.
+ */
+export function escapeShellPath(filePath: string): string {
+	return filePath.replace(/'/g, "'\\''");
+}
+
 /**
  * Capped output buffer that keeps only the most recent data to prevent
  * unbounded memory growth during long-running provider sessions.

@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { killWithEscalation } from "../providers/timeout.js";
 import type { OverseerConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 
@@ -39,7 +40,7 @@ export function createOutputStallDetector(
 	let killed = false;
 	let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
 		killed = true;
-		proc.kill("SIGTERM");
+		killWithEscalation(proc);
 	}, timeout * 1000);
 
 	return {
@@ -48,7 +49,7 @@ export function createOutputStallDetector(
 			clearTimeout(timer);
 			timer = setTimeout(() => {
 				killed = true;
-				proc.kill("SIGTERM");
+				killWithEscalation(proc);
 			}, timeout * 1000);
 		},
 		wasKilled() {
@@ -93,7 +94,7 @@ export function createErrorLoopDetector(
 				if (pattern.test(trimmed)) {
 					if (++consecutive >= threshold) {
 						killed = true;
-						proc.kill("SIGTERM");
+						killWithEscalation(proc);
 						return;
 					}
 				} else {
@@ -185,7 +186,7 @@ export function startOverseer(
 					clearInterval(timer);
 					timer = null;
 				}
-				proc.kill("SIGTERM");
+				killWithEscalation(proc);
 			}
 		} catch {
 			// Ignore monitoring errors — do not interrupt the provider
