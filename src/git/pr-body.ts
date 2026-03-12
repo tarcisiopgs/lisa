@@ -1,5 +1,5 @@
 export const PROVIDER_ATTRIBUTION_RE =
-	/claude\.ai|claude\s+code|gemini\s+cli|openai\s+codex|\bgoose\b|\baider\b|github\s+copilot|cursor\s+agent|\bopencode\b/i;
+	/claude\.ai|claude\s+code|\banthropic\b|gemini\s+cli|\bgoogle\s+gemini\b|openai\s+codex|\bopenai\b|\bgoose\b|\baider\b|github\s+copilot|cursor\s+agent|\bopencode\b|\blisa\b/i;
 
 const AI_COAUTHOR_RE =
 	/co-authored-by:[^\n]*(anthropic|claude|gemini|openai|codex|goose|aider|copilot|cursor|google)/i;

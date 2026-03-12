@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as logger from "../output/logger.js";
@@ -14,7 +14,7 @@ import {
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { buildNodeOptions } from "./heap.js";
-import { OutputBuffer } from "./output-buffer.js";
+import { escapeShellPath, OutputBuffer, safeAppendLog } from "./output-buffer.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
@@ -41,7 +41,7 @@ export class CopilotProvider implements Provider {
 			// --allow-all: bypass all tool/path/url permission prompts (non-interactive)
 			// -p: run prompt and exit (print mode)
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const command = `copilot --allow-all ${modelFlag} -p "$(cat '${promptFile}')"`;
+			const command = `copilot --allow-all ${modelFlag} -p "$(cat '${escapeShellPath(promptFile)}')"`;
 			logger.log(
 				`[copilot] Running: copilot --allow-all ${modelFlag || "(default model)"} -p`.trim(),
 			);
@@ -76,9 +76,7 @@ export class CopilotProvider implements Provider {
 					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
-				try {
-					appendFileSync(opts.logFile, text);
-				} catch {}
+				safeAppendLog(opts.logFile, text);
 			});
 
 			proc.stderr?.on("data", (chunk: Buffer) => {
@@ -86,9 +84,7 @@ export class CopilotProvider implements Provider {
 				const text = isPty ? stripAnsi(raw) : raw;
 				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				stderrChunks.push(text);
-				try {
-					appendFileSync(opts.logFile, text);
-				} catch {}
+				safeAppendLog(opts.logFile, text);
 			});
 
 			const exitCode = await new Promise<number>((resolve) => {

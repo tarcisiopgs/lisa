@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as logger from "../output/logger.js";
@@ -14,7 +14,7 @@ import {
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { buildNodeOptions } from "./heap.js";
-import { OutputBuffer } from "./output-buffer.js";
+import { escapeShellPath, OutputBuffer, safeAppendLog } from "./output-buffer.js";
 import { spawnWithPty, stripAnsi } from "./pty.js";
 import { createSessionTimeout, TIMEOUT_MESSAGE } from "./timeout.js";
 
@@ -39,7 +39,7 @@ export class OpenCodeProvider implements Provider {
 
 		try {
 			const modelFlag = opts.model ? `--model ${opts.model}` : "";
-			const command = `opencode run ${modelFlag} "$(cat '${promptFile}')"`;
+			const command = `opencode run ${modelFlag} "$(cat '${escapeShellPath(promptFile)}')"`;
 			logger.log(`[opencode] Running: opencode run ${modelFlag || "(default model)"}`.trim());
 			if (opts.issueId) {
 				kanbanEmitter.emit(
@@ -72,9 +72,7 @@ export class OpenCodeProvider implements Provider {
 					kanbanEmitter.emit("issue:output", opts.issueId, raw);
 				}
 				chunks.push(text);
-				try {
-					appendFileSync(opts.logFile, text);
-				} catch {}
+				safeAppendLog(opts.logFile, text);
 			});
 
 			proc.stderr?.on("data", (chunk: Buffer) => {
@@ -82,9 +80,7 @@ export class OpenCodeProvider implements Provider {
 				const text = isPty ? stripAnsi(raw) : raw;
 				if (getOutputMode() !== "tui") process.stderr.write(raw);
 				stderrChunks.push(text);
-				try {
-					appendFileSync(opts.logFile, text);
-				} catch {}
+				safeAppendLog(opts.logFile, text);
 			});
 
 			const exitCode = await new Promise<number>((resolve) => {

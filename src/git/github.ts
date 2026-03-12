@@ -190,19 +190,31 @@ export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
 	const { stdout: branch } = await execa("git", ["branch", "--show-current"], { cwd });
 
 	// Get the default branch (usually main or master)
-	const { stdout: defaultBranch } = await execa(
-		"git",
-		["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
-		{ cwd, reject: false },
-	).then(
-		(r) => r,
-		() => ({ stdout: "origin/main" }),
-	);
+	let defaultBranch = "main";
+	const symResult = await execa("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], {
+		cwd,
+		reject: false,
+	});
+	if (symResult.stdout?.trim()) {
+		defaultBranch = symResult.stdout.replace("origin/", "").trim();
+	} else {
+		// Fallback: check which common branch names actually exist on the remote
+		for (const candidate of ["main", "master", "develop"]) {
+			const check = await execa("git", ["rev-parse", "--verify", `origin/${candidate}`], {
+				cwd,
+				reject: false,
+			});
+			if (check.exitCode === 0) {
+				defaultBranch = candidate;
+				break;
+			}
+		}
+	}
 
 	return {
 		owner,
 		repo,
 		branch: branch.trim(),
-		defaultBranch: defaultBranch.replace("origin/", "").trim(),
+		defaultBranch,
 	};
 }
