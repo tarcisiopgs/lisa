@@ -58,6 +58,12 @@ export interface ProviderProcessConfig {
 	 * Used when Lisa runs inside an active Claude Code session.
 	 */
 	forceRawSpawn?: boolean;
+	/**
+	 * Transform raw stdout chunks into human-readable output.
+	 * Used by providers that emit structured formats (e.g., NDJSON)
+	 * to convert them into readable lines for logs and TUI display.
+	 */
+	outputTransform?: (raw: string) => string;
 }
 
 /**
@@ -120,12 +126,14 @@ export async function runProviderProcess(
 
 		proc.stdout?.on("data", (chunk: Buffer) => {
 			const raw = chunk.toString();
-			const text = isPty ? stripAnsi(raw) : raw;
+			const cleaned = isPty ? stripAnsi(raw) : raw;
+			const text = config.outputTransform ? config.outputTransform(cleaned) : cleaned;
+			if (!text) return;
 			errorLoopDetector.check(text);
 			outputStall.reset();
-			if (getOutputMode() !== "tui") process.stdout.write(raw);
+			if (getOutputMode() !== "tui") process.stdout.write(text);
 			if (opts.issueId) {
-				kanbanEmitter.emit("issue:output", opts.issueId, raw);
+				kanbanEmitter.emit("issue:output", opts.issueId, text);
 			}
 			chunks.push(text);
 			safeAppendLog(opts.logFile, text);
