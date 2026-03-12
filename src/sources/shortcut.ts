@@ -363,16 +363,22 @@ export class ShortcutSource implements Source {
 
 	async removeLabel(storyId: string, labelName: string): Promise<void> {
 		const story = await shortcutGet<ShortcutStory>(`/api/v3/stories/${storyId}`);
-		const labels = await shortcutGet<ShortcutLabel[]>("/api/v3/labels");
-		const label = labels.find(
+		const allLabels = await shortcutGet<ShortcutLabel[]>("/api/v3/labels");
+		const labelToRemove = allLabels.find(
 			(l) => l.name.toLowerCase() === labelName.toLowerCase() && !l.archived,
 		);
 
-		if (!label || !story.label_ids.includes(label.id)) return;
+		if (!labelToRemove || !story.label_ids.includes(labelToRemove.id)) return;
 
-		const updatedLabelIds = story.label_ids.filter((lid) => lid !== label.id);
+		// Build remaining labels as { name } objects — Shortcut API requires `labels` not `label_ids`
+		const remainingIds = story.label_ids.filter((lid) => lid !== labelToRemove.id);
+		const labelNames = remainingIds
+			.map((lid) => allLabels.find((l) => l.id === lid))
+			.filter((l): l is ShortcutLabel => l !== undefined)
+			.map((l) => ({ name: l.name }));
+
 		await shortcutPut<ShortcutStory>(`/api/v3/stories/${storyId}`, {
-			label_ids: updatedLabelIds,
+			labels: labelNames,
 		});
 	}
 }

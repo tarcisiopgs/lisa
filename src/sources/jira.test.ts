@@ -137,14 +137,26 @@ describe("JiraSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("fetchNextIssue", () => {
+		// Helper: mock for resolveStatusId call (GET /project/ENG/statuses)
+		const statusesResponse = ok([
+			{
+				statuses: [
+					{ id: "10001", name: "Backlog" },
+					{ id: "10002", name: "In Progress" },
+					{ id: "10003", name: "Done" },
+				],
+			},
+		]);
+
 		it("returns null when no issues found", async () => {
-			global.fetch = mockFetchSequence([ok({ issues: [], total: 0 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues: [], total: 0 })]);
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result).toBeNull();
 		});
 
 		it("returns an issue with correct shape", async () => {
 			global.fetch = mockFetchSequence([
+				statusesResponse,
 				ok({ issues: [makeIssue({ key: "ENG-1", summary: "Fix the bug" })], total: 1 }),
 			]);
 
@@ -161,7 +173,7 @@ describe("JiraSource", () => {
 				makeIssue({ key: "ENG-2", summary: "Highest priority", priorityName: "Highest" }),
 				makeIssue({ key: "ENG-3", summary: "Medium priority", priorityName: "Medium" }),
 			];
-			global.fetch = mockFetchSequence([ok({ issues, total: 3 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues, total: 3 })]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.title).toBe("Highest priority");
@@ -172,7 +184,7 @@ describe("JiraSource", () => {
 				makeIssue({ key: "ENG-1", summary: "No priority", priorityName: null }),
 				makeIssue({ key: "ENG-2", summary: "Low priority", priorityName: "Low" }),
 			];
-			global.fetch = mockFetchSequence([ok({ issues, total: 2 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues, total: 2 })]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.title).toBe("Low priority");
@@ -180,6 +192,7 @@ describe("JiraSource", () => {
 
 		it("extracts description from plain string", async () => {
 			global.fetch = mockFetchSequence([
+				statusesResponse,
 				ok({
 					issues: [makeIssue({ description: "Plain text description" })],
 					total: 1,
@@ -205,6 +218,7 @@ describe("JiraSource", () => {
 				],
 			};
 			global.fetch = mockFetchSequence([
+				statusesResponse,
 				ok({ issues: [makeIssue({ description: adfDoc })], total: 1 }),
 			]);
 
@@ -215,6 +229,7 @@ describe("JiraSource", () => {
 
 		it("returns empty description when description is null", async () => {
 			global.fetch = mockFetchSequence([
+				statusesResponse,
 				ok({ issues: [makeIssue({ description: null })], total: 1 }),
 			]);
 
@@ -246,12 +261,26 @@ describe("JiraSource", () => {
 			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow("Jira API error (401)");
 		});
 
-		it("sends correct JQL query via POST", async () => {
-			let capturedUrl: string | undefined;
-			let capturedBody: string | undefined;
+		it("sends correct JQL query via POST with status ID", async () => {
+			const capturedCalls: { url: string; body?: string }[] = [];
 			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
-				capturedUrl = url;
-				capturedBody = opts?.body as string | undefined;
+				capturedCalls.push({ url, body: opts?.body as string | undefined });
+				// First call: GET /project/ENG/statuses
+				if (url.includes("/project/") && url.includes("/statuses")) {
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => [
+							{
+								statuses: [
+									{ id: "10001", name: "Backlog" },
+									{ id: "10002", name: "In Progress" },
+								],
+							},
+						],
+						text: async () => "",
+					});
+				}
 				return Promise.resolve({
 					ok: true,
 					status: 200,
@@ -262,10 +291,40 @@ describe("JiraSource", () => {
 
 			await source.fetchNextIssue(baseConfig);
 
-			expect(capturedUrl).toContain("/search/jql");
-			const body = JSON.parse(capturedBody ?? "{}") as { jql: string };
+			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
+			expect(searchCall).toBeDefined();
+			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
 			expect(body.jql).toContain(`project = "ENG"`);
 			expect(body.jql).toContain(`labels = "lisa"`);
+			// Uses numeric status ID instead of quoted name
+			expect(body.jql).toContain("status = 10001");
+		});
+
+		it("falls back to status name when project statuses endpoint fails", async () => {
+			const capturedCalls: { url: string; body?: string }[] = [];
+			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+				capturedCalls.push({ url, body: opts?.body as string | undefined });
+				if (url.includes("/project/") && url.includes("/statuses")) {
+					return Promise.resolve({
+						ok: false,
+						status: 403,
+						json: async () => ({}),
+						text: async () => "Forbidden",
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => ({ issues: [], total: 0 }),
+					text: async () => "",
+				});
+			});
+
+			await source.fetchNextIssue(baseConfig);
+
+			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
+			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			// Falls back to quoted status name
 			expect(body.jql).toContain(`status = "Backlog"`);
 		});
 
@@ -286,7 +345,10 @@ describe("JiraSource", () => {
 				],
 			});
 			const unblockedIssue = makeIssue({ key: "ENG-2", summary: "Unblocked issue" });
-			global.fetch = mockFetchSequence([ok({ issues: [blockedIssue, unblockedIssue], total: 2 })]);
+			global.fetch = mockFetchSequence([
+				statusesResponse,
+				ok({ issues: [blockedIssue, unblockedIssue], total: 2 }),
+			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.title).toBe("Unblocked issue");
@@ -308,7 +370,10 @@ describe("JiraSource", () => {
 					},
 				],
 			});
-			global.fetch = mockFetchSequence([ok({ issues: [blockedIssue], total: 1 })]);
+			global.fetch = mockFetchSequence([
+				statusesResponse,
+				ok({ issues: [blockedIssue], total: 1 }),
+			]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result).toBeNull();
@@ -330,7 +395,7 @@ describe("JiraSource", () => {
 					},
 				],
 			});
-			global.fetch = mockFetchSequence([ok({ issues: [issue], total: 1 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues: [issue], total: 1 })]);
 
 			const result = await source.fetchNextIssue(baseConfig);
 			expect(result?.title).toBe("Issue with done blocker");
@@ -364,6 +429,7 @@ describe("JiraSource", () => {
 				priorityName: "High",
 			});
 			global.fetch = mockFetchSequence([
+				statusesResponse,
 				ok({ issues: [blockedP1, unblockedP3, unblockedP2], total: 3 }),
 			]);
 
@@ -609,13 +675,23 @@ describe("JiraSource", () => {
 	// -------------------------------------------------------------------------
 
 	describe("listIssues", () => {
+		const statusesResponse = ok([
+			{
+				statuses: [
+					{ id: "10001", name: "Backlog" },
+					{ id: "10002", name: "In Progress" },
+					{ id: "10003", name: "Done" },
+				],
+			},
+		]);
+
 		it("returns all issues with the configured label and status", async () => {
 			const issues = [
 				makeIssue({ key: "ENG-1", summary: "First issue" }),
 				makeIssue({ key: "ENG-2", summary: "Second issue" }),
 			];
 
-			global.fetch = mockFetchSequence([ok({ issues, total: 2 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues, total: 2 })]);
 
 			const result = await source.listIssues(baseConfig);
 			expect(result).toHaveLength(2);
@@ -624,14 +700,17 @@ describe("JiraSource", () => {
 		});
 
 		it("returns empty array when no issues found", async () => {
-			global.fetch = mockFetchSequence([ok({ issues: [], total: 0 })]);
+			global.fetch = mockFetchSequence([statusesResponse, ok({ issues: [], total: 0 })]);
 
 			const result = await source.listIssues(baseConfig);
 			expect(result).toEqual([]);
 		});
 
 		it("constructs correct issue URLs", async () => {
-			global.fetch = mockFetchSequence([ok({ issues: [makeIssue({ key: "ENG-42" })], total: 1 })]);
+			global.fetch = mockFetchSequence([
+				statusesResponse,
+				ok({ issues: [makeIssue({ key: "ENG-42" })], total: 1 }),
+			]);
 
 			const result = await source.listIssues(baseConfig);
 			expect(result[0]?.url).toBe("https://example.atlassian.net/browse/ENG-42");

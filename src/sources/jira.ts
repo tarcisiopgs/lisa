@@ -94,6 +94,15 @@ interface JiraSearchResult {
 	total: number;
 }
 
+interface JiraStatus {
+	id: string;
+	name: string;
+}
+
+interface JiraIssueTypeStatuses {
+	statuses: JiraStatus[];
+}
+
 interface JiraTransition {
 	id: string;
 	name: string;
@@ -136,6 +145,24 @@ function escapeJql(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/** Resolve a status name to its numeric ID via the project statuses endpoint. */
+async function resolveStatusId(scope: string, statusName: string): Promise<string | null> {
+	try {
+		const data = await jiraGet<JiraIssueTypeStatuses[]>(
+			`/project/${encodeURIComponent(scope)}/statuses`,
+		);
+		for (const issueType of data) {
+			const match = issueType.statuses.find(
+				(s) => s.name.toLowerCase() === statusName.toLowerCase(),
+			);
+			if (match) return match.id;
+		}
+	} catch {
+		// Fall through to null — caller will use status name in JQL as fallback
+	}
+	return null;
+}
+
 function issueUrl(baseUrl: string, key: string): string {
 	return `${baseUrl}/browse/${key}`;
 }
@@ -146,7 +173,13 @@ export class JiraSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
-		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`;
+
+		// Resolve status name → ID to avoid locale/translation issues in JQL
+		const statusId = await resolveStatusId(config.scope, config.pick_from);
+		const statusClause = statusId
+			? `status = ${statusId}`
+			: `status = "${escapeJql(config.pick_from)}"`;
+		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND ${statusClause} ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
 		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 50);
@@ -261,7 +294,13 @@ export class JiraSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const labels = Array.isArray(config.label) ? config.label : [config.label];
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
-		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND status = "${escapeJql(config.pick_from)}" ORDER BY priority ASC, created ASC`;
+
+		// Resolve status name → ID to avoid locale/translation issues in JQL
+		const statusId = await resolveStatusId(config.scope, config.pick_from);
+		const statusClause = statusId
+			? `status = ${statusId}`
+			: `status = "${escapeJql(config.pick_from)}"`;
+		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND ${statusClause} ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels";
 
 		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 100);
