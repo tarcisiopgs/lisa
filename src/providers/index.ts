@@ -56,6 +56,8 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/resource.?exhausted/i,
 	/overloaded/i,
 	/unavailable/i,
+	/not\s+available/i,
+	/interactive mode/i,
 	/not.?found.*model/i,
 	/model.*not.?found/i,
 	/does not exist/i,
