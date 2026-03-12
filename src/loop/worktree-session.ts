@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { execa } from "execa";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
@@ -150,12 +150,10 @@ export async function runNativeWorktreeSession(
 	// Detect infrastructure
 	const infra = discoverInfra(repoPath);
 	let lifecycleEnv: Record<string, string> = {};
-	let lifecycleSuccess = true;
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const started = await runLifecycle(infra, config.lifecycle, repoPath);
 		stopSpinner();
-		lifecycleSuccess = started.success;
 		if (!started.success) {
 			logger.warn(
 				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,
@@ -335,12 +333,10 @@ export async function runManualWorktreeSession(
 	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
 	let lifecycleEnv: Record<string, string> = {};
-	let lifecycleSuccess = true;
 	if (infra) {
 		startSpinner(`${issue.id} \u2014 starting resources...`);
 		const started = await runLifecycle(infra, config.lifecycle, worktreePath);
 		stopSpinner();
-		lifecycleSuccess = started.success;
 		if (!started.success) {
 			logger.warn(
 				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,

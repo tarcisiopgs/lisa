@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName } from "../git/worktree.js";
@@ -16,7 +16,7 @@ import {
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
-import { resolveInfraStatus, runLifecycle, stopResources } from "../session/lifecycle.js";
+import { runLifecycle, stopResources } from "../session/lifecycle.js";
 import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
@@ -240,12 +240,10 @@ export async function runMultiRepoStep(
 	// Detect infrastructure
 	const infra = discoverInfra(worktreePath);
 	let lifecycleEnv: Record<string, string> = {};
-	let lifecycleSuccess = true;
 	if (infra) {
 		startSpinner(`${issue.id} step ${stepNum} \u2014 starting resources...`);
 		const started = await runLifecycle(infra, config.lifecycle, worktreePath);
 		stopSpinner();
-		lifecycleSuccess = started.success;
 		if (!started.success) {
 			logger.warn(
 				`Lifecycle startup failed for step ${stepNum}. Continuing with manual resource instructions.`,
@@ -253,8 +251,6 @@ export async function runMultiRepoStep(
 		}
 		lifecycleEnv = started.env;
 	}
-	const lifecycleMode = config.lifecycle?.mode ?? "skip";
-	resolveInfraStatus(lifecycleMode, { success: lifecycleSuccess });
 
 	// Run scoped implementation
 	const workspace = resolve(config.workspace);

@@ -159,10 +159,10 @@ describe("appendEntry", () => {
 		expect(existsSync(path)).toBe(true);
 
 		const content = readFileSync(path, "utf-8");
-		expect(content).toContain("# Guardrails — Lições aprendidas");
+		expect(content).toContain("# Guardrails — Lessons learned");
 		expect(content).toContain("## Issue INT-100 (2026-02-19)");
 		expect(content).toContain("- Provider: claude");
-		expect(content).toContain("- Erro: Exit code 1");
+		expect(content).toContain("- Error: Exit code 1");
 		expect(content).toContain("Error: file not found");
 	});
 
@@ -208,7 +208,7 @@ describe("appendEntry", () => {
 		});
 
 		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
-		const headerCount = (content.match(/# Guardrails — Lições aprendidas/g) ?? []).length;
+		const headerCount = (content.match(/# Guardrails — Lessons learned/g) ?? []).length;
 		expect(headerCount).toBe(1);
 	});
 
@@ -272,7 +272,7 @@ describe("appendRawEntry", () => {
 		expect(existsSync(path)).toBe(true);
 
 		const content = readFileSync(path, "utf-8");
-		expect(content).toContain("# Guardrails — Lições aprendidas");
+		expect(content).toContain("# Guardrails — Lessons learned");
 		expect(content).toContain("## PR Feedback for Issue INT-100 (2026-02-27)");
 	});
 
@@ -300,7 +300,7 @@ describe("appendRawEntry", () => {
 		appendRawEntry(tmpDir, rawText.replace("INT-100", "INT-200"));
 
 		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
-		const headerCount = (content.match(/# Guardrails — Lições aprendidas/g) ?? []).length;
+		const headerCount = (content.match(/# Guardrails — Lessons learned/g) ?? []).length;
 		expect(headerCount).toBe(1);
 	});
 

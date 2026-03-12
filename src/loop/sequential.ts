@@ -278,19 +278,9 @@ export async function runSequentialLoop(
 		userSkippedSet.delete(issue.id);
 		providerPausedSet.delete(issue.id);
 
-		if (!sessionResult.success) {
-			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-			setTitle("Lisa \u2014 cooling down...");
-			await sleep(config.loop.cooldown * 1000);
-		} else if (!completed) {
-			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-			setTitle("Lisa \u2014 cooling down...");
-			await sleep(config.loop.cooldown * 1000);
-		} else {
-			logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
-			setTitle("Lisa \u2014 cooling down...");
-			await sleep(config.loop.cooldown * 1000);
-		}
+		logger.log(`Cooling down ${config.loop.cooldown}s before next issue...`);
+		setTitle("Lisa \u2014 cooling down...");
+		await sleep(config.loop.cooldown * 1000);
 	}
 
 	if (completedCount > 0) {

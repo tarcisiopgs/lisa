@@ -98,7 +98,7 @@ export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
 
 	let content: string;
 	if (!existing.trim()) {
-		content = `# Guardrails — Lições aprendidas\n\n${newEntryText}`;
+		content = `# Guardrails — Lessons learned\n\n${newEntryText}`;
 	} else {
 		const header = extractHeader(existing);
 		const entries = splitEntries(existing);
@@ -138,7 +138,7 @@ export function appendRawEntrySync(dir: string, entryText: string): void {
 
 	let content: string;
 	if (!existing.trim()) {
-		content = `# Guardrails — Lições aprendidas\n\n${entryText}`;
+		content = `# Guardrails — Lessons learned\n\n${entryText}`;
 	} else {
 		const header = extractHeader(existing);
 		const entries = splitEntries(existing);
@@ -154,8 +154,8 @@ function formatEntry(entry: GuardrailEntry): string {
 	return [
 		`## Issue ${entry.issueId} (${entry.date})`,
 		`- Provider: ${entry.provider}`,
-		`- Erro: ${entry.errorType}`,
-		`- Contexto:`,
+		`- Error: ${entry.errorType}`,
+		`- Context:`,
 		"```",
 		entry.context,
 		"```",
