@@ -56,13 +56,27 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 | GitHub Copilot CLI | `copilot` | Aider | `aider` |
 | OpenCode | `opencode` | OpenAI Codex | `codex` |
 
-Configure a fallback chain:
+Configure models and provider-specific options:
 
 ```yaml
 provider: claude
-models:
-  - claude-sonnet-4-6   # primary
-  - claude-opus-4-6     # fallback
+provider_options:
+  claude:
+    models:
+      - claude-sonnet-4-6   # primary
+      - claude-opus-4-6     # fallback
+    effort: high             # optional: low, medium, high, max
+```
+
+Goose requires a backend selection:
+
+```yaml
+provider: goose
+provider_options:
+  goose:
+    goose_provider: gemini-cli   # gemini-cli, anthropic, openai, google, ollama
+    models:
+      - gemini-2.5-pro
 ```
 
 ## Commands
@@ -93,10 +107,13 @@ workflow: worktree       # "worktree" (isolated) or "branch" (in-place)
 source_config:
   scope: Engineering
   project: Web App
-  label: ready
+  label: ready              # or array: [ready, urgent]
+  remove_label: ready       # label to remove on completion (defaults to label)
   pick_from: Backlog
   in_progress: In Progress
   done: In Review
+
+bell: true                  # terminal bell on issue completion
 
 platform: cli            # "cli" (gh), "token" (GITHUB_TOKEN), "gitlab", "bitbucket"
 base_branch: main
@@ -120,6 +137,21 @@ SHORTCUT_API_TOKEN=""
 GITLAB_TOKEN=""
 GITHUB_TOKEN=""
 JIRA_BASE_URL="" && JIRA_EMAIL="" && JIRA_API_TOKEN=""
+
+# Self-hosted instances (optional)
+PLANE_BASE_URL=""         # default: https://api.plane.so
+GITLAB_BASE_URL=""        # default: https://gitlab.com
+PLANE_WORKSPACE=""        # fallback for source_config.scope
+
+# Goose backend (required when provider: goose)
+GOOSE_PROVIDER=""         # gemini-cli, anthropic, openai, google, ollama
+GOOSE_MODEL=""            # model name for the selected backend
+
+# AI provider API keys (used by Aider / Goose / wizard auto-detection)
+ANTHROPIC_API_KEY=""
+OPENAI_API_KEY=""
+GEMINI_API_KEY=""
+GOOGLE_API_KEY=""         # for Goose with goose_provider: google
 ```
 
 </details>
@@ -133,6 +165,7 @@ JIRA_BASE_URL="" && JIRA_EMAIL="" && JIRA_API_TOKEN=""
 | `project` | Project name | — | Project ID | — | — | — | — |
 | `pick_from` | Status name | List name | State name | Workflow state | — | — | Status name |
 | `label` | Label | Label | Label | Label | Label | Label | Label |
+| `remove_label` | Label | Label | Label | Label | — | — | — |
 | `in_progress` | Status | Column | State | Workflow state | Label | Label | Status |
 | `done` | Status | Column | State | Workflow state | Closes issue | Closes issue | Status |
 
@@ -163,6 +196,7 @@ Lisa runs a planning phase, then executes steps sequentially — one worktree an
 loop:
   cooldown: 10             # seconds between issues
   session_timeout: 0       # max seconds per provider run (0 = disabled)
+  output_stall_timeout: 120  # seconds without stdout before killing provider (0 = disabled)
 
 overseer:
   enabled: true
