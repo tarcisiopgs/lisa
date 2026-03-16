@@ -42,7 +42,7 @@ export function runHook(
 				try {
 					proc.kill("SIGKILL");
 				} catch {}
-			}, 5_000);
+			}, 1_000);
 		}, timeout);
 
 		proc.stdout?.on("data", (data: Buffer) => {
