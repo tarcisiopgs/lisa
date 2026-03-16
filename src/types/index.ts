@@ -60,6 +60,38 @@ export interface LifecycleConfig {
 	timeout?: number; // seconds per resource, default: 30
 }
 
+export interface HooksConfig {
+	before_run?: string;
+	after_run?: string;
+	after_create?: string;
+	before_remove?: string;
+	timeout?: number; // ms, default 60000
+}
+
+export interface ValidationCommand {
+	name: string;
+	run: string;
+}
+
+export interface ProofOfWorkConfig {
+	enabled?: boolean;
+	commands: ValidationCommand[];
+	max_retries?: number; // default: 2
+	timeout?: number; // ms per command, default: 120000
+}
+
+export interface ValidationResult {
+	name: string;
+	success: boolean;
+	output: string;
+	duration: number; // ms
+}
+
+export interface ReconciliationConfig {
+	enabled: boolean;
+	check_interval?: number; // seconds, default: 30
+}
+
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<
@@ -80,6 +112,9 @@ export interface LisaConfig {
 	overseer?: OverseerConfig;
 	validation?: ValidationConfig;
 	lifecycle?: LifecycleConfig;
+	hooks?: HooksConfig;
+	proof_of_work?: ProofOfWorkConfig;
+	reconciliation?: ReconciliationConfig;
 }
 
 export interface DependencyContext {
@@ -94,6 +129,7 @@ export interface Issue {
 	title: string;
 	description: string;
 	url: string;
+	status?: string;
 	repo?: string;
 	dependency?: DependencyContext;
 	completedBlockerIds?: string[];

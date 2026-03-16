@@ -206,6 +206,7 @@ export class GitLabIssuesSource implements Source {
 				title: issue.title,
 				description: issue.description ?? "",
 				url: issue.web_url,
+				status: issue.state,
 			};
 		} catch {
 			return null;

@@ -271,6 +271,7 @@ export class GitHubIssuesSource implements Source {
 				title: issue.title,
 				description: issue.body ?? "",
 				url: issue.html_url,
+				status: issue.state,
 			};
 		} catch {
 			return null;

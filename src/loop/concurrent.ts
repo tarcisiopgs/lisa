@@ -88,7 +88,7 @@ export async function runConcurrentLoop(
 
 		let sessionResult: SessionResult;
 		try {
-			sessionResult = await runWorktreeSession(config, issue, logFile, session, models);
+			sessionResult = await runWorktreeSession(config, issue, logFile, session, models, source);
 		} catch (err) {
 			logger.error(
 				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,

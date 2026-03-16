@@ -279,11 +279,28 @@ export class ShortcutSource implements Source {
 		const storyId = parseShortcutIdentifier(id);
 		try {
 			const story = await shortcutGet<ShortcutStory>(`/api/v3/stories/${storyId}`);
+
+			// Resolve workflow_state_id to state name (best-effort)
+			let stateName: string | undefined;
+			try {
+				const workflows = await shortcutGet<ShortcutWorkflow[]>("/api/v3/workflows");
+				for (const workflow of workflows) {
+					const state = workflow.states.find((s) => s.id === story.workflow_state_id);
+					if (state) {
+						stateName = state.name;
+						break;
+					}
+				}
+			} catch {
+				// Non-fatal — status resolution is best-effort
+			}
+
 			return {
 				id: String(story.id),
 				title: story.name,
 				description: story.description ?? "",
 				url: story.app_url,
+				status: stateName,
 			};
 		} catch {
 			return null;

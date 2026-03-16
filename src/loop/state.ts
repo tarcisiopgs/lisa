@@ -10,6 +10,7 @@ export const activeProviderPids = new Map<string, number>();
 export const providerPausedSet = new Set<string>();
 export const userKilledSet = new Set<string>();
 export const userSkippedSet = new Set<string>();
+export const reconciliationSet = new Set<string>();
 
 let _shuttingDown = false;
 let _loopPaused = false;

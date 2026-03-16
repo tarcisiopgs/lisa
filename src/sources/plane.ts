@@ -321,11 +321,24 @@ export class PlaneSource implements Source {
 				`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${issueId}/`,
 			);
 			const webUrl = `${getAppUrl()}/${workspaceSlug}/projects/${projectId}/issues/${issue.id}`;
+
+			// Resolve state ID to state name (best-effort)
+			let stateName: string | undefined;
+			try {
+				const states = await fetchAll<PlaneState>(
+					`/workspaces/${workspaceSlug}/projects/${projectId}/states/`,
+				);
+				stateName = states.find((s) => s.id === issue.state)?.name;
+			} catch {
+				// Non-fatal — status resolution is best-effort
+			}
+
 			return {
 				id: makeIssueId(workspaceSlug, projectId, issue.id),
 				title: issue.name,
 				description: issue.description_stripped ?? "",
 				url: webUrl,
+				status: stateName,
 			};
 		} catch {
 			return null;

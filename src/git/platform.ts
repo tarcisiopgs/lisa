@@ -1,7 +1,17 @@
-import type { PRPlatform } from "../types/index.js";
-import { appendPrAttribution as appendBitbucketAttribution } from "./bitbucket.js";
-import { appendPrAttribution as appendGitHubAttribution } from "./github.js";
-import { appendMrAttribution as appendGitLabAttribution } from "./gitlab.js";
+import { formatProofOfWork } from "../session/proof-of-work.js";
+import type { PRPlatform, ValidationResult } from "../types/index.js";
+import {
+	appendPrAttribution as appendBitbucketAttribution,
+	appendPrBody as appendBitbucketBody,
+} from "./bitbucket.js";
+import {
+	appendPrAttribution as appendGitHubAttribution,
+	appendPrBody as appendGitHubBody,
+} from "./github.js";
+import {
+	appendMrAttribution as appendGitLabAttribution,
+	appendMrBody as appendGitLabBody,
+} from "./gitlab.js";
 
 /**
  * Routes PR/MR attribution to the correct platform implementation.
@@ -19,6 +29,29 @@ export async function appendPlatformAttribution(
 	} else {
 		// "cli" or "token" — both use GitHub
 		await appendGitHubAttribution(prUrl, providerUsed);
+	}
+}
+
+/**
+ * Appends proof-of-work validation results to the PR/MR body.
+ * Non-fatal — all errors are swallowed internally by each platform.
+ */
+export async function appendPlatformProofOfWork(
+	prUrl: string,
+	results: ValidationResult[],
+	platform: PRPlatform,
+): Promise<void> {
+	const section = formatProofOfWork(results);
+	try {
+		if (platform === "gitlab") {
+			await appendGitLabBody(prUrl, section);
+		} else if (platform === "bitbucket") {
+			await appendBitbucketBody(prUrl, section);
+		} else {
+			await appendGitHubBody(prUrl, section);
+		}
+	} catch {
+		// Non-fatal — proof of work append is best-effort
 	}
 }
 

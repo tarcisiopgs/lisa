@@ -177,6 +177,7 @@ export class LinearSource implements Source {
 				title: string;
 				description: string;
 				url: string;
+				state: { name: string } | null;
 			} | null;
 		}>(
 			`query($identifier: String!) {
@@ -186,6 +187,7 @@ export class LinearSource implements Source {
 					title
 					description
 					url
+					state { name }
 				}
 			}`,
 			{ identifier },
@@ -198,6 +200,7 @@ export class LinearSource implements Source {
 			title: data.issue.title,
 			description: data.issue.description || "",
 			url: data.issue.url,
+			status: data.issue.state?.name,
 		};
 	}
 
