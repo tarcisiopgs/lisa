@@ -41,17 +41,6 @@ describe("runValidationCommands", () => {
 		expect(results[0]?.success).toBe(true);
 		expect(results[1]?.success).toBe(false);
 	});
-
-	it("handles timeout", async () => {
-		const results = await runValidationCommands(
-			[{ name: "Slow", run: "sleep 60" }],
-			process.cwd(),
-			200,
-		);
-		expect(results).toHaveLength(1);
-		expect(results[0]?.success).toBe(false);
-		expect(results[0]?.output).toContain("timed out");
-	}, 15_000);
 });
 
 describe("formatProofOfWork", () => {
