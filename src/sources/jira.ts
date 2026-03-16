@@ -250,6 +250,7 @@ export class JiraSource implements Source {
 				title: issue.fields.summary,
 				description: extractDescription(issue.fields.description),
 				url: issueUrl(baseUrl, issue.key),
+				status: issue.fields.status.name,
 			};
 		} catch {
 			return null;

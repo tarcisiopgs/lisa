@@ -2,7 +2,7 @@ import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execa } from "execa";
 import { analyzeProject } from "../context.js";
-import { appendPlatformAttribution } from "../git/platform.js";
+import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
 import {
 	createWorktree,
 	determineRepoPath,
@@ -24,8 +24,15 @@ import {
 import { createProvider, runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
+import { buildHookEnv, executeHook } from "../session/hooks.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
-import type { Issue, LisaConfig, ModelSpec } from "../types/index.js";
+import {
+	buildValidationRecoveryPrompt,
+	isProofOfWorkEnabled,
+	runValidationCommands,
+} from "../session/proof-of-work.js";
+import { startReconciliation } from "../session/reconciliation.js";
+import type { Issue, LisaConfig, ModelSpec, Source, ValidationResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
 import {
@@ -36,7 +43,7 @@ import {
 } from "./manifest.js";
 import { runWorktreeMultiRepoSession } from "./multi-repo-session.js";
 import type { SessionResult } from "./result.js";
-import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
+import { activeProviderPids, reconciliationSet, userKilledSet, userSkippedSet } from "./state.js";
 
 export async function findWorktreeForBranch(
 	repoRoot: string,
@@ -103,10 +110,11 @@ export async function runWorktreeSession(
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
+	source?: Source,
 ): Promise<SessionResult> {
 	// Multi-repo: delegate to planning + sequential sessions
 	if (config.repos.length > 1) {
-		return runWorktreeMultiRepoSession(config, issue, logFile, session, models);
+		return runWorktreeMultiRepoSession(config, issue, logFile, session, models, source);
 	}
 
 	const workspace = resolve(config.workspace);
@@ -126,10 +134,20 @@ export async function runWorktreeSession(
 			models,
 			repoPath,
 			defaultBranch,
+			source,
 		);
 	}
 
-	return runManualWorktreeSession(config, issue, logFile, session, models, repoPath, defaultBranch);
+	return runManualWorktreeSession(
+		config,
+		issue,
+		logFile,
+		session,
+		models,
+		repoPath,
+		defaultBranch,
+		source,
+	);
 }
 
 export async function runNativeWorktreeSession(
@@ -140,6 +158,7 @@ export async function runNativeWorktreeSession(
 	models: ModelSpec[],
 	repoPath: string,
 	_defaultBranch: string,
+	source?: Source,
 ): Promise<SessionResult> {
 	const testRunner = detectTestRunner(repoPath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
@@ -148,6 +167,7 @@ export async function runNativeWorktreeSession(
 	const repoContextMd = readContext(repoPath);
 
 	const workspace = resolve(config.workspace);
+	const hookEnv = buildHookEnv(issue.id, issue.title, "", repoPath);
 
 	// Detect infrastructure
 	const infra = discoverInfra(repoPath);
@@ -167,6 +187,22 @@ export async function runNativeWorktreeSession(
 	// Clean stale manifest from previous run (per-issue)
 	cleanupManifest(workspace, issue.id);
 
+	// Hook: before_run
+	if (!(await executeHook("before_run", config.hooks, repoPath, hookEnv))) {
+		return {
+			success: false,
+			providerUsed: models[0]?.provider ?? "claude",
+			prUrls: [],
+			fallback: {
+				success: false,
+				output: "before_run hook failed",
+				duration: 0,
+				providerUsed: models[0]?.provider ?? "claude",
+				attempts: [],
+			},
+		};
+	}
+
 	const prompt = buildNativeWorktreePrompt(
 		issue,
 		repoPath,
@@ -182,6 +218,12 @@ export async function runNativeWorktreeSession(
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
+
+	// Start reconciliation monitor
+	const reconciliation =
+		source && config.reconciliation?.enabled
+			? startReconciliation(source, issue.id, config.reconciliation, config.source_config)
+			: null;
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,
@@ -200,7 +242,19 @@ export async function runNativeWorktreeSession(
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	reconciliation?.stop();
 	if (infra) await stopResources();
+
+	// Hook: after_run (non-critical)
+	await executeHook("after_run", config.hooks, repoPath, hookEnv);
+
+	// Check if issue was reconciled (status changed externally)
+	if (reconciliationSet.has(issue.id)) {
+		reconciliationSet.delete(issue.id);
+		logger.warn(`Issue ${issue.id} was closed/cancelled externally. Skipping.`);
+		cleanupManifest(workspace, issue.id);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
 
 	try {
 		appendFileSync(
@@ -291,6 +345,7 @@ export async function runManualWorktreeSession(
 	models: ModelSpec[],
 	repoPath: string,
 	defaultBranch: string,
+	source?: Source,
 ): Promise<SessionResult> {
 	const branchName = generateBranchName(issue.id, issue.title);
 
@@ -323,6 +378,25 @@ export async function runManualWorktreeSession(
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
 
+	const hookEnv = buildHookEnv(issue.id, issue.title, branchName, worktreePath);
+
+	// Hook: after_create (critical — abort on failure)
+	if (!(await executeHook("after_create", config.hooks, worktreePath, hookEnv))) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return {
+			success: false,
+			providerUsed: models[0]?.provider ?? "claude",
+			prUrls: [],
+			fallback: {
+				success: false,
+				output: "after_create hook failed",
+				duration: 0,
+				providerUsed: models[0]?.provider ?? "claude",
+				attempts: [],
+			},
+		};
+	}
+
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(worktreePath);
 	if (testRunner) {
@@ -350,6 +424,24 @@ export async function runManualWorktreeSession(
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
 	const manifestPath = getManifestPath(worktreePath, issue.id);
+
+	// Hook: before_run (critical — abort on failure)
+	if (!(await executeHook("before_run", config.hooks, worktreePath, hookEnv))) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return {
+			success: false,
+			providerUsed: models[0]?.provider ?? "claude",
+			prUrls: [],
+			fallback: {
+				success: false,
+				output: "before_run hook failed",
+				duration: 0,
+				providerUsed: models[0]?.provider ?? "claude",
+				attempts: [],
+			},
+		};
+	}
+
 	const prompt = buildImplementPrompt(
 		issue,
 		config,
@@ -364,6 +456,12 @@ export async function runManualWorktreeSession(
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
+
+	// Start reconciliation monitor
+	const reconciliation =
+		source && config.reconciliation?.enabled
+			? startReconciliation(source, issue.id, config.reconciliation, config.source_config)
+			: null;
 
 	const result = await runWithFallback(models, prompt, {
 		logFile,
@@ -381,7 +479,19 @@ export async function runManualWorktreeSession(
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
 	});
 	stopSpinner();
+	reconciliation?.stop();
 	if (infra) await stopResources();
+
+	// Hook: after_run (non-critical)
+	await executeHook("after_run", config.hooks, worktreePath, hookEnv);
+
+	// Check if issue was reconciled (status changed externally)
+	if (reconciliationSet.has(issue.id)) {
+		reconciliationSet.delete(issue.id);
+		logger.warn(`Issue ${issue.id} was closed/cancelled externally. Skipping.`);
+		await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+	}
 
 	try {
 		appendFileSync(
@@ -394,6 +504,8 @@ export async function runManualWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		// Hook: before_remove (non-critical)
+		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
@@ -403,6 +515,8 @@ export async function runManualWorktreeSession(
 		logger.error(
 			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
 		);
+		// Hook: before_remove (non-critical)
+		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
 		const emptyCommitResult: typeof result = {
 			success: false,
@@ -425,6 +539,77 @@ export async function runManualWorktreeSession(
 			prUrls: [],
 			fallback: emptyCommitResult,
 		};
+	}
+
+	// Proof of Work: run validation commands before PR creation
+	let validationResults: ValidationResult[] | undefined;
+	if (isProofOfWorkEnabled(config.proof_of_work)) {
+		const pow = config.proof_of_work;
+		let retriesLeft = pow?.max_retries ?? 2;
+		let validationPassed = false;
+
+		while (!validationPassed) {
+			// Check reconciliation during validation loop
+			if (reconciliationSet.has(issue.id)) {
+				reconciliationSet.delete(issue.id);
+				logger.warn(`Issue ${issue.id} was closed/cancelled during validation. Skipping.`);
+				await cleanupWorktree(repoPath, worktreePath);
+				return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+			}
+
+			startSpinner(`${issue.id} \u2014 validating...`);
+			const results = await runValidationCommands(pow?.commands ?? [], worktreePath, pow?.timeout);
+			stopSpinner();
+
+			const failures = results.filter((r) => !r.success);
+
+			if (failures.length === 0) {
+				validationPassed = true;
+				validationResults = results;
+				logger.ok(`All validation checks passed for ${issue.id}`);
+				break;
+			}
+
+			if (retriesLeft <= 0) {
+				logger.error(
+					`Validation failed after max retries for ${issue.id}. Creating PR with failures noted.`,
+				);
+				validationResults = results;
+				break;
+			}
+
+			retriesLeft--;
+			logger.warn(
+				`Validation failed for ${issue.id} (${retriesLeft} retries left). Re-invoking agent...`,
+			);
+
+			const recoveryPrompt = buildValidationRecoveryPrompt(issue, failures);
+			startSpinner(`${issue.id} \u2014 fixing validation failures...`);
+			const recoveryResult = await runWithFallback(models, recoveryPrompt, {
+				logFile,
+				cwd: worktreePath,
+				guardrailsDir: workspace,
+				issueId: issue.id,
+				overseer: config.overseer,
+				sessionTimeout: config.loop.session_timeout,
+				outputStallTimeout: config.loop.output_stall_timeout,
+				providerOptions: resolveProviderOptions(config),
+				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
+				onProcess: (pid) => {
+					activeProviderPids.set(issue.id, pid);
+				},
+				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
+			});
+			stopSpinner();
+
+			if (!recoveryResult.success) {
+				logger.error(
+					`Validation recovery failed for ${issue.id}. Creating PR with failures noted.`,
+				);
+				validationResults = results;
+				break;
+			}
+		}
 	}
 
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
@@ -487,6 +672,8 @@ export async function runManualWorktreeSession(
 
 			if (!prUrl) {
 				logger.error(`Continuation also failed to produce PR for ${issue.id}. Aborting.`);
+				// Hook: before_remove (non-critical)
+				await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 				await cleanupWorktree(repoPath, worktreePath);
 				return {
 					success: false,
@@ -500,6 +687,14 @@ export async function runManualWorktreeSession(
 
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+
+	// Append proof of work to PR body if validation was run
+	if (validationResults) {
+		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);
+	}
+
+	// Hook: before_remove (non-critical)
+	await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 	await cleanupWorktree(repoPath, worktreePath);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);

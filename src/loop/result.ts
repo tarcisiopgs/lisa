@@ -6,7 +6,13 @@ import { storePrUrls } from "../session/pr-cache.js";
 import type { FallbackResult, Issue, LisaConfig, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import type { LoopOptions } from "./models.js";
-import { activeCleanups, providerPausedSet, userKilledSet, userSkippedSet } from "./state.js";
+import {
+	activeCleanups,
+	providerPausedSet,
+	reconciliationSet,
+	userKilledSet,
+	userSkippedSet,
+} from "./state.js";
 
 export interface SessionResult {
 	success: boolean;
@@ -61,6 +67,15 @@ export async function handleSessionResult(
 				const { notify } = await import("../output/terminal.js");
 				notify();
 			}
+			return false;
+		}
+
+		// Reconciled: issue status was changed externally — do NOT revert
+		if (reconciliationSet.has(issue.id)) {
+			reconciliationSet.delete(issue.id);
+			logger.warn(`Issue ${issue.id} was reconciled (status changed externally). Not reverting.`);
+			kanbanEmitter.emit("issue:skipped", issue.id);
+			activeCleanups.delete(issue.id);
 			return false;
 		}
 

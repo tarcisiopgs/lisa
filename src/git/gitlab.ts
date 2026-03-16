@@ -173,6 +173,44 @@ export async function appendMrAttribution(mrUrl: string, providerUsed: string): 
 	}
 }
 
+/**
+ * Appends arbitrary content to a GitLab MR description. Non-fatal.
+ */
+export async function appendMrBody(mrUrl: string, content: string): Promise<void> {
+	try {
+		const match = mrUrl.match(/https?:\/\/([^/]+)\/(.+?)\/-\/merge_requests\/(\d+)/);
+		if (!match) return;
+
+		const [, host, projectPath, iid] = match;
+		const token = process.env.GITLAB_TOKEN;
+		if (!token) return;
+
+		const apiBase = buildApiBase(host ?? "gitlab.com");
+		const encodedPath = encodeURIComponent(projectPath ?? "");
+
+		const getRes = await fetch(`${apiBase}/projects/${encodedPath}/merge_requests/${iid}`, {
+			headers: { "PRIVATE-TOKEN": token },
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+		if (!getRes.ok) return;
+
+		const mrData = (await getRes.json()) as { description: string };
+		const newDescription = (mrData.description ?? "") + content;
+
+		await fetch(`${apiBase}/projects/${encodedPath}/merge_requests/${iid}`, {
+			method: "PUT",
+			headers: {
+				"PRIVATE-TOKEN": token,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ description: newDescription }),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+	} catch {
+		// Non-fatal
+	}
+}
+
 export function isGitLabUrl(url: string): boolean {
 	return /gitlab\./.test(url) && url.includes("merge_requests");
 }

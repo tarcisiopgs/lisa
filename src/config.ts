@@ -2,13 +2,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import type {
+	HooksConfig,
 	LifecycleConfig,
 	LisaConfig,
 	OverseerConfig,
 	PRPlatform,
+	ProofOfWorkConfig,
 	ProviderName,
+	ReconciliationConfig,
 	SourceConfig,
 	SourceName,
+	ValidationCommand,
 } from "./types/index.js";
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
@@ -125,6 +129,12 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const { logs: _ignoredLogs, ...parsedWithoutLogs } = parsed as Record<string, unknown>;
 
 	const rawLifecycle = (parsed.lifecycle ?? undefined) as Partial<LifecycleConfig> | undefined;
+	const rawHooks = parsed.hooks as Partial<HooksConfig> | undefined;
+	const rawProofOfWork = parsed.proof_of_work as
+		| Partial<ProofOfWorkConfig & { commands?: unknown[] }>
+		| undefined;
+	const rawReconciliation = parsed.reconciliation as Partial<ReconciliationConfig> | undefined;
+
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
 		...(parsedWithoutLogs as Partial<LisaConfig>),
@@ -139,6 +149,31 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			? {
 					mode: rawLifecycle.mode,
 					timeout: rawLifecycle.timeout,
+				}
+			: undefined,
+		hooks: rawHooks
+			? {
+					before_run: rawHooks.before_run,
+					after_run: rawHooks.after_run,
+					after_create: rawHooks.after_create,
+					before_remove: rawHooks.before_remove,
+					timeout: rawHooks.timeout,
+				}
+			: undefined,
+		proof_of_work: rawProofOfWork
+			? {
+					enabled: rawProofOfWork.enabled ?? false,
+					commands: Array.isArray(rawProofOfWork.commands)
+						? (rawProofOfWork.commands as ValidationCommand[])
+						: [],
+					max_retries: rawProofOfWork.max_retries,
+					timeout: rawProofOfWork.timeout,
+				}
+			: undefined,
+		reconciliation: rawReconciliation
+			? {
+					enabled: rawReconciliation.enabled ?? false,
+					check_interval: rawReconciliation.check_interval,
 				}
 			: undefined,
 		provider_options: {

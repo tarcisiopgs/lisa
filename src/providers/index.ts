@@ -75,6 +75,7 @@ const ELIGIBLE_ERROR_PATTERNS = [
 	/lisa-overseer/i,
 	/lisa-timeout/i,
 	/lisa-stall/i,
+	/lisa-reconciliation/i,
 	/named models unavailable/i,
 	/free plans can only use/i,
 	/empty commit/i,

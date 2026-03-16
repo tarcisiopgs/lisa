@@ -161,6 +161,44 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 	}
 }
 
+/**
+ * Appends arbitrary content to a Bitbucket PR description. Non-fatal.
+ */
+export async function appendPrBody(prUrl: string, content: string): Promise<void> {
+	try {
+		const match = prUrl.match(/bitbucket\.org\/([^/]+)\/([^/]+)\/pull-requests\/(\d+)/);
+		if (!match) return;
+
+		const [, workspace, repoSlug, prId] = match;
+		if (!process.env.BITBUCKET_TOKEN) return;
+		const authHeader = getAuthHeader();
+
+		const getRes = await fetch(
+			`${API_URL}/repositories/${workspace}/${repoSlug}/pullrequests/${prId}`,
+			{
+				headers: { Authorization: authHeader },
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			},
+		);
+		if (!getRes.ok) return;
+
+		const prData = (await getRes.json()) as { description: string; title: string };
+		const newDescription = (prData.description ?? "") + content;
+
+		await fetch(`${API_URL}/repositories/${workspace}/${repoSlug}/pullrequests/${prId}`, {
+			method: "PUT",
+			headers: {
+				Authorization: authHeader,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ description: newDescription, title: prData.title ?? "" }),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+	} catch {
+		// Non-fatal
+	}
+}
+
 export function isBitbucketUrl(url: string): boolean {
 	return url.includes("bitbucket.org") && url.includes("pull-requests");
 }

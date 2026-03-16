@@ -17,8 +17,17 @@ import {
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";
+import { buildHookEnv, executeHook } from "../session/hooks.js";
 import { runLifecycle, stopResources } from "../session/lifecycle.js";
-import type { FallbackResult, Issue, LisaConfig, ModelSpec, PlanStep } from "../types/index.js";
+import { startReconciliation } from "../session/reconciliation.js";
+import type {
+	FallbackResult,
+	Issue,
+	LisaConfig,
+	ModelSpec,
+	PlanStep,
+	Source,
+} from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
 import {
@@ -28,7 +37,7 @@ import {
 	readPlanFile,
 } from "./manifest.js";
 import type { SessionResult } from "./result.js";
-import { activeProviderPids, userKilledSet, userSkippedSet } from "./state.js";
+import { activeProviderPids, reconciliationSet, userKilledSet, userSkippedSet } from "./state.js";
 import { cleanupWorktree } from "./worktree-session.js";
 
 export interface MultiRepoStepResult {
@@ -45,6 +54,7 @@ export async function runWorktreeMultiRepoSession(
 	logFile: string,
 	session: number,
 	models: ModelSpec[],
+	source?: Source,
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 	const planPath = getPlanPath(workspace, issue.id);
@@ -139,6 +149,12 @@ export async function runWorktreeMultiRepoSession(
 		attempts: [],
 	};
 
+	// Start reconciliation monitor for the entire multi-repo session
+	const reconciliation =
+		source && config.reconciliation?.enabled
+			? startReconciliation(source, issue.id, config.reconciliation, config.source_config)
+			: null;
+
 	// Phase 2: Sequential implementation — one session per repo step
 	const prUrls: string[] = [];
 	const previousResults: PreviousStepResult[] = [];
@@ -146,6 +162,15 @@ export async function runWorktreeMultiRepoSession(
 	let lastProvider: string = planProviderUsed;
 
 	for (const [i, step] of sortedSteps.entries()) {
+		// Check reconciliation before each step
+		if (reconciliationSet.has(issue.id)) {
+			reconciliation?.stop();
+			reconciliationSet.delete(issue.id);
+			logger.warn(`Issue ${issue.id} was closed/cancelled externally. Skipping remaining steps.`);
+			activeProviderPids.delete(issue.id);
+			return { success: false, providerUsed: lastProvider, prUrls, fallback: lastFallback };
+		}
+
 		const stepNum = i + 1;
 		const isLastStep = i === sortedSteps.length - 1;
 		logger.divider(stepNum);
@@ -187,6 +212,7 @@ export async function runWorktreeMultiRepoSession(
 		});
 	}
 
+	reconciliation?.stop();
 	activeProviderPids.delete(issue.id);
 	// Clean up plan only on success — failed sessions reuse the cached plan on retry
 	cleanupPlanFile(planPath);
@@ -231,6 +257,14 @@ export async function runMultiRepoStep(
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
 
+	const hookEnv = buildHookEnv(issue.id, issue.title, branchName, worktreePath);
+
+	// Hook: after_create (critical — abort on failure)
+	if (!(await executeHook("after_create", config.hooks, worktreePath, hookEnv))) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return failResult(models[0]?.provider ?? "claude");
+	}
+
 	// Detect test runner and package manager
 	const testRunner = detectTestRunner(worktreePath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
@@ -251,6 +285,12 @@ export async function runMultiRepoStep(
 			);
 		}
 		lifecycleEnv = started.env;
+	}
+
+	// Hook: before_run (critical — abort on failure)
+	if (!(await executeHook("before_run", config.hooks, worktreePath, hookEnv))) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return failResult(models[0]?.provider ?? "claude");
 	}
 
 	// Run scoped implementation
@@ -298,8 +338,13 @@ export async function runMultiRepoStep(
 		);
 	} catch {}
 
+	// Hook: after_run (non-critical)
+	await executeHook("after_run", config.hooks, worktreePath, hookEnv);
+
 	if (!result.success) {
 		logger.error(`Step ${stepNum} implementation failed. Check ${logFile}`);
+		// Hook: before_remove (non-critical)
+		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
 		return { ...failResult(result.providerUsed, result), branch: branchName };
 	}
@@ -371,6 +416,8 @@ export async function runMultiRepoStep(
 		}
 	}
 
+	// Hook: before_remove (non-critical)
+	await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 	await cleanupWorktree(repoPath, worktreePath);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 

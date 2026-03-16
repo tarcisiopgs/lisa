@@ -212,8 +212,8 @@ export async function runSequentialLoop(
 		try {
 			sessionResult =
 				config.workflow === "worktree"
-					? await runWorktreeSession(config, issue, logFile, session, models)
-					: await runBranchSession(config, issue, logFile, session, models);
+					? await runWorktreeSession(config, issue, logFile, session, models, source)
+					: await runBranchSession(config, issue, logFile, session, models, source);
 		} catch (err) {
 			stopSpinner();
 			logger.error(

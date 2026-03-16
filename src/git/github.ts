@@ -159,6 +159,20 @@ export async function appendPrAttribution(prUrl: string, providerUsed: string): 
 	}
 }
 
+/**
+ * Appends arbitrary content to a GitHub PR body. Non-fatal.
+ */
+export async function appendPrBody(prUrl: string, content: string): Promise<void> {
+	try {
+		const { stdout: bodyJson } = await execa("gh", ["pr", "view", prUrl, "--json", "body"]);
+		const { body } = JSON.parse(bodyJson) as { body: string };
+		const newBody = (body ?? "") + content;
+		await execa("gh", ["pr", "edit", prUrl, "--body", newBody]);
+	} catch {
+		// Non-fatal
+	}
+}
+
 export interface RepoInfo {
 	owner: string;
 	repo: string;

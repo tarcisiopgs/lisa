@@ -125,9 +125,9 @@ export class TrelloSource implements Source {
 		const shortLink = parseTrelloIdentifier(id);
 
 		try {
-			const card = await trelloGet<TrelloCard>(
+			const card = await trelloGet<TrelloCard & { list?: { name: string } }>(
 				`/cards/${shortLink}`,
-				"fields=name,desc,url,idLabels,idList",
+				"fields=name,desc,url,idLabels,idList&list=true&list_fields=name",
 			);
 
 			return {
@@ -135,6 +135,7 @@ export class TrelloSource implements Source {
 				title: card.name,
 				description: card.desc || "",
 				url: card.url,
+				status: card.list?.name,
 			};
 		} catch {
 			return null;
