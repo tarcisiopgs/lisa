@@ -44,14 +44,14 @@ describe("runValidationCommands", () => {
 
 	it("handles timeout", async () => {
 		const results = await runValidationCommands(
-			[{ name: "Slow", run: "sleep 10" }],
+			[{ name: "Slow", run: "sleep 60" }],
 			process.cwd(),
 			200,
 		);
 		expect(results).toHaveLength(1);
 		expect(results[0]?.success).toBe(false);
 		expect(results[0]?.output).toContain("timed out");
-	}, 10_000);
+	}, 15_000);
 });
 
 describe("formatProofOfWork", () => {

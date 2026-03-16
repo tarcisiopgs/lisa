@@ -21,10 +21,10 @@ describe("runHook", () => {
 	});
 
 	it("returns success=false on timeout", async () => {
-		const result = await runHook("before_run", "sleep 10", process.cwd(), undefined, 100);
+		const result = await runHook("before_run", "sleep 60", process.cwd(), undefined, 200);
 		expect(result.success).toBe(false);
 		expect(result.output).toContain("timed out");
-	}, 10_000);
+	}, 15_000);
 
 	it("injects environment variables", async () => {
 		const result = await runHook("before_run", "echo $LISA_ISSUE_ID", process.cwd(), {
