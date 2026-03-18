@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +5,7 @@ import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import { escapeShellPath } from "./output-buffer.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -30,12 +30,7 @@ export class AiderProvider implements Provider {
 	name = "aider" as const;
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("aider --version", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("aider");
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {

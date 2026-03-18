@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -11,12 +11,7 @@ export class GooseProvider implements Provider {
 	name = "goose" as const;
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("goose --version", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("goose");
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {

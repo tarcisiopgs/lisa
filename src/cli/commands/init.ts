@@ -6,7 +6,7 @@ import { getCachedUpdateInfo } from "../../version.js";
 import { runConfigWizard } from "../wizard.js";
 
 export const init = defineCommand({
-	meta: { name: "init", description: "Initialize lisa configuration" },
+	meta: { name: "init", description: "Interactive setup wizard for .lisa/config.yaml" },
 	async run() {
 		if (!process.stdin.isTTY) {
 			console.error(

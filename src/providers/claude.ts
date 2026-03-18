@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -12,12 +12,7 @@ export class ClaudeProvider implements Provider {
 	supportsNativeWorktree = false; // --worktree flag requires a TTY and hangs in non-interactive mode
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("claude --version", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("claude");
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {

@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
 import {
@@ -35,6 +36,38 @@ export function validateShellArg(value: string, label: string): void {
 
 export function formatError(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Cached, async check for whether a CLI command is available.
+ * Results are cached per command for the process lifetime since
+ * provider availability does not change mid-run.
+ */
+const availabilityCache = new Map<string, boolean>();
+
+export async function isCommandAvailable(
+	command: string,
+	args: string[] = ["--version"],
+): Promise<boolean> {
+	const key = `${command}:${args.join(",")}`;
+	const cached = availabilityCache.get(key);
+	if (cached !== undefined) return cached;
+
+	try {
+		await execFileAsync(command, args, { stdio: "ignore" } as never);
+		availabilityCache.set(key, true);
+		return true;
+	} catch {
+		availabilityCache.set(key, false);
+		return false;
+	}
+}
+
+/** @internal Exposed for testing only — resets the availability cache. */
+export function resetAvailabilityCache(): void {
+	availabilityCache.clear();
 }
 
 export interface ProviderProcessConfig {
