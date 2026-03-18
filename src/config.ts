@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
+import { array, boolean, literal, number, object, optional, string, union } from "zod";
 import type {
 	HooksConfig,
 	LifecycleConfig,
@@ -14,6 +15,88 @@ import type {
 	SourceName,
 	ValidationCommand,
 } from "./types/index.js";
+
+const VALID_PROVIDERS = [
+	"claude",
+	"gemini",
+	"opencode",
+	"copilot",
+	"cursor",
+	"goose",
+	"aider",
+	"codex",
+] as const;
+const VALID_SOURCES = [
+	"linear",
+	"trello",
+	"plane",
+	"shortcut",
+	"gitlab-issues",
+	"github-issues",
+	"jira",
+] as const;
+const VALID_PLATFORMS = ["cli", "token", "gitlab", "bitbucket"] as const;
+const VALID_WORKFLOWS = ["worktree", "branch"] as const;
+
+/** Schema allows empty strings (partial config) but rejects invalid non-empty values. */
+function enumOrEmpty(values: readonly string[]) {
+	return union([literal(""), ...values.map((v) => literal(v))] as [
+		ReturnType<typeof literal>,
+		ReturnType<typeof literal>,
+		...ReturnType<typeof literal>[],
+	]);
+}
+
+const configSchema = object({
+	provider: enumOrEmpty(VALID_PROVIDERS),
+	source: enumOrEmpty(VALID_SOURCES),
+	platform: enumOrEmpty(VALID_PLATFORMS),
+	workflow: union(
+		VALID_WORKFLOWS.map((w) => literal(w)) as [
+			ReturnType<typeof literal>,
+			ReturnType<typeof literal>,
+			...ReturnType<typeof literal>[],
+		],
+	),
+	base_branch: string().optional(),
+	workspace: string().optional(),
+}).passthrough();
+
+export class ConfigValidationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ConfigValidationError";
+	}
+}
+
+/**
+ * Validates critical config fields after assembly.
+ * Throws ConfigValidationError with a clear message if validation fails.
+ * Skips validation for empty/default configs (e.g., no config file found).
+ */
+export function validateConfig(config: LisaConfig): void {
+	// Skip validation for default/empty configs (no config file loaded)
+	if (!config.provider && !config.source) return;
+
+	const result = configSchema.safeParse(config);
+	if (!result.success) {
+		const issues = result.error.issues.map((issue) => {
+			const path = issue.path.join(".");
+			if (issue.code === "invalid_union") {
+				if (path === "provider")
+					return `  provider: "${config.provider}" is not valid. Must be one of: ${VALID_PROVIDERS.join(", ")}`;
+				if (path === "source")
+					return `  source: "${config.source}" is not valid. Must be one of: ${VALID_SOURCES.join(", ")}`;
+				if (path === "platform")
+					return `  platform: "${config.platform}" is not valid. Must be one of: ${VALID_PLATFORMS.join(", ")}`;
+				if (path === "workflow")
+					return `  workflow: "${config.workflow}" is not valid. Must be one of: ${VALID_WORKFLOWS.join(", ")}`;
+			}
+			return `  ${path}: ${issue.message}`;
+		});
+		throw new ConfigValidationError(`Invalid configuration:\n${issues.join("\n")}`);
+	}
+}
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
 	enabled: true,
@@ -211,6 +294,8 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 			models: [config.provider],
 		};
 	}
+
+	validateConfig(config);
 
 	return config;
 }

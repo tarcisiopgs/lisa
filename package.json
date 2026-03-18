@@ -47,7 +47,8 @@
 		"ink-spinner": "^5.0.0",
 		"picocolors": "^1.1.1",
 		"react": "^19.2.4",
-		"yaml": "^2.8.2"
+		"yaml": "^2.8.2",
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.5",
@@ -56,12 +57,12 @@
 		"@vitest/coverage-v8": "^4.0.18",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
+		"ink-testing-library": "^4.0.0",
 		"lint-staged": "^16.3.2",
 		"tsup": "^8.5.1",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
-		"vitest": "^4.0.18",
-		"ink-testing-library": "^4.0.0"
+		"vitest": "^4.0.18"
 	},
 	"packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be",
 	"engines": {

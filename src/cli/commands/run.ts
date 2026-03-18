@@ -10,7 +10,10 @@ import { getCachedUpdateInfo } from "../../version.js";
 import { getMissingEnvVars } from "../detection.js";
 
 export const run = defineCommand({
-	meta: { name: "run", description: "Run the agent loop" },
+	meta: {
+		name: "run",
+		description: "Fetch issues, run AI agents, and deliver pull requests",
+	},
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
 		watch: {
@@ -37,8 +40,15 @@ export const run = defineCommand({
 			default: false,
 		},
 		issue: { type: "string", description: "Run a specific issue by identifier or URL" },
-		provider: { type: "string", description: "AI provider (claude, gemini, opencode)" },
-		source: { type: "string", description: "Issue source (linear, trello)" },
+		provider: {
+			type: "string",
+			description: "AI provider (claude, gemini, opencode, copilot, cursor, goose, aider, codex)",
+		},
+		source: {
+			type: "string",
+			description:
+				"Issue source (linear, trello, plane, shortcut, gitlab-issues, github-issues, jira)",
+		},
 		label: { type: "string", description: "Label to filter issues" },
 		platform: { type: "string", description: "PR platform: cli, token, gitlab, or bitbucket" },
 	},

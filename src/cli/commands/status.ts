@@ -6,7 +6,7 @@ import { banner } from "../../output/logger.js";
 import { getLogsDir } from "../../paths.js";
 
 export const status = defineCommand({
-	meta: { name: "status", description: "Show session status and stats" },
+	meta: { name: "status", description: "Show current config, session count, and log location" },
 	async run() {
 		banner();
 		const config = loadConfig();

@@ -3,16 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
 import { CodexProvider } from "./codex.js";
 import { spawnWithPty } from "./pty.js";
-
-vi.mock("node:child_process", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("node:child_process")>();
-	return { ...actual, execSync: vi.fn() };
-});
+import { isCommandAvailable, resetAvailabilityCache } from "./run-provider.js";
 
 vi.mock("./pty.js", () => ({
 	spawnWithPty: vi.fn(),
 	stripAnsi: (s: string) => s,
 }));
+
+vi.mock("./run-provider.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./run-provider.js")>();
+	return { ...actual, isCommandAvailable: vi.fn() };
+});
 
 function makeFakeProc(exitCode = 0) {
 	const proc = Object.assign(new EventEmitter(), {
@@ -45,17 +46,13 @@ describe("CodexProvider", () => {
 
 	describe("isAvailable", () => {
 		it("returns true when codex binary is found", async () => {
-			const { execSync } = await import("node:child_process");
-			vi.mocked(execSync).mockReturnValue(Buffer.from(""));
+			vi.mocked(isCommandAvailable).mockResolvedValue(true);
 			expect(await new CodexProvider().isAvailable()).toBe(true);
-			expect(vi.mocked(execSync)).toHaveBeenCalledWith("which codex", expect.anything());
+			expect(vi.mocked(isCommandAvailable)).toHaveBeenCalledWith("codex");
 		});
 
 		it("returns false when codex binary is not found", async () => {
-			const { execSync } = await import("node:child_process");
-			vi.mocked(execSync).mockImplementation(() => {
-				throw new Error("command not found");
-			});
+			vi.mocked(isCommandAvailable).mockResolvedValue(false);
 			expect(await new CodexProvider().isAvailable()).toBe(false);
 		});
 	});

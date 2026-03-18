@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -14,12 +14,7 @@ export class GeminiProvider implements Provider {
 	name = "gemini" as const;
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("gemini --version", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("gemini");
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
