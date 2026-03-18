@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -11,12 +11,7 @@ export class CopilotProvider implements Provider {
 	name = "copilot" as const;
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("copilot version", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("copilot", ["version"]);
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {

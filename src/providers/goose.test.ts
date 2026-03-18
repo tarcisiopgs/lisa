@@ -3,16 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
 import { GooseProvider } from "./goose.js";
 import { spawnWithPty } from "./pty.js";
-
-vi.mock("node:child_process", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("node:child_process")>();
-	return { ...actual, execSync: vi.fn() };
-});
+import { isCommandAvailable } from "./run-provider.js";
 
 vi.mock("./pty.js", () => ({
 	spawnWithPty: vi.fn(),
 	stripAnsi: (s: string) => s,
 }));
+
+vi.mock("./run-provider.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./run-provider.js")>();
+	return { ...actual, isCommandAvailable: vi.fn() };
+});
 
 function makeFakeProc(exitCode = 0) {
 	const proc = Object.assign(new EventEmitter(), {
@@ -46,16 +47,13 @@ describe("GooseProvider", () => {
 
 	describe("isAvailable", () => {
 		it("returns true when goose binary is found", async () => {
-			const { execSync } = await import("node:child_process");
-			vi.mocked(execSync).mockReturnValue(Buffer.from(""));
+			vi.mocked(isCommandAvailable).mockResolvedValue(true);
 			expect(await new GooseProvider().isAvailable()).toBe(true);
+			expect(vi.mocked(isCommandAvailable)).toHaveBeenCalledWith("goose");
 		});
 
 		it("returns false when goose binary is not found", async () => {
-			const { execSync } = await import("node:child_process");
-			vi.mocked(execSync).mockImplementation(() => {
-				throw new Error("command not found");
-			});
+			vi.mocked(isCommandAvailable).mockResolvedValue(false);
 			expect(await new GooseProvider().isAvailable()).toBe(false);
 		});
 	});

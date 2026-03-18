@@ -5,7 +5,7 @@ import { log } from "../../output/logger.js";
 import { runConfigWizard } from "../wizard.js";
 
 export const config = defineCommand({
-	meta: { name: "config", description: "Manage configuration" },
+	meta: { name: "config", description: "Show, edit, or reconfigure .lisa/config.yaml" },
 	args: {
 		show: { type: "boolean", description: "Show current config", default: false },
 		set: { type: "string", description: "Set a config value (key=value)" },

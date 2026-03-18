@@ -17,6 +17,9 @@ function findCursorBinary(): string | null {
 	return null;
 }
 
+// Cursor needs its own binary resolution because it searches two candidate names.
+// The result is cached via the instance field _bin (set once per CursorProvider instance).
+
 /**
  * Known tool call type keys emitted by Cursor's stream-json format.
  * Maps internal key names to human-readable action labels.

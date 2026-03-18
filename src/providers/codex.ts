@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import type { Provider, RunOptions, RunResult } from "../types/index.js";
 import {
 	formatError,
+	isCommandAvailable,
 	type ProviderProcessConfig,
 	runProviderProcess,
 	validateShellArg,
@@ -11,12 +11,7 @@ export class CodexProvider implements Provider {
 	name = "codex" as const;
 
 	async isAvailable(): Promise<boolean> {
-		try {
-			execSync("which codex", { stdio: "ignore" });
-			return true;
-		} catch {
-			return false;
-		}
+		return isCommandAvailable("codex");
 	}
 
 	async run(prompt: string, opts: RunOptions): Promise<RunResult> {
