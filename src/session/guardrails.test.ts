@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -246,6 +254,22 @@ describe("appendEntry", () => {
 		const content = readFileSync(guardrailsPath(tmpDir), "utf-8");
 		const entryCount = (content.match(/^## Issue INT-/gm) ?? []).length;
 		expect(entryCount).toBe(20);
+	});
+
+	it("writes guardrails file with owner-only permissions (0o600)", () => {
+		appendEntry(tmpDir, {
+			issueId: "INT-300",
+			date: "2026-03-18",
+			provider: "claude",
+			errorType: "Exit code 1",
+			context: "restricted content",
+		});
+
+		const path = guardrailsPath(tmpDir);
+		const stat = statSync(path);
+		// eslint-disable-next-line no-bitwise
+		const mode = stat.mode & 0o777;
+		expect(mode).toBe(0o600);
 	});
 
 	it("wraps context in a code block", () => {

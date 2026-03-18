@@ -47,8 +47,8 @@ describe("setOutputMode", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("prints to console in default mode", () => {
-		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+	it("prints to stderr in default mode", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
 			logger.log("test message");
 			expect(consoleSpy).toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe("tui output mode", () => {
 		logger.initLogFile(logPath);
 		logger.setOutputMode("tui");
 
-		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
 			logger.log("hello from tui");
 			expect(consoleSpy).not.toHaveBeenCalled();

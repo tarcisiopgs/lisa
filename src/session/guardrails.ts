@@ -107,7 +107,7 @@ export function appendEntrySync(dir: string, entry: GuardrailEntry): void {
 		content = `${header}\n\n${rotated.join("\n\n")}`;
 	}
 
-	writeFileSync(path, content, "utf-8");
+	writeFileSync(path, content, { encoding: "utf-8", mode: 0o600 });
 }
 
 /**
@@ -147,7 +147,7 @@ export function appendRawEntrySync(dir: string, entryText: string): void {
 		content = `${header}\n\n${rotated.join("\n\n")}`;
 	}
 
-	writeFileSync(path, content, "utf-8");
+	writeFileSync(path, content, { encoding: "utf-8", mode: 0o600 });
 }
 
 function formatEntry(entry: GuardrailEntry): string {

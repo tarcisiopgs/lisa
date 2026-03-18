@@ -43,8 +43,42 @@ export const run = defineCommand({
 		platform: { type: "string", description: "PR platform: cli, token, gitlab, or bitbucket" },
 	},
 	async run({ args }) {
-		// Hidden flags: accessible but not shown in --help
 		const argv = process.argv.slice(2);
+
+		// Validate flags: reject unknown flags to prevent typos from silently executing the loop.
+		// Includes hidden flags (--lifecycle, --lifecycle-timeout, --demo) that are intentionally
+		// omitted from --help but still accepted.
+		const knownFlags = new Set([
+			"run",
+			"--once",
+			"--watch",
+			"-w",
+			"--limit",
+			"--bell",
+			"--no-bell",
+			"--concurrency",
+			"-c",
+			"--dry-run",
+			"--issue",
+			"--provider",
+			"--source",
+			"--label",
+			"--platform",
+			"--lifecycle",
+			"--lifecycle-timeout",
+			"--demo",
+			"--help",
+			"-h",
+		]);
+		for (const arg of argv) {
+			if (arg.startsWith("-") && !arg.startsWith("--no-") && !knownFlags.has(arg.split("=")[0]!)) {
+				console.error(pc.red(`Unknown flag: ${arg}`));
+				console.error(pc.dim("Run `lisa run --help` to see available options."));
+				process.exit(1);
+			}
+		}
+
+		// Hidden flags: accessible but not shown in --help
 		const lifecycleIdx = argv.indexOf("--lifecycle");
 		const lifecycleValue = lifecycleIdx !== -1 ? argv[lifecycleIdx + 1] : undefined;
 		const lifecycleTimeoutIdx = argv.indexOf("--lifecycle-timeout");

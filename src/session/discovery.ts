@@ -94,6 +94,12 @@ export function discoverDockerCompose(cwd: string): ResourceConfig[] {
 	const resources: ResourceConfig[] = [];
 
 	for (const [serviceName, service] of Object.entries(parsed.services)) {
+		// Validate service name to prevent shell injection via malicious compose files
+		if (!/^[a-zA-Z0-9._-]+$/.test(serviceName)) {
+			logger.warn(`Skipping Docker service with unsafe name: ${serviceName}`);
+			continue;
+		}
+
 		const firstPort = service.ports?.[0];
 		if (firstPort === undefined) continue;
 

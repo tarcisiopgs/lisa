@@ -93,7 +93,7 @@ const refresh = defineCommand({
 });
 
 export const context = defineCommand({
-	meta: { description: "Manage project context for agent prompts" },
+	meta: { name: "context", description: "Manage project context for agent prompts" },
 	subCommands: { refresh },
 	async run() {
 		const config = loadConfig();
