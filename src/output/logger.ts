@@ -41,7 +41,7 @@ function writeToFile(level: string, message: string): void {
 
 export function log(message: string): void {
 	if (shouldPrintToConsole()) {
-		console.log(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
+		console.error(`${pc.cyan("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
 	writeToFile("info", message);
 }
@@ -62,7 +62,7 @@ export function error(message: string): void {
 
 export function ok(message: string): void {
 	if (shouldPrintToConsole()) {
-		console.log(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
+		console.error(`${pc.green("[lisa]")} ${pc.dim(timestamp())} ${message}`);
 	}
 	writeToFile("ok", message);
 }
@@ -77,9 +77,9 @@ export function banner(): void {
 	const title = " lisa ♪  autonomous issue resolver ";
 	const border = "─".repeat(title.length);
 
-	console.log(pc.yellow(`\n  ┌${border}┐`));
-	console.log(pc.yellow(`  │`) + pc.bold(pc.white(title)) + pc.yellow("│"));
-	console.log(pc.yellow(`  └${border}┘\n`));
+	console.error(pc.yellow(`\n  ┌${border}┐`));
+	console.error(pc.yellow(`  │`) + pc.bold(pc.white(title)) + pc.yellow("│"));
+	console.error(pc.yellow(`  └${border}┘\n`));
 }
 
 export function updateNotice(update: UpdateInfo): void {
@@ -94,9 +94,9 @@ export function updateNotice(update: UpdateInfo): void {
 	const maxLen = Math.max(...lines.map((l) => strip(l).length));
 	const pad = (s: string) => s + " ".repeat(maxLen - strip(s).length);
 
-	console.log(pc.yellow(`  ┌${"─".repeat(maxLen + 2)}┐`));
+	console.error(pc.yellow(`  ┌${"─".repeat(maxLen + 2)}┐`));
 	for (const line of lines) {
-		console.log(pc.yellow("  │ ") + pad(line) + pc.yellow(" │"));
+		console.error(pc.yellow("  │ ") + pad(line) + pc.yellow(" │"));
 	}
-	console.log(pc.yellow(`  └${"─".repeat(maxLen + 2)}┘\n`));
+	console.error(pc.yellow(`  └${"─".repeat(maxLen + 2)}┘\n`));
 }

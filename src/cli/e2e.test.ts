@@ -65,4 +65,48 @@ describe("lisa CLI (E2E)", () => {
 			expect(result.stdout).toMatch(/\d+\.\d+\.\d+/);
 		});
 	});
+
+	describe("E-04: unknown flags", () => {
+		let tmpDir: string;
+
+		beforeEach(() => {
+			tmpDir = mkdtempSync(join(tmpdir(), "lisa-e2e-"));
+		});
+
+		afterEach(() => {
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("exits 1 when run receives unknown flags", () => {
+			const result = spawnSync(TSX, [CLI, "run", "--badFlag"], {
+				cwd: tmpDir,
+				encoding: "utf-8",
+				timeout: 10_000,
+			});
+
+			expect(result.status).toBe(1);
+			expect(result.stderr).toContain("Unknown flag");
+		});
+	});
+
+	describe("E-05: context subcommand name", () => {
+		it("shows correct command name in help", () => {
+			const result = spawnSync(TSX, [CLI, "context", "--help"], {
+				encoding: "utf-8",
+				timeout: 10_000,
+			});
+
+			expect(result.status).toBe(0);
+			expect(result.stdout).toContain("lisa context");
+			expect(result.stdout).not.toMatch(/lisa\s+\//);
+		});
+	});
+
+	describe("E-06: description", () => {
+		it("does not hardcode specific tracker names", () => {
+			const result = spawnSync(TSX, [CLI, "--help"], { encoding: "utf-8", timeout: 10_000 });
+			expect(result.status).toBe(0);
+			expect(result.stdout).not.toContain("Linear/Trello");
+		});
+	});
 });

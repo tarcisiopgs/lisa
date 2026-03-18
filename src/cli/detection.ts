@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
@@ -19,7 +19,7 @@ export function getVersion(): string {
 const CURSOR_FREE_PLAN_ERROR = "Free plans can only use Auto";
 
 export async function isCursorFreePlan(): Promise<boolean> {
-	const { mkdtempSync, unlinkSync, writeFileSync } = await import("node:fs");
+	const { mkdtempSync, writeFileSync } = await import("node:fs");
 	const tmpDir = mkdtempSync(join(tmpdir(), "lisa-cursor-check-"));
 	const promptFile = join(tmpDir, "prompt.txt");
 	writeFileSync(promptFile, "test", "utf-8");
@@ -46,10 +46,7 @@ export async function isCursorFreePlan(): Promise<boolean> {
 		return errorOutput.includes(CURSOR_FREE_PLAN_ERROR);
 	} finally {
 		try {
-			unlinkSync(promptFile);
-		} catch {}
-		try {
-			execSync(`rm -rf ${tmpDir}`, { stdio: "ignore" });
+			rmSync(tmpDir, { recursive: true, force: true });
 		} catch {}
 	}
 }

@@ -13,7 +13,7 @@ export const main = defineCommand({
 		name: "lisa",
 		version: getVersion(),
 		description:
-			"Deterministic autonomous issue resolver — structured AI agent loop for Linear/Trello",
+			"Deterministic autonomous issue resolver — structured AI agent loop for any issue tracker",
 	},
 	subCommands: { run, config, init, status, issue, feedback, context },
 });
