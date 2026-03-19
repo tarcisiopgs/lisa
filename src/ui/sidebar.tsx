@@ -4,7 +4,14 @@ import { Box, Text } from "ink";
 import type { UpdateInfo } from "../version.js";
 import { formatElapsed } from "./format.js";
 
-export type SidebarMode = "board" | "detail" | "watching" | "watch-prompt" | "empty";
+export type SidebarMode =
+	| "board"
+	| "detail"
+	| "watching"
+	| "watch-prompt"
+	| "empty"
+	| "plan-chat"
+	| "plan-review";
 
 interface SidebarProps {
 	provider: string;
@@ -186,6 +193,7 @@ export function Sidebar({
 					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
 					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
 					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
+					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
 			)}
@@ -215,6 +223,22 @@ export function Sidebar({
 			{activeView === "empty" && (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[q]  quit"}</Text>
+				</Box>
+			)}
+			{activeView === "plan-chat" && (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[↵]  send"}</Text>
+					<Text dimColor>{"[Esc] cancel"}</Text>
+				</Box>
+			)}
+			{activeView === "plan-review" && (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[↑↓] navigate"}</Text>
+					<Text dimColor>{"[↵]  detail"}</Text>
+					<Text dimColor>{"[e]  edit"}</Text>
+					<Text dimColor>{"[d]  delete"}</Text>
+					<Text dimColor>{"[a]  approve"}</Text>
+					<Text dimColor>{"[Esc] cancel"}</Text>
 				</Box>
 			)}
 		</Box>

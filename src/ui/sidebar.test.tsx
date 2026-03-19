@@ -178,4 +178,29 @@ describe("Sidebar — legend per mode", () => {
 		expect(stripAnsi(frame2())).toContain("[k]  kill");
 		expect(stripAnsi(frame2())).toContain("[s]  skip");
 	});
+
+	it("shows plan shortcut in board mode", () => {
+		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="board" />);
+		expect(stripAnsi(lastFrame())).toContain("[n]  plan");
+	});
+
+	it("shows send and cancel in plan-chat mode", () => {
+		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="plan-chat" />);
+		const output = stripAnsi(lastFrame());
+		expect(output).toContain("[↵]  send");
+		expect(output).toContain("[Esc] cancel");
+		expect(output).not.toContain("[q]");
+	});
+
+	it("shows review shortcuts in plan-review mode", () => {
+		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="plan-review" />);
+		const output = stripAnsi(lastFrame());
+		expect(output).toContain("navigate");
+		expect(output).toContain("[↵]  detail");
+		expect(output).toContain("[e]  edit");
+		expect(output).toContain("[d]  delete");
+		expect(output).toContain("[a]  approve");
+		expect(output).toContain("[Esc] cancel");
+		expect(output).not.toContain("[q]");
+	});
 });

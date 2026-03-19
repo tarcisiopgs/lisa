@@ -1,14 +1,19 @@
 import { Box, useApp, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { resetTitle, startSpinner, stopSpinner } from "../output/terminal.js";
-import type { LisaConfig } from "../types/index.js";
+import type { LisaConfig, PlannedIssue } from "../types/index.js";
 import { getCachedUpdateInfo, type UpdateInfo } from "../version.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
+import { PlanChat } from "./plan-chat.js";
+import { PlanDetail } from "./plan-detail.js";
+import { PlanReview } from "./plan-review.js";
 import { Sidebar, type SidebarMode } from "./sidebar.js";
 import type { KanbanCard } from "./state.js";
 import { kanbanEmitter, useKanbanState } from "./state.js";
 import { useTerminalSize } from "./use-terminal-size.js";
+
+type ActiveView = "board" | "detail" | "plan-chat" | "plan-review" | "plan-detail";
 
 interface KanbanAppProps {
 	config: LisaConfig;
@@ -23,12 +28,19 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	);
 	const { rows } = useTerminalSize();
 
-	const [activeView, setActiveView] = useState<"board" | "detail">("board");
+	const [activeView, setActiveView] = useState<ActiveView>("board");
 	const [activeColIndex, setActiveColIndex] = useState(0);
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 	const [paused, setPaused] = useState(false);
 	const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 	const [updateInfo] = useState<UpdateInfo | null>(() => getCachedUpdateInfo());
+
+	// Plan state
+	const [planMessages, setPlanMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
+	const [planIssues, setPlanIssues] = useState<PlannedIssue[]>([]);
+	const [planGoal, setPlanGoal] = useState("");
+	const [planThinking, setPlanThinking] = useState(false);
+	const [planSelectedIndex, setPlanSelectedIndex] = useState(0);
 
 	// Set the initial model based on config
 	useEffect(() => {
@@ -46,6 +58,30 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			kanbanEmitter.off("tui:exit", onExit);
 		};
 	}, [exit]);
+
+	// Listen for plan events from outside the TUI
+	useEffect(() => {
+		const onAiMessage = (content: string) => {
+			setPlanMessages((prev) => [...prev, { role: "ai", content }]);
+			setPlanThinking(false);
+		};
+		const onThinking = () => setPlanThinking(true);
+		const onIssuesReady = (issues: PlannedIssue[]) => {
+			setPlanIssues(issues);
+			setPlanSelectedIndex(0);
+			setActiveView("plan-review");
+			setPlanThinking(false);
+		};
+
+		kanbanEmitter.on("plan:ai-message", onAiMessage);
+		kanbanEmitter.on("plan:thinking", onThinking);
+		kanbanEmitter.on("plan:issues-ready", onIssuesReady);
+		return () => {
+			kanbanEmitter.off("plan:ai-message", onAiMessage);
+			kanbanEmitter.off("plan:thinking", onThinking);
+			kanbanEmitter.off("plan:issues-ready", onIssuesReady);
+		};
+	}, []);
 
 	// Backlog: priority order (queueOrder), error cards sink to the bottom
 	const backlog = [...cards.filter((c) => c.column === "backlog")].sort((a, b) => {
@@ -114,6 +150,68 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
+		// Plan chat: ESC cancels, everything else handled by PlanChat component
+		if (activeView === "plan-chat") {
+			if (key.escape) {
+				setActiveView("board");
+			}
+			return;
+		}
+
+		// Plan review: navigate, approve, edit, delete, detail, cancel
+		if (activeView === "plan-review") {
+			if (key.escape) {
+				setActiveView("board");
+				return;
+			}
+			if (key.upArrow) {
+				setPlanSelectedIndex((prev) => Math.max(0, prev - 1));
+				return;
+			}
+			if (key.downArrow) {
+				setPlanSelectedIndex((prev) => Math.min(planIssues.length - 1, prev + 1));
+				return;
+			}
+			if (key.return) {
+				setActiveView("plan-detail");
+				return;
+			}
+			if (input === "a") {
+				kanbanEmitter.emit("plan:approved", planIssues, planGoal);
+				setActiveView("board");
+				return;
+			}
+			if (input === "d" && planIssues.length > 0) {
+				const newIssues = [...planIssues];
+				const removed = newIssues.splice(planSelectedIndex, 1)[0];
+				// Update dependsOn references
+				for (const issue of newIssues) {
+					issue.dependsOn = issue.dependsOn.filter((d) => d !== removed?.order);
+				}
+				setPlanIssues(newIssues);
+				setPlanSelectedIndex(Math.min(planSelectedIndex, Math.max(0, newIssues.length - 1)));
+				return;
+			}
+			if (input === "e") {
+				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex);
+				return;
+			}
+			return;
+		}
+
+		// Plan detail: ESC goes back to review, e opens editor
+		if (activeView === "plan-detail") {
+			if (key.escape) {
+				setActiveView("plan-review");
+				return;
+			}
+			if (input === "e") {
+				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex);
+				return;
+			}
+			return;
+		}
+
 		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o) are handled.
 		// Scroll and "o" are handled by IssueDetail's own useInput.
 		if (activeView === "detail") {
@@ -157,6 +255,15 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				setPaused(false);
 				kanbanEmitter.emit("loop:resume");
 			}
+			return;
+		}
+
+		if (input === "n") {
+			setActiveView("plan-chat");
+			setPlanMessages([]);
+			setPlanIssues([]);
+			setPlanGoal("");
+			setPlanThinking(false);
 			return;
 		}
 
@@ -224,10 +331,15 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);
 
 	// Compute sidebar mode — reflects the actual context for legend rendering
-	let sidebarMode: SidebarMode = activeView;
+	let sidebarMode: SidebarMode = "board";
 	if (isWatchPrompt) sidebarMode = "watch-prompt";
 	else if (isWatching) sidebarMode = "watching";
 	else if (isEmpty && activeView === "board") sidebarMode = "empty";
+	else if (activeView === "plan-chat") sidebarMode = "plan-chat";
+	else if (activeView === "plan-review" || activeView === "plan-detail")
+		sidebarMode = "plan-review";
+	else if (activeView === "detail") sidebarMode = "detail";
+	else if (activeView === "board") sidebarMode = "board";
 
 	return (
 		<Box flexDirection="row" height={rows}>
@@ -244,7 +356,47 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				updateInfo={updateInfo}
 				workComplete={workComplete}
 			/>
-			{activeView === "board" || !selectedCard ? (
+			{activeView === "plan-chat" ? (
+				<PlanChat
+					messages={planMessages}
+					isThinking={planThinking}
+					onSend={(msg) => {
+						setPlanMessages((prev) => [...prev, { role: "user", content: msg }]);
+						if (!planGoal) setPlanGoal(msg);
+						kanbanEmitter.emit("plan:user-message", msg);
+					}}
+					onCancel={() => setActiveView("board")}
+				/>
+			) : activeView === "plan-review" ? (
+				<PlanReview
+					goal={planGoal}
+					issues={planIssues}
+					selectedIndex={planSelectedIndex}
+					onNavigate={setPlanSelectedIndex}
+					onViewDetail={(idx) => {
+						setPlanSelectedIndex(idx);
+						setActiveView("plan-detail");
+					}}
+					onEdit={(idx) => kanbanEmitter.emit("plan:edit-issue", idx)}
+					onDelete={(idx) => {
+						const newIssues = [...planIssues];
+						newIssues.splice(idx, 1);
+						setPlanIssues(newIssues);
+						setPlanSelectedIndex(Math.min(idx, Math.max(0, newIssues.length - 1)));
+					}}
+					onApprove={() => {
+						kanbanEmitter.emit("plan:approved", planIssues, planGoal);
+						setActiveView("board");
+					}}
+					onCancel={() => setActiveView("board")}
+				/>
+			) : activeView === "plan-detail" && planIssues[planSelectedIndex] ? (
+				<PlanDetail
+					issue={planIssues[planSelectedIndex]}
+					onBack={() => setActiveView("plan-review")}
+					onEdit={() => kanbanEmitter.emit("plan:edit-issue", planSelectedIndex)}
+				/>
+			) : activeView === "board" || !selectedCard ? (
 				<Board
 					cards={cards}
 					labels={labels}
