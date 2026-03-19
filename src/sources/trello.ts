@@ -1,7 +1,7 @@
 import type { Issue, Source, SourceConfig } from "../types/index.js";
+import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
 
 const API_URL = "https://api.trello.com/1";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 function getAuthHeaders(): Record<string, string> {
 	const key = process.env.TRELLO_API_KEY;
@@ -98,9 +98,8 @@ export class TrelloSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
 		const labelIds = await Promise.all(
-			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
+			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
 		);
 
 		const cards = await trelloGet<TrelloCard[]>(
@@ -163,9 +162,8 @@ export class TrelloSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
 		const labelIds = await Promise.all(
-			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
+			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
 		);
 
 		const cards = await trelloGet<TrelloCard[]>(

@@ -1,5 +1,6 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
+import { normalizeLabels } from "./base.js";
 
 const API_URL = "https://api.linear.app/graphql";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -37,7 +38,7 @@ export class LinearSource implements Source {
 	name = "linear" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labels = normalizeLabels(config);
 		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {
@@ -331,7 +332,7 @@ export class LinearSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labels = normalizeLabels(config);
 		const primaryLabel = labels[0] ?? "";
 		const data = await gql<{
 			issues: {

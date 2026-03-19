@@ -1,9 +1,7 @@
 import { execa } from "execa";
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
-
-const API_URL = "https://api.github.com";
-const REQUEST_TIMEOUT_MS = 30_000;
+import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
 
 const PRIORITY_LABELS = ["p1", "p2", "p3"];
 
@@ -30,43 +28,12 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 	};
 }
 
-async function githubFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const url = `${API_URL}${path}`;
-	const headers: Record<string, string> = {
-		...(await getAuthHeaders()),
-		"Content-Type": "application/json",
-	};
-
-	const res = await fetch(url, {
-		method,
-		headers,
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-	});
-
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`GitHub API error (${res.status}): ${text}`);
+let _api: ApiClient | undefined;
+function api(): ApiClient {
+	if (!_api) {
+		_api = createApiClient("https://api.github.com", getAuthHeaders, "GitHub");
 	}
-
-	if (method === "DELETE" || res.status === 204) return undefined as T;
-	return (await res.json()) as T;
-}
-
-async function githubGet<T>(path: string): Promise<T> {
-	return githubFetch<T>("GET", path);
-}
-
-async function githubPost<T>(path: string, body: unknown): Promise<T> {
-	return githubFetch<T>("POST", path, body);
-}
-
-async function githubPatch<T>(path: string, body: unknown): Promise<T> {
-	return githubFetch<T>("PATCH", path, body);
-}
-
-async function githubDelete(path: string): Promise<void> {
-	await githubFetch<void>("DELETE", path);
+	return _api;
 }
 
 interface GitHubIssue {
@@ -100,7 +67,7 @@ export async function checkPrMerged(prUrl: string): Promise<boolean> {
 	const parsed = parseGitHubPrUrl(prUrl);
 	if (!parsed) return false;
 	try {
-		const pr = await githubGet<GitHubPr>(
+		const pr = await api().get<GitHubPr>(
 			`/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}`,
 		);
 		return pr.merged === true;
@@ -174,15 +141,11 @@ export class GitHubIssuesSource implements Source {
 		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
 		const validStates = ["open", "closed", "all"];
 		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
-		const filterLabels = isOrphanDetection
-			? [config.pick_from]
-			: Array.isArray(config.label)
-				? config.label
-				: [config.label];
+		const filterLabels = isOrphanDetection ? [config.pick_from] : normalizeLabels(config);
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
+		const issues = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		if (issues.length === 0) return null;
 
 		// Check blocking relations parsed from issue body
@@ -203,7 +166,7 @@ export class GitHubIssuesSource implements Source {
 			const closedBlockers: string[] = [];
 			for (const depNum of depNumbers) {
 				try {
-					const dep = await githubGet<GitHubIssue>(`/repos/${owner}/${repo}/issues/${depNum}`);
+					const dep = await api().get<GitHubIssue>(`/repos/${owner}/${repo}/issues/${depNum}`);
 					if (!dep.state || dep.state === "open") {
 						activeBlockers.push(depNum);
 					} else {
@@ -263,7 +226,7 @@ export class GitHubIssuesSource implements Source {
 		const ref = parseGitHubIssueNumber(id);
 
 		try {
-			const issue = await githubGet<GitHubIssue>(
+			const issue = await api().get<GitHubIssue>(
 				`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`,
 			);
 			return {
@@ -282,17 +245,17 @@ export class GitHubIssuesSource implements Source {
 		const ref = parseGitHubIssueNumber(issueId);
 
 		if (config && config.in_progress !== config.pick_from) {
-			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const filterLabels = normalizeLabels(config);
 			const isMovingToInProgress = labelToAdd === config.in_progress;
 
 			if (isMovingToInProgress) {
 				// Add in_progress label and remove filter labels (prevent re-picking)
-				await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+				await api().post(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 					labels: [labelToAdd],
 				});
 				for (const label of filterLabels) {
 					try {
-						await githubDelete(
+						await api().delete(
 							`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(label)}`,
 						);
 					} catch {
@@ -303,11 +266,11 @@ export class GitHubIssuesSource implements Source {
 			}
 
 			// Reverting to pick_from: add back filter labels and remove in_progress label
-			await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+			await api().post(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 				labels: filterLabels,
 			});
 			try {
-				await githubDelete(
+				await api().delete(
 					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
 				);
 			} catch {
@@ -316,14 +279,14 @@ export class GitHubIssuesSource implements Source {
 			return;
 		}
 
-		await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
+		await api().post(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels`, {
 			labels: [labelToAdd],
 		});
 	}
 
 	async attachPullRequest(issueId: string, prUrl: string): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
-		await githubPost(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`, {
+		await api().post(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`, {
 			body: `Pull request: ${prUrl}`,
 		});
 	}
@@ -335,7 +298,7 @@ export class GitHubIssuesSource implements Source {
 		config?: SourceConfig,
 	): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
-		await githubPatch(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, {
+		await api().patch(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, {
 			state: "closed",
 		});
 		if (labelToRemove) {
@@ -344,7 +307,7 @@ export class GitHubIssuesSource implements Source {
 		// Also remove in_progress label if config-aware and in_progress differs from pick_from
 		if (config && config.in_progress !== config.pick_from) {
 			try {
-				await githubDelete(
+				await api().delete(
 					`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(config.in_progress)}`,
 				);
 			} catch {
@@ -355,11 +318,11 @@ export class GitHubIssuesSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const { owner, repo } = parseOwnerRepo(config.scope);
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labels = normalizeLabels(config);
 		const label = labels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = (await githubGet<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
+		const issues = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
 		return issues.map((issue) => ({
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,
@@ -374,7 +337,7 @@ export class GitHubIssuesSource implements Source {
 		let page = 1;
 
 		while (true) {
-			const labels = await githubGet<{ name: string; description: string | null }[]>(
+			const labels = await api().get<{ name: string; description: string | null }[]>(
 				`/repos/${owner}/${repo}/labels?per_page=100&page=${page}`,
 			);
 			for (const l of labels) {
@@ -393,7 +356,7 @@ export class GitHubIssuesSource implements Source {
 	async removeLabel(issueId: string, labelToRemove: string): Promise<void> {
 		const ref = parseGitHubIssueNumber(issueId);
 		try {
-			await githubDelete(
+			await api().delete(
 				`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/labels/${encodeURIComponent(labelToRemove)}`,
 			);
 		} catch {

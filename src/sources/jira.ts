@@ -1,7 +1,6 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
-
-const REQUEST_TIMEOUT_MS = 30_000;
+import { createApiClient, normalizeLabels } from "./base.js";
 
 const PRIORITY_RANK: Record<string, number> = {
 	highest: 1,
@@ -17,46 +16,34 @@ function getBaseUrl(): string {
 	return url.replace(/\/$/, "");
 }
 
-function getAuthHeader(): string {
+function getAuthHeaders(): Record<string, string> {
 	const email = process.env.JIRA_EMAIL;
 	const token = process.env.JIRA_API_TOKEN;
 	if (!email || !token) throw new Error("JIRA_EMAIL and JIRA_API_TOKEN must be set");
 	const credentials = Buffer.from(`${email}:${token}`).toString("base64");
-	return `Basic ${credentials}`;
+	return {
+		Authorization: `Basic ${credentials}`,
+		Accept: "application/json",
+	};
 }
 
-async function jiraFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const url = `${getBaseUrl()}/rest/api/3${path}`;
-	const res = await fetch(url, {
-		method,
-		headers: {
-			Authorization: getAuthHeader(),
-			"Content-Type": "application/json",
-			Accept: "application/json",
-		},
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-	});
+let _api: ReturnType<typeof createApiClient> | null = null;
 
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Jira API error (${res.status}): ${text}`);
-	}
-
-	if (res.status === 204) return undefined as T;
-	return (await res.json()) as T;
+function api() {
+	if (!_api) _api = createApiClient(`${getBaseUrl()}/rest/api/3`, getAuthHeaders, "Jira");
+	return _api;
 }
 
-async function jiraGet<T>(path: string): Promise<T> {
-	return jiraFetch<T>("GET", path);
+function jiraGet<T>(path: string): Promise<T> {
+	return api().get<T>(path);
 }
 
-async function jiraPost<T>(path: string, body: unknown): Promise<T> {
-	return jiraFetch<T>("POST", path, body);
+function jiraPost<T>(path: string, body?: unknown): Promise<T> {
+	return api().post<T>(path, body);
 }
 
-async function jiraPut<T>(path: string, body: unknown): Promise<T> {
-	return jiraFetch<T>("PUT", path, body);
+function jiraPut<T>(path: string, body?: unknown): Promise<T> {
+	return api().put<T>(path, body);
 }
 
 async function jiraSearchJql<T>(jql: string, fields: string, maxResults: number): Promise<T> {
@@ -172,7 +159,7 @@ export class JiraSource implements Source {
 	name = "jira" as const;
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labels = normalizeLabels(config);
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 
 		// Resolve status name → ID to avoid locale/translation issues in JQL
@@ -296,7 +283,7 @@ export class JiraSource implements Source {
 	}
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
-		const labels = Array.isArray(config.label) ? config.label : [config.label];
+		const labels = normalizeLabels(config);
 		const labelClause = labels.map((l) => `labels = "${escapeJql(l)}"`).join(" AND ");
 
 		// Resolve status name → ID to avoid locale/translation issues in JQL

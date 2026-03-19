@@ -1,41 +1,30 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
-
-const API_BASE_URL = "https://api.app.shortcut.com";
-const REQUEST_TIMEOUT_MS = 30_000;
+import { createApiClient, normalizeLabels } from "./base.js";
 
 function getAuthHeaders(): Record<string, string> {
 	const token = process.env.SHORTCUT_API_TOKEN;
 	if (!token) throw new Error("SHORTCUT_API_TOKEN must be set");
-	return { "Shortcut-Token": token, "Content-Type": "application/json" };
+	return { "Shortcut-Token": token };
 }
 
-async function shortcutFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const url = `${API_BASE_URL}${path}`;
-	const res = await fetch(url, {
-		method,
-		headers: getAuthHeaders(),
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-	});
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Shortcut API error (${res.status}): ${text}`);
-	}
-	if (method === "DELETE" || res.status === 204) return undefined as T;
-	return (await res.json()) as T;
+let _api: ReturnType<typeof createApiClient> | null = null;
+
+function api() {
+	if (!_api) _api = createApiClient("https://api.app.shortcut.com", getAuthHeaders, "Shortcut");
+	return _api;
 }
 
-async function shortcutGet<T>(path: string): Promise<T> {
-	return shortcutFetch<T>("GET", path);
+function shortcutGet<T>(path: string): Promise<T> {
+	return api().get<T>(path);
 }
 
-async function shortcutPost<T>(path: string, body: unknown): Promise<T> {
-	return shortcutFetch<T>("POST", path, body);
+function shortcutPost<T>(path: string, body: unknown): Promise<T> {
+	return api().post<T>(path, body);
 }
 
-async function shortcutPut<T>(path: string, body: unknown): Promise<T> {
-	return shortcutFetch<T>("PUT", path, body);
+function shortcutPut<T>(path: string, body: unknown): Promise<T> {
+	return api().put<T>(path, body);
 }
 
 interface ShortcutWorkflowState {
@@ -168,7 +157,7 @@ export class ShortcutSource implements Source {
 
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelNames = normalizeLabels(config);
 		const primaryLabel = labelNames[0] ?? "";
 		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
@@ -329,7 +318,7 @@ export class ShortcutSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelNames = normalizeLabels(config);
 		const primaryLabel = labelNames[0] ?? "";
 		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
 
