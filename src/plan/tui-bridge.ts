@@ -12,6 +12,7 @@ import { createPlanIssues } from "./create.js";
 import { PlanParseError, parsePlanResponse } from "./parser.js";
 import { savePlan } from "./persistence.js";
 import { buildPlanningPrompt } from "./prompt.js";
+import { issueToMarkdown, markdownToIssue } from "./wizard.js";
 
 const MAX_PARSE_RETRIES = 2;
 
@@ -42,10 +43,23 @@ export function registerPlanBridge(config: LisaConfig): () => void {
 		});
 	};
 
-	const onEditIssue = (index: number) => {
-		// Edit runs synchronously (blocks TUI while $EDITOR is open)
-		// The TUI will resume when the editor closes
-		kanbanEmitter.emit("plan:edit-result", index, null);
+	const onEditIssue = (index: number, issue?: PlannedIssue) => {
+		if (!issue) return;
+
+		const tmpDir = mkdtempSync(join(tmpdir(), "lisa-edit-"));
+		const tmpFile = join(tmpDir, "issue.md");
+		writeFileSync(tmpFile, issueToMarkdown(issue));
+
+		const editor = process.env.EDITOR || process.env.VISUAL || "vi";
+		try {
+			execSync(`${editor} "${tmpFile}"`, { stdio: "inherit" });
+		} catch {
+			return;
+		}
+
+		const content = readFileSync(tmpFile, "utf-8");
+		const updated = markdownToIssue(content, issue);
+		kanbanEmitter.emit("plan:edit-result", index, updated);
 	};
 
 	kanbanEmitter.on("plan:user-message", onUserMessage);

@@ -58,11 +58,11 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 	});
 
 	// Flatten messages into display lines and take the tail that fits
-	const displayLines: { role: "user" | "ai"; text: string }[] = [];
+	const displayLines: { role: "user" | "ai"; text: string; isFirst: boolean }[] = [];
 	for (const msg of messages) {
 		const lines = msg.content.split("\n");
 		for (let i = 0; i < lines.length; i++) {
-			displayLines.push({ role: msg.role, text: i === 0 ? (lines[i] ?? "") : (lines[i] ?? "") });
+			displayLines.push({ role: msg.role, text: lines[i] ?? "", isFirst: i === 0 });
 		}
 	}
 	const visibleMessages = displayLines.slice(-messageAreaHeight);
@@ -98,23 +98,22 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 						</Text>
 					</Box>
 				)}
-				{visibleMessages.map((line, i) => (
-					// biome-ignore lint/suspicious/noArrayIndexKey: chat lines have no stable key
-					<Box key={i} flexDirection="row">
-						{line === displayLines.find((d) => d === line) ||
-						i === 0 ||
-						visibleMessages[i - 1]?.role !== line.role ? (
-							<Text color={line.role === "user" ? "cyan" : "yellow"} bold>
-								{line.role === "user" ? "You: " : "AI:  "}
+				{visibleMessages.map((line, i) => {
+					const isNewMessage =
+						line.isFirst && (i === 0 || visibleMessages[i - 1]?.role !== line.role);
+					return (
+						// biome-ignore lint/suspicious/noArrayIndexKey: chat lines have no stable key
+						<Box key={i} flexDirection="row" marginTop={isNewMessage && i > 0 ? 1 : 0}>
+							<Text
+								color={line.role === "user" ? "cyan" : "white"}
+								dimColor={line.role === "ai"}
+								wrap="truncate"
+							>
+								{line.text}
 							</Text>
-						) : (
-							<Text>{"     "}</Text>
-						)}
-						<Text color="white" wrap="truncate">
-							{line.text}
-						</Text>
-					</Box>
-				))}
+						</Box>
+					);
+				})}
 				{isThinking && (
 					<Box flexDirection="row" marginTop={0}>
 						<Text color="yellow">
