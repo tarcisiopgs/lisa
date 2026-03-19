@@ -114,17 +114,20 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
-		if (input === "q") {
-			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
-			process.emit("SIGINT");
-			return;
-		}
-
+		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o) are handled.
+		// Scroll and "o" are handled by IssueDetail's own useInput.
 		if (activeView === "detail") {
 			if (key.escape) {
 				setActiveView("board");
 				setSelectedCardId(null);
 			}
+			return;
+		}
+
+		// Board-only shortcuts below — all gated by activeView === "board"
+		if (input === "q") {
+			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
+			process.emit("SIGINT");
 			return;
 		}
 
