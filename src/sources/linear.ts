@@ -1,5 +1,5 @@
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
 
 const API_URL = "https://api.linear.app/graphql";
@@ -581,6 +581,116 @@ export class LinearSource implements Source {
 				`issueUpdate returned success=false when removing label "${labelName}" from ${issueId}`,
 			);
 		}
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		// Resolve team ID from team name (config.scope)
+		const teamData = await gql<{
+			teams: { nodes: { id: string }[] };
+		}>(
+			`query($teamName: String!) {
+				teams(filter: { name: { eq: $teamName } }) {
+					nodes { id }
+				}
+			}`,
+			{ teamName: config.scope },
+		);
+		const team = teamData.teams.nodes[0];
+		if (!team) throw new Error(`Team "${config.scope}" not found`);
+
+		// Resolve state ID from status name
+		const statesData = await gql<{
+			workflowStates: { nodes: { id: string; name: string }[] };
+		}>(
+			`query($teamId: ID!) {
+				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
+					nodes { id name }
+				}
+			}`,
+			{ teamId: team.id },
+		);
+		const state = statesData.workflowStates.nodes.find(
+			(s) => s.name.toLowerCase() === opts.status.toLowerCase(),
+		);
+		if (!state) {
+			const available = statesData.workflowStates.nodes.map((s) => s.name).join(", ");
+			throw new Error(`Status "${opts.status}" not found. Available: ${available}`);
+		}
+
+		// Resolve label IDs from label names
+		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
+		const teamLabelsData = await gql<{
+			teams: { nodes: { labels: { nodes: { id: string; name: string }[] } }[] };
+		}>(
+			`query($teamName: String!) {
+				teams(filter: { name: { eq: $teamName } }) {
+					nodes { labels { nodes { id name } } }
+				}
+			}`,
+			{ teamName: config.scope },
+		);
+		const teamLabels = teamLabelsData.teams.nodes[0]?.labels.nodes ?? [];
+		const labelIds: string[] = [];
+		for (const name of labelNames) {
+			const label = teamLabels.find((l) => l.name.toLowerCase() === name.toLowerCase());
+			if (!label) throw new Error(`Label "${name}" not found in team "${config.scope}"`);
+			labelIds.push(label.id);
+		}
+
+		// Build mutation input
+		const input: Record<string, unknown> = {
+			teamId: team.id,
+			title: opts.title,
+			description: opts.description,
+			stateId: state.id,
+			labelIds,
+		};
+		if (opts.order !== undefined) input.priority = opts.order;
+		if (opts.parentId) input.parentId = opts.parentId;
+
+		const result = await gql<{
+			issueCreate: { success: boolean; issue: { identifier: string } | null };
+		}>(
+			`mutation($input: IssueCreateInput!) {
+				issueCreate(input: $input) {
+					success
+					issue { identifier }
+				}
+			}`,
+			{ input },
+		);
+
+		if (!result.issueCreate.success || !result.issueCreate.issue) {
+			throw new Error("issueCreate returned success=false");
+		}
+
+		return result.issueCreate.issue.identifier;
+	}
+
+	async linkDependency(issueId: string, dependsOnId: string): Promise<void> {
+		// Resolve both issue internal IDs
+		const issueData = await gql<{ issue: { id: string } }>(
+			`query($identifier: String!) { issue(id: $identifier) { id } }`,
+			{ identifier: dependsOnId },
+		);
+		const dependentData = await gql<{ issue: { id: string } }>(
+			`query($identifier: String!) { issue(id: $identifier) { id } }`,
+			{ identifier: issueId },
+		);
+
+		// "blocks" means dependsOnId blocks issueId
+		await gql<{ issueRelationCreate: { success: boolean } }>(
+			`mutation($issueId: String!, $relatedIssueId: String!, $type: String!) {
+				issueRelationCreate(input: { issueId: $issueId, relatedIssueId: $relatedIssueId, type: $type }) {
+					success
+				}
+			}`,
+			{
+				issueId: dependentData.issue.id,
+				relatedIssueId: issueData.issue.id,
+				type: "blocks",
+			},
+		);
 	}
 }
 

@@ -1,6 +1,6 @@
 import { execa } from "execa";
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
 
 const PRIORITY_LABELS = ["p1", "p2", "p3"];
@@ -362,5 +362,18 @@ export class GitHubIssuesSource implements Source {
 		} catch {
 			// Label may not exist on the issue — ignore 404s silently
 		}
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		const { owner, repo } = parseOwnerRepo(config.scope);
+		const labels = Array.isArray(opts.label) ? opts.label : [opts.label];
+
+		const issue = await api().post<{ number: number }>(`/repos/${owner}/${repo}/issues`, {
+			title: opts.title,
+			body: opts.description,
+			labels,
+		});
+
+		return makeIssueId(owner, repo, issue.number);
 	}
 }
