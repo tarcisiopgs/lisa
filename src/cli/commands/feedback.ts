@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
+import { CliError } from "../error.js";
 
 export const feedback = defineCommand({
 	meta: {
@@ -31,7 +32,7 @@ export const feedback = defineCommand({
 			console.error(
 				pc.red(`Failed to fetch PR feedback: ${err instanceof Error ? err.message : String(err)}`),
 			);
-			process.exit(1);
+			throw new CliError(err instanceof Error ? err.message : String(err));
 		}
 
 		if (prFeedback.state === "merged") {

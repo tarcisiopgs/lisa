@@ -233,13 +233,22 @@ export function useKanbanState(
 		};
 
 		const MAX_OUTPUT_SIZE = 200_000; // ~200 KB cap per issue
-		const onOutput = (issueId: string, text: string) => {
+		const outputBuffer = new Map<string, string>();
+		let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const flushOutputBuffer = () => {
+			flushTimer = null;
+			if (outputBuffer.size === 0) return;
+
+			const buffered = new Map(outputBuffer);
+			outputBuffer.clear();
+
 			setCards((prev) =>
 				prev.map((c) => {
-					if (c.id !== issueId) return c;
-					let newLog = c.outputLog + text;
+					const chunk = buffered.get(c.id);
+					if (chunk === undefined) return c;
+					let newLog = c.outputLog + chunk;
 					if (newLog.length > MAX_OUTPUT_SIZE) {
-						// Trim from the front, preserving line boundaries
 						const trimAt = newLog.indexOf("\n", newLog.length - MAX_OUTPUT_SIZE);
 						newLog = trimAt !== -1 ? newLog.slice(trimAt + 1) : newLog.slice(-MAX_OUTPUT_SIZE);
 					}
@@ -248,7 +257,16 @@ export function useKanbanState(
 			);
 		};
 
+		const onOutput = (issueId: string, text: string) => {
+			const existing = outputBuffer.get(issueId);
+			outputBuffer.set(issueId, existing !== undefined ? existing + text : text);
+			if (flushTimer === null) {
+				flushTimer = setTimeout(flushOutputBuffer, 100);
+			}
+		};
+
 		const onReconcileRemove = (issueId: string) => {
+			outputBuffer.delete(issueId);
 			setCards((prev) => prev.filter((c) => c.id !== issueId));
 		};
 
@@ -287,6 +305,11 @@ export function useKanbanState(
 		const cleanupBell = registerBellListeners(bellEnabled);
 
 		return () => {
+			if (flushTimer !== null) {
+				clearTimeout(flushTimer);
+				flushTimer = null;
+			}
+			outputBuffer.clear();
 			kanbanEmitter.off("issue:queued", onQueued);
 			kanbanEmitter.off("issue:started", onStarted);
 			kanbanEmitter.off("issue:done", onDone);

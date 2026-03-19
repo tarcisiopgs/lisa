@@ -3,16 +3,18 @@ import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig, mergeWithFlags } from "../../config.js";
 import { runDemoLoop, runLoop } from "../../loop/index.js";
-import { banner, setOutputMode, updateNotice } from "../../output/logger.js";
+import { banner, setLogLevel, setOutputMode, updateNotice } from "../../output/logger.js";
 import { createKanbanPersistence } from "../../session/kanban-persistence.js";
 import type { LifecycleMode, PRPlatform, ProviderName, SourceName } from "../../types/index.js";
 import { getCachedUpdateInfo } from "../../version.js";
 import { getMissingEnvVars } from "../detection.js";
+import { CliError } from "../error.js";
 
 export const run = defineCommand({
 	meta: {
 		name: "run",
-		description: "Fetch issues, run AI agents, and deliver pull requests",
+		description:
+			"Fetch issues, run AI agents, and deliver pull requests\n\n  Examples:\n    lisa run --dry-run                 Preview config without executing\n    lisa run --once --issue INT-123    Run a single specific issue\n    lisa run -c 3 --watch              Process 3 issues in parallel, poll for new\n    lisa run --provider gemini         Override the configured provider",
 	},
 	args: {
 		once: { type: "boolean", description: "Run a single iteration", default: false },
@@ -83,6 +85,10 @@ export const run = defineCommand({
 			"--lifecycle-timeout",
 			"--demo",
 			"--json",
+			"--verbose",
+			"-v",
+			"--quiet",
+			"-q",
 			"--help",
 			"-h",
 		]);
@@ -90,7 +96,7 @@ export const run = defineCommand({
 			if (arg.startsWith("-") && !arg.startsWith("--no-") && !knownFlags.has(arg.split("=")[0]!)) {
 				console.error(pc.red(`Unknown flag: ${arg}`));
 				console.error(pc.dim("Run `lisa run --help` to see available options."));
-				process.exit(1);
+				throw new CliError(`Unknown flag: ${arg}`);
 			}
 		}
 
@@ -101,6 +107,12 @@ export const run = defineCommand({
 		const lifecycleTimeoutValue =
 			lifecycleTimeoutIdx !== -1 ? argv[lifecycleTimeoutIdx + 1] : undefined;
 		const isDemo = argv.includes("--demo");
+
+		if (argv.includes("--quiet") || argv.includes("-q")) {
+			setLogLevel("quiet");
+		} else if (argv.includes("--verbose") || argv.includes("-v")) {
+			setLogLevel("verbose");
+		}
 
 		const isTTY = !!process.stdout.isTTY;
 
@@ -146,7 +158,7 @@ export const run = defineCommand({
 
 		if (!configExists()) {
 			console.error(pc.red("No configuration found. Run `lisa init` first."));
-			process.exit(1);
+			throw new CliError("No configuration found.");
 		}
 
 		const config = loadConfig();
@@ -191,7 +203,7 @@ export const run = defineCommand({
 				),
 			);
 			console.error(pc.dim(`\nAdd them to your ${shell} and run: source ${shell}`));
-			process.exit(1);
+			throw new CliError("Missing required environment variables.");
 		}
 
 		const concurrency = Math.max(1, Number.parseInt(args.concurrency, 10) || 1);

@@ -14,7 +14,7 @@ export const main = defineCommand({
 		name: "lisa",
 		version: getVersion(),
 		description:
-			"Deterministic autonomous issue resolver — structured AI agent loop for any issue tracker",
+			"Deterministic autonomous issue resolver — structured AI agent loop for any issue tracker\n\n  Docs: https://github.com/tarcisiopgs/lisa\n  Bugs: https://github.com/tarcisiopgs/lisa/issues",
 	},
 	subCommands: { run, config, init, status, issue, feedback, context, doctor },
 });
