@@ -122,7 +122,7 @@ export function Board({
 					</Text>
 					<Box height={1} />
 					<Text color="gray" dimColor>
-						Check source config · labels · status
+						Press [n] to plan and create new issues
 					</Text>
 				</Box>
 			</Box>

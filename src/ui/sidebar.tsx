@@ -222,6 +222,7 @@ export function Sidebar({
 			)}
 			{activeView === "empty" && (
 				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
 			)}
