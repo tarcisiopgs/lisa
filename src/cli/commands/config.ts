@@ -9,12 +9,17 @@ export const config = defineCommand({
 	args: {
 		show: { type: "boolean", description: "Show current config", default: false },
 		set: { type: "string", description: "Set a config value (key=value)" },
+		json: { type: "boolean", description: "Output machine-readable JSON", default: false },
 	},
 	async run({ args }) {
 		if (args.show) {
 			const cfg = loadConfig();
-			console.log(pc.cyan("\nCurrent configuration:\n"));
-			console.log(JSON.stringify(cfg, null, 2));
+			if (args.json) {
+				console.log(JSON.stringify(cfg, null, 2));
+			} else {
+				console.log(pc.cyan("\nCurrent configuration:\n"));
+				console.log(JSON.stringify(cfg, null, 2));
+			}
 			return;
 		}
 
