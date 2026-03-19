@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logLineColor } from "../output/line-color.js";
+import { formatElapsed } from "./format.js";
 import type { KanbanCard } from "./state.js";
 import { useTerminalSize } from "./use-terminal-size.js";
 
@@ -25,14 +26,6 @@ export function openUrl(url: string): void {
 			console.error("Failed to open URL:", error.message);
 		}
 	});
-}
-
-function formatElapsed(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
-	return `${seconds}s`;
 }
 
 interface IssueDetailProps {

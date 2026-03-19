@@ -2,6 +2,9 @@ import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Box, Text } from "ink";
 import type { UpdateInfo } from "../version.js";
+import { formatElapsed } from "./format.js";
+
+export type SidebarMode = "board" | "detail" | "watching" | "watch-prompt" | "empty";
 
 interface SidebarProps {
 	provider: string;
@@ -9,11 +12,12 @@ interface SidebarProps {
 	models: string[];
 	source: string;
 	cwd: string;
-	activeView: "board" | "detail";
+	activeView: SidebarMode;
 	paused?: boolean;
 	hasInProgress?: boolean;
 	hasPrUrl?: boolean;
 	updateInfo?: UpdateInfo | null;
+	workComplete?: { total: number; duration: number } | null;
 }
 
 export function Sidebar({
@@ -27,6 +31,7 @@ export function Sidebar({
 	hasInProgress = false,
 	hasPrUrl = false,
 	updateInfo = null,
+	workComplete = null,
 }: SidebarProps) {
 	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
@@ -171,10 +176,11 @@ export function Sidebar({
 
 			<Text color="yellow">{"────────────────────────"}</Text>
 
-			{/* Dynamic legend */}
-			{activeView === "board" ? (
+			{/* Dynamic legend — only shows shortcuts active in the current context */}
+			{activeView === "board" && (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[←→] columns"}</Text>
+					<Text dimColor>{"[123] jump col"}</Text>
 					<Text dimColor>{"[↑↓] navigate"}</Text>
 					<Text dimColor>{"[↵]  detail"}</Text>
 					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
@@ -182,11 +188,33 @@ export function Sidebar({
 					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
-			) : (
+			)}
+			{activeView === "detail" && (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[↑↓] scroll"}</Text>
 					{hasPrUrl && <Text dimColor>{"[o]  open PR(s)"}</Text>}
 					<Text dimColor>{"[Esc] board"}</Text>
+				</Box>
+			)}
+			{activeView === "watching" && (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[q]  quit"}</Text>
+				</Box>
+			)}
+			{activeView === "watch-prompt" && (
+				<Box marginTop={1} flexDirection="column">
+					{workComplete && (
+						<Text color="green" bold>
+							{`${workComplete.total} issue${workComplete.total !== 1 ? "s" : ""} · ${formatElapsed(workComplete.duration)}`}
+						</Text>
+					)}
+					<Text dimColor>{"[w]  watch"}</Text>
+					<Text dimColor>{"[q]  quit"}</Text>
+				</Box>
+			)}
+			{activeView === "empty" && (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
 			)}
 		</Box>

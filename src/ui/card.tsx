@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { useEffect, useState } from "react";
+import { formatElapsed } from "./format.js";
 import type { KanbanCard } from "./state.js";
 
 // Wide character regex: covers CJK, Hangul, full-width, and astral-plane emoji.
@@ -15,14 +16,6 @@ const WIDE_CHAR_RE =
  */
 export function stripDoubleWidth(str: string): string {
 	return str.replace(WIDE_CHAR_RE, "?");
-}
-
-export function formatElapsed(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
-	return `${seconds}s`;
 }
 
 // Wraps a title into at most two lines of `maxWidth` chars each.
