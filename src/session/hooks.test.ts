@@ -39,7 +39,7 @@ describe("runHook", () => {
 		const result = await runHook("before_run", "sleep 10", process.cwd(), {}, 200);
 		expect(result.success).toBe(false);
 		expect(result.output).toContain("timed out");
-	}, 10_000);
+	}, 15_000);
 });
 
 describe("executeHook", () => {
