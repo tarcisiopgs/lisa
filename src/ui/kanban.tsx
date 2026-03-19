@@ -5,7 +5,7 @@ import type { LisaConfig } from "../types/index.js";
 import { getCachedUpdateInfo, type UpdateInfo } from "../version.js";
 import { Board } from "./board.js";
 import { IssueDetail } from "./detail.js";
-import { Sidebar } from "./sidebar.js";
+import { Sidebar, type SidebarMode } from "./sidebar.js";
 import type { KanbanCard } from "./state.js";
 import { kanbanEmitter, useKanbanState } from "./state.js";
 import { useTerminalSize } from "./use-terminal-size.js";
@@ -160,6 +160,17 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
+		// Number keys: jump directly to column (1=Backlog, 2=In Progress, 3=Done)
+		if (input === "1" || input === "2" || input === "3") {
+			const targetCol = Number(input) - 1;
+			if (targetCol !== activeColIndex) {
+				setActiveColIndex(targetCol);
+				const colLen = columnCards[targetCol]?.length ?? 0;
+				setActiveCardIndex(Math.min(activeCardIndex, Math.max(0, colLen - 1)));
+			}
+			return;
+		}
+
 		if (key.rightArrow) {
 			const nextCol = (activeColIndex + 1) % 3;
 			setActiveColIndex(nextCol);
@@ -212,6 +223,12 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const providerOptions = config.provider_options?.[config.provider];
 	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);
 
+	// Compute sidebar mode — reflects the actual context for legend rendering
+	let sidebarMode: SidebarMode = activeView;
+	if (isWatchPrompt) sidebarMode = "watch-prompt";
+	else if (isWatching) sidebarMode = "watching";
+	else if (isEmpty && activeView === "board") sidebarMode = "empty";
+
 	return (
 		<Box flexDirection="row" height={rows}>
 			<Sidebar
@@ -220,11 +237,12 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				models={models}
 				source={config.source}
 				cwd={process.cwd()}
-				activeView={activeView}
+				activeView={sidebarMode}
 				paused={paused}
 				hasInProgress={hasInProgress}
 				hasPrUrl={hasPrUrl}
 				updateInfo={updateInfo}
+				workComplete={workComplete}
 			/>
 			{activeView === "board" || !selectedCard ? (
 				<Board

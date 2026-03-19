@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatElapsed, getLastOutputLine, stripDoubleWidth, wrapTitle } from "./card.js";
+import { getLastOutputLine, stripDoubleWidth, wrapTitle } from "./card.js";
+import { formatElapsed } from "./format.js";
 
 describe("stripDoubleWidth", () => {
 	it("returns ASCII strings unchanged", () => {

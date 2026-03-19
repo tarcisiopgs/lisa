@@ -1,15 +1,8 @@
 import { Box, Text } from "ink";
 import { useMemo } from "react";
 import { Column } from "./column.js";
+import { formatElapsed } from "./format.js";
 import type { KanbanCard } from "./state.js";
-
-function formatDuration(ms: number): string {
-	const totalSeconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	if (minutes > 0) return `${minutes}m ${seconds}s`;
-	return `${seconds}s`;
-}
 
 interface BoardProps {
 	cards: KanbanCard[];
@@ -150,7 +143,7 @@ export function Board({
 					<Text color="white">{` issue${workComplete.total !== 1 ? "s" : ""} resolved`}</Text>
 					<Text color="green">{" · "}</Text>
 					<Text color="green" bold>
-						{formatDuration(workComplete.duration)}
+						{formatElapsed(workComplete.duration)}
 					</Text>
 				</Box>
 			)}
