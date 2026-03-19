@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
+import { formatError } from "../errors.js";
 import { isGhCliAvailable } from "../git/github.js";
 import type { PRPlatform, RepoConfig, SourceName } from "../types/index.js";
 
@@ -42,12 +43,14 @@ export async function isCursorFreePlan(): Promise<boolean> {
 		});
 		return output.includes(CURSOR_FREE_PLAN_ERROR);
 	} catch (err) {
-		const errorOutput = err instanceof Error ? err.message : String(err);
+		const errorOutput = formatError(err);
 		return errorOutput.includes(CURSOR_FREE_PLAN_ERROR);
 	} finally {
 		try {
 			rmSync(tmpDir, { recursive: true, force: true });
-		} catch {}
+		} catch {
+			/* best-effort cleanup */
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 
 export interface ResourceConfig {
@@ -130,9 +131,7 @@ export function discoverEnvFile(cwd: string): void {
 			copyFileSync(envExample, envFile);
 			logger.ok("Copied .env.example → .env");
 		} catch (err) {
-			logger.warn(
-				`Failed to copy .env.example: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Failed to copy .env.example: ${formatError(err)}`);
 		}
 	}
 }

@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { findConfigDir, getRemoveLabel, loadConfig } from "../../config.js";
+import { formatError } from "../../errors.js";
 import { createSource } from "../../sources/index.js";
 import type { Issue } from "../../types/index.js";
 import { CliError } from "../error.js";
@@ -28,8 +29,8 @@ const issueGet = defineCommand({
 		try {
 			issue = await source.fetchIssueById(args.id);
 		} catch (err) {
-			console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-			throw new CliError(err instanceof Error ? err.message : String(err));
+			console.error(JSON.stringify({ error: formatError(err) }));
+			throw new CliError(formatError(err));
 		}
 		if (!issue) {
 			console.error(JSON.stringify({ error: `Issue ${args.id} not found` }));
@@ -65,11 +66,11 @@ const issueDone = defineCommand({
 		} catch (err) {
 			console.error(
 				JSON.stringify({
-					error: err instanceof Error ? err.message : String(err),
+					error: formatError(err),
 					issueId: args.id,
 				}),
 			);
-			throw new CliError(err instanceof Error ? err.message : String(err));
+			throw new CliError(formatError(err));
 		}
 	},
 });

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { getRemoveLabel } from "../config.js";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { stopSpinner } from "../output/terminal.js";
 import { storePrUrls } from "../session/pr-cache.js";
@@ -37,9 +38,7 @@ export async function handleSessionResult(
 				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (err) {
-				logger.error(
-					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				logger.error(`Failed to revert status: ${formatError(err)}`);
 			}
 			kanbanEmitter.emit("issue:killed", issue.id);
 			activeCleanups.delete(issue.id);
@@ -57,9 +56,7 @@ export async function handleSessionResult(
 				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (err) {
-				logger.error(
-					`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				logger.error(`Failed to revert status: ${formatError(err)}`);
 			}
 			kanbanEmitter.emit("issue:skipped", issue.id);
 			activeCleanups.delete(issue.id);
@@ -87,7 +84,7 @@ export async function handleSessionResult(
 			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			kanbanEmitter.emit("issue:reverted", issue.id);
 		} catch (err) {
-			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Failed to revert status: ${formatError(err)}`);
 		}
 
 		// Remove label so the issue is not picked up again automatically
@@ -98,9 +95,7 @@ export async function handleSessionResult(
 					await source.removeLabel(issue.id, labelToRemove);
 					logger.ok(`Removed label "${labelToRemove}" from ${issue.id} to prevent retry`);
 				} catch (err) {
-					logger.warn(
-						`Failed to remove label: ${err instanceof Error ? err.message : String(err)}`,
-					);
+					logger.warn(`Failed to remove label: ${formatError(err)}`);
 				}
 			}
 		}
@@ -121,7 +116,7 @@ export async function handleSessionResult(
 			logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			kanbanEmitter.emit("issue:reverted", issue.id);
 		} catch (err) {
-			logger.error(`Failed to revert status: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Failed to revert status: ${formatError(err)}`);
 		}
 		activeCleanups.delete(issue.id);
 		return false;
@@ -134,7 +129,7 @@ export async function handleSessionResult(
 			await source.attachPullRequest(issue.id, prUrl);
 			logger.ok(`Attached PR to ${issue.id}`);
 		} catch (err) {
-			logger.warn(`Failed to attach PR: ${err instanceof Error ? err.message : String(err)}`);
+			logger.warn(`Failed to attach PR: ${formatError(err)}`);
 		}
 	}
 	try {
@@ -156,7 +151,7 @@ export async function handleSessionResult(
 			logger.ok(`Removed label "${labelToRemove}" from ${issue.id}`);
 		}
 	} catch (err) {
-		logger.error(`Failed to complete issue: ${err instanceof Error ? err.message : String(err)}`);
+		logger.error(`Failed to complete issue: ${formatError(err)}`);
 	}
 
 	activeCleanups.delete(issue.id);

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { getOutputMode } from "../output/logger.js";
 import {
@@ -34,9 +35,8 @@ export function validateShellArg(value: string, label: string): void {
 	}
 }
 
-export function formatError(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
+// Re-export from shared location for backward compat with provider imports
+export { formatError };
 
 const execFileAsync = promisify(execFile);
 
@@ -223,6 +223,8 @@ export async function runProviderProcess(
 	} finally {
 		try {
 			rmSync(tmpDir, { recursive: true, force: true });
-		} catch {}
+		} catch {
+			/* best-effort cleanup */
+		}
 	}
 }

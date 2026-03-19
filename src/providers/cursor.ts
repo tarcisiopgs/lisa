@@ -12,7 +12,9 @@ function findCursorBinary(): string | null {
 		try {
 			execSync(`which ${bin}`, { stdio: "ignore" });
 			return bin;
-		} catch {}
+		} catch {
+			/* binary not found */
+		}
 	}
 	return null;
 }

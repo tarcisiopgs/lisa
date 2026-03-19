@@ -1,3 +1,4 @@
+import { formatError } from "../errors.js";
 import { fetchPrFeedback, formatPrFeedbackEntry } from "../git/pr-feedback.js";
 import * as logger from "../output/logger.js";
 import { appendRawEntry } from "../session/guardrails.js";
@@ -26,9 +27,7 @@ export async function injectRejectedPrFeedback(
 			appendRawEntry(workspace, entryText);
 			logger.ok(`Injected PR review feedback for ${issueId} into guardrails`);
 		} catch (err) {
-			logger.warn(
-				`Could not check PR feedback for ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Could not check PR feedback for ${issueId}: ${formatError(err)}`);
 		}
 	}
 	clearPrUrl(workspace, issueId);
@@ -51,9 +50,7 @@ export async function recoverOrphanIssues(source: Source, config: LisaConfig): P
 		try {
 			orphan = await source.fetchNextIssue(orphanConfig);
 		} catch (err) {
-			logger.warn(
-				`Failed to check for orphan issues: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Failed to check for orphan issues: ${formatError(err)}`);
 			break;
 		}
 
@@ -66,9 +63,7 @@ export async function recoverOrphanIssues(source: Source, config: LisaConfig): P
 			await source.updateStatus(orphan.id, config.source_config.pick_from, config.source_config);
 			logger.ok(`Recovered orphan ${orphan.id}`);
 		} catch (err) {
-			logger.error(
-				`Failed to recover orphan ${orphan.id}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.error(`Failed to recover orphan ${orphan.id}: ${formatError(err)}`);
 			break;
 		}
 	}

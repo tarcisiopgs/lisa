@@ -1,9 +1,8 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
-import { normalizeLabels } from "./base.js";
+import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
 
 const API_URL = "https://api.linear.app/graphql";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 function getApiKey(): string {
 	const key = process.env.LINEAR_API_KEY;

@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { formatLabels } from "../config.js";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { ensureCacheDir, rotateLogFiles } from "../paths.js";
 import { migrateGuardrails } from "../session/guardrails.js";
@@ -35,9 +36,7 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		const contextLogFile = join(workspace, ".lisa", "context-generation.log");
 		// Run context generation in the background — never block the main loop
 		ensureWorkspaceContext(config, models, workspace, contextLogFile).catch((err) => {
-			logger.warn(
-				`Background context generation failed: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Background context generation failed: ${formatError(err)}`);
 		});
 	}
 
