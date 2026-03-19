@@ -22,6 +22,7 @@ import type {
 	Source,
 	ValidationResult,
 } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 import { validateIssueSpec } from "../validation.js";
 import type { SessionResult } from "./result.js";
 import {
@@ -127,6 +128,19 @@ export function sleep(ms: number): Promise<void> {
 export async function waitIfPaused(): Promise<void> {
 	while (isLoopPaused()) {
 		await sleep(500);
+	}
+}
+
+/** Re-fetch issues from source and populate the kanban backlog. */
+export async function refreshKanban(source: Source, config: LisaConfig): Promise<void> {
+	if (kanbanEmitter.listenerCount("issue:queued") === 0) return;
+	try {
+		const allIssues = await source.listIssues(config.source_config);
+		for (const issue of allIssues) {
+			kanbanEmitter.emit("issue:queued", issue);
+		}
+	} catch {
+		// Non-fatal
 	}
 }
 
