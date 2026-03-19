@@ -1,8 +1,8 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
+import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
 
 const DEFAULT_BASE_URL = "https://gitlab.com";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 const PRIORITY_LABELS = ["p1", "p2", "p3"];
 
@@ -16,39 +16,12 @@ function getAuthHeaders(): Record<string, string> {
 	return { "PRIVATE-TOKEN": token };
 }
 
-async function gitlabFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const url = `${getBaseUrl()}/api/v4${path}`;
-	const headers: Record<string, string> = {
-		...getAuthHeaders(),
-		"Content-Type": "application/json",
-	};
-
-	const res = await fetch(url, {
-		method,
-		headers,
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-	});
-
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`GitLab API error (${res.status}): ${text}`);
+let _api: ApiClient | undefined;
+function api(): ApiClient {
+	if (!_api) {
+		_api = createApiClient(`${getBaseUrl()}/api/v4`, getAuthHeaders, "GitLab");
 	}
-
-	if (method === "DELETE" || res.status === 204) return undefined as T;
-	return (await res.json()) as T;
-}
-
-async function gitlabGet<T>(path: string): Promise<T> {
-	return gitlabFetch<T>("GET", path);
-}
-
-async function gitlabPost<T>(path: string, body: unknown): Promise<T> {
-	return gitlabFetch<T>("POST", path, body);
-}
-
-async function gitlabPut<T>(path: string, body: unknown): Promise<T> {
-	return gitlabFetch<T>("PUT", path, body);
+	return _api;
 }
 
 interface GitLabIssue {
@@ -79,7 +52,7 @@ export async function checkPrMerged(prUrl: string): Promise<boolean> {
 	if (!parsed) return false;
 	try {
 		const encodedProject = parseGitLabProject(parsed.project);
-		const mr = await gitlabGet<GitLabMr>(
+		const mr = await api().get<GitLabMr>(
 			`/projects/${encodedProject}/merge_requests/${parsed.iid}`,
 		);
 		return mr.state === "merged";
@@ -127,15 +100,11 @@ export class GitLabIssuesSource implements Source {
 		// value (e.g. "in-progress" used as orphan detection label), filter by that label instead.
 		const validStates = ["opened", "closed", "all"];
 		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
-		const filterLabels = isOrphanDetection
-			? [config.pick_from]
-			: Array.isArray(config.label)
-				? config.label
-				: [config.label];
+		const filterLabels = isOrphanDetection ? [config.pick_from] : normalizeLabels(config);
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
-		const issues = await gitlabGet<GitLabIssue[]>(path);
+		const issues = await api().get<GitLabIssue[]>(path);
 		if (issues.length === 0) return null;
 
 		// Check blocking relations for each issue
@@ -143,7 +112,7 @@ export class GitLabIssuesSource implements Source {
 		const blocked: { iid: number; blockers: number[] }[] = [];
 
 		for (const issue of issues) {
-			const links = await gitlabGet<GitLabIssueLink[]>(
+			const links = await api().get<GitLabIssueLink[]>(
 				`/projects/${project}/issues/${issue.iid}/links`,
 			);
 
@@ -200,7 +169,7 @@ export class GitLabIssuesSource implements Source {
 
 		try {
 			const project = parseGitLabProject(ref.project);
-			const issue = await gitlabGet<GitLabIssue>(`/projects/${project}/issues/${ref.iid}`);
+			const issue = await api().get<GitLabIssue>(`/projects/${project}/issues/${ref.iid}`);
 			return {
 				id: makeIssueId(ref.project, issue.iid),
 				title: issue.title,
@@ -217,10 +186,10 @@ export class GitLabIssuesSource implements Source {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
-		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
+		const issue = await api().get<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
 
 		if (config && config.in_progress !== config.pick_from) {
-			const filterLabels = Array.isArray(config.label) ? config.label : [config.label];
+			const filterLabels = normalizeLabels(config);
 			const isMovingToInProgress = labelToAdd === config.in_progress;
 
 			if (isMovingToInProgress) {
@@ -228,7 +197,7 @@ export class GitLabIssuesSource implements Source {
 				const updated = [...new Set([...issue.labels, labelToAdd])].filter(
 					(l) => !filterLabels.includes(l),
 				);
-				await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+				await api().put(`/projects/${encodedProject}/issues/${iid}`, {
 					labels: updated.join(","),
 				});
 				return;
@@ -238,21 +207,21 @@ export class GitLabIssuesSource implements Source {
 			const updated = [...new Set([...issue.labels, ...filterLabels])].filter(
 				(l) => l !== config.in_progress,
 			);
-			await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+			await api().put(`/projects/${encodedProject}/issues/${iid}`, {
 				labels: updated.join(","),
 			});
 			return;
 		}
 
 		const labels = [...new Set([...issue.labels, labelToAdd])];
-		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, { labels: labels.join(",") });
+		await api().put(`/projects/${encodedProject}/issues/${iid}`, { labels: labels.join(",") });
 	}
 
 	async attachPullRequest(issueId: string, prUrl: string): Promise<void> {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
-		await gitlabPost(`/projects/${encodedProject}/issues/${iid}/notes`, {
+		await api().post(`/projects/${encodedProject}/issues/${iid}/notes`, {
 			body: `Pull request: ${prUrl}`,
 		});
 	}
@@ -266,7 +235,7 @@ export class GitLabIssuesSource implements Source {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
-		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
+		const issue = await api().get<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
 		let labels = labelToRemove
 			? issue.labels.filter((l) => l.toLowerCase() !== labelToRemove.toLowerCase())
 			: issue.labels;
@@ -276,7 +245,7 @@ export class GitLabIssuesSource implements Source {
 			labels = labels.filter((l) => l !== config.in_progress);
 		}
 
-		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+		await api().put(`/projects/${encodedProject}/issues/${iid}`, {
 			state_event: "close",
 			labels: labels.join(","),
 		});
@@ -284,11 +253,11 @@ export class GitLabIssuesSource implements Source {
 
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const project = parseGitLabProject(config.scope);
-		const labelsArr = Array.isArray(config.label) ? config.label : [config.label];
+		const labelsArr = normalizeLabels(config);
 		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
 		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
-		const issues = await gitlabGet<GitLabIssue[]>(path);
+		const issues = await api().get<GitLabIssue[]>(path);
 		return issues.map((issue) => ({
 			id: makeIssueId(config.scope, issue.iid),
 			title: issue.title,
@@ -303,7 +272,7 @@ export class GitLabIssuesSource implements Source {
 		let page = 1;
 
 		while (true) {
-			const labels = await gitlabGet<{ name: string; description: string | null }[]>(
+			const labels = await api().get<{ name: string; description: string | null }[]>(
 				`/projects/${project}/labels?per_page=100&page=${page}`,
 			);
 			for (const l of labels) {
@@ -323,12 +292,12 @@ export class GitLabIssuesSource implements Source {
 		const { project, iid } = splitIssueId(issueId);
 		const encodedProject = parseGitLabProject(project);
 
-		const issue = await gitlabGet<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
+		const issue = await api().get<GitLabIssue>(`/projects/${encodedProject}/issues/${iid}`);
 		const filtered = issue.labels.filter((l) => l.toLowerCase() !== labelToRemove.toLowerCase());
 
 		if (filtered.length === issue.labels.length) return;
 
-		await gitlabPut(`/projects/${encodedProject}/issues/${iid}`, {
+		await api().put(`/projects/${encodedProject}/issues/${iid}`, {
 			labels: filtered.join(","),
 		});
 	}

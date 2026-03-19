@@ -1,8 +1,8 @@
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
+import { createApiClient, normalizeLabels } from "./base.js";
 
 const DEFAULT_BASE_URL = "https://api.plane.so";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 function getBaseUrl(): string {
 	return (process.env.PLANE_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
@@ -30,39 +30,27 @@ function escapeHtml(str: string): string {
 		.replace(/"/g, "&quot;");
 }
 
-async function planeFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const url = `${getBaseUrl()}/api/v1${path}`;
-	const headers: Record<string, string> = {
-		...getAuthHeaders(),
-		"Content-Type": "application/json",
-	};
+let _api: ReturnType<typeof createApiClient> | null = null;
 
-	const res = await fetch(url, {
-		method,
-		headers,
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-	});
-
-	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`Plane API error (${res.status}): ${text}`);
-	}
-
-	if (method === "DELETE" || res.status === 204) return undefined as T;
-	return (await res.json()) as T;
+function api() {
+	if (!_api) _api = createApiClient(`${getBaseUrl()}/api/v1`, getAuthHeaders, "Plane");
+	return _api;
 }
 
-async function planeGet<T>(path: string): Promise<T> {
-	return planeFetch<T>("GET", path);
+function planeGet<T>(path: string): Promise<T> {
+	return api().get<T>(path);
 }
 
-async function planePatch<T>(path: string, body: unknown): Promise<T> {
-	return planeFetch<T>("PATCH", path, body);
+function planePost<T>(path: string, body?: unknown): Promise<T> {
+	return api().post<T>(path, body);
 }
 
-async function planePost<T>(path: string, body: unknown): Promise<T> {
-	return planeFetch<T>("POST", path, body);
+function planePatch<T>(path: string, body?: unknown): Promise<T> {
+	return api().patch<T>(path, body);
+}
+
+function planeDelete(path: string): Promise<void> {
+	return api().delete(path);
 }
 
 interface PlanePage<T> {
@@ -225,7 +213,7 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.scope;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelNames = normalizeLabels(config);
 		const labelIds = await Promise.all(
 			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
@@ -375,7 +363,7 @@ export class PlaneSource implements Source {
 		const workspaceSlug = config.scope;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
-		const labelNames = Array.isArray(config.label) ? config.label : [config.label];
+		const labelNames = normalizeLabels(config);
 		const labelIds = await Promise.all(
 			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);

@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execa } from "execa";
 import { analyzeProject } from "../context.js";
@@ -23,18 +22,22 @@ import {
 } from "../prompt.js";
 import { createProvider, runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
-import { discoverInfra } from "../session/discovery.js";
 import { buildHookEnv, executeHook } from "../session/hooks.js";
-import { runLifecycle, stopResources } from "../session/lifecycle.js";
-import {
-	buildValidationRecoveryPrompt,
-	isProofOfWorkEnabled,
-	runValidationCommands,
-} from "../session/proof-of-work.js";
-import { startReconciliation } from "../session/reconciliation.js";
-import type { Issue, LisaConfig, ModelSpec, Source, ValidationResult } from "../types/index.js";
+import { stopResources } from "../session/lifecycle.js";
+import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
+import {
+	appendSessionLog,
+	buildRunOptions,
+	checkReconciliation,
+	defaultProvider,
+	emptyCommitFailure,
+	hookFailure,
+	resolveBaseBranch,
+	runProofOfWork,
+	startInfra,
+	startReconciliationMonitor,
+} from "./helpers.js";
 import {
 	cleanupManifest,
 	extractPrUrlFromOutput,
@@ -43,7 +46,6 @@ import {
 } from "./manifest.js";
 import { runWorktreeMultiRepoSession } from "./multi-repo-session.js";
 import type { SessionResult } from "./result.js";
-import { activeProviderPids, reconciliationSet, userKilledSet, userSkippedSet } from "./state.js";
 
 export async function findWorktreeForBranch(
 	repoRoot: string,
@@ -170,37 +172,14 @@ export async function runNativeWorktreeSession(
 	const hookEnv = buildHookEnv(issue.id, issue.title, "", repoPath);
 
 	// Detect infrastructure
-	const infra = discoverInfra(repoPath);
-	let lifecycleEnv: Record<string, string> = {};
-	if (infra) {
-		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await runLifecycle(infra, config.lifecycle, repoPath);
-		stopSpinner();
-		if (!started.success) {
-			logger.warn(
-				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,
-			);
-		}
-		lifecycleEnv = started.env;
-	}
+	const lifecycleEnv = await startInfra(issue.id, repoPath, config);
 
 	// Clean stale manifest from previous run (per-issue)
 	cleanupManifest(workspace, issue.id);
 
 	// Hook: before_run
 	if (!(await executeHook("before_run", config.hooks, repoPath, hookEnv))) {
-		return {
-			success: false,
-			providerUsed: models[0]?.provider ?? "claude",
-			prUrls: [],
-			fallback: {
-				success: false,
-				output: "before_run hook failed",
-				duration: 0,
-				providerUsed: models[0]?.provider ?? "claude",
-				attempts: [],
-			},
-		};
+		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
 
 	const prompt = buildNativeWorktreePrompt(
@@ -220,48 +199,30 @@ export async function runNativeWorktreeSession(
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
 
 	// Start reconciliation monitor
-	const reconciliation =
-		source && config.reconciliation?.enabled
-			? startReconciliation(source, issue.id, config.reconciliation, config.source_config)
-			: null;
+	const reconciliation = startReconciliationMonitor(source, issue.id, config);
 
-	const result = await runWithFallback(models, prompt, {
-		logFile,
-		cwd: repoPath,
-		guardrailsDir: workspace,
-		issueId: issue.id,
-		overseer: config.overseer,
-		sessionTimeout: config.loop.session_timeout,
-		outputStallTimeout: config.loop.output_stall_timeout,
-		providerOptions: resolveProviderOptions(config),
-		useNativeWorktree: true,
-		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-		onProcess: (pid) => {
-			activeProviderPids.set(issue.id, pid);
-		},
-		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-	});
+	const result = await runWithFallback(
+		models,
+		prompt,
+		buildRunOptions(config, issue, repoPath, logFile, workspace, lifecycleEnv, {
+			useNativeWorktree: true,
+		}),
+	);
 	stopSpinner();
 	reconciliation?.stop();
-	if (infra) await stopResources();
+	if (Object.keys(lifecycleEnv).length > 0) await stopResources();
 
 	// Hook: after_run (non-critical)
 	await executeHook("after_run", config.hooks, repoPath, hookEnv);
 
 	// Check if issue was reconciled (status changed externally)
-	if (reconciliationSet.has(issue.id)) {
-		reconciliationSet.delete(issue.id);
-		logger.warn(`Issue ${issue.id} was closed/cancelled externally. Skipping.`);
+	const reconciled = checkReconciliation(issue.id, result);
+	if (reconciled) {
 		cleanupManifest(workspace, issue.id);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return reconciled;
 	}
 
-	try {
-		appendFileSync(
-			logFile,
-			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
-		);
-	} catch {}
+	appendSessionLog(logFile, result);
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
@@ -271,31 +232,8 @@ export async function runNativeWorktreeSession(
 
 	const hasChanges = await hasCodeChanges(repoPath, _defaultBranch);
 	if (!hasChanges) {
-		logger.error(
-			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
-		);
 		cleanupManifest(workspace, issue.id);
-		const emptyCommitResult: typeof result = {
-			success: false,
-			output: "Provider reported success but no code changes detected",
-			duration: result.duration,
-			providerUsed: result.providerUsed,
-			attempts: [
-				{
-					provider: result.providerUsed,
-					model: "",
-					success: false,
-					error: "Eligible error (empty commit)",
-					duration: result.duration,
-				},
-			],
-		};
-		return {
-			success: false,
-			providerUsed: result.providerUsed,
-			prUrls: [],
-			fallback: emptyCommitResult,
-		};
+		return emptyCommitFailure(result);
 	}
 
 	const manifest = readLisaManifest(workspace, issue.id);
@@ -361,18 +299,7 @@ export async function runManualWorktreeSession(
 	} catch (err) {
 		stopSpinner();
 		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
-		return {
-			success: false,
-			providerUsed: models[0]?.provider ?? "claude",
-			prUrls: [],
-			fallback: {
-				success: false,
-				output: "",
-				duration: 0,
-				providerUsed: models[0]?.provider ?? "claude",
-				attempts: [],
-			},
-		};
+		return hookFailure(defaultProvider(models), "");
 	}
 
 	stopSpinner();
@@ -383,18 +310,7 @@ export async function runManualWorktreeSession(
 	// Hook: after_create (critical — abort on failure)
 	if (!(await executeHook("after_create", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return {
-			success: false,
-			providerUsed: models[0]?.provider ?? "claude",
-			prUrls: [],
-			fallback: {
-				success: false,
-				output: "after_create hook failed",
-				duration: 0,
-				providerUsed: models[0]?.provider ?? "claude",
-				attempts: [],
-			},
-		};
+		return hookFailure(defaultProvider(models), "after_create hook failed");
 	}
 
 	// Detect test runner for prompt enhancement
@@ -407,19 +323,7 @@ export async function runManualWorktreeSession(
 	const repoContextMd = readContext(repoPath);
 
 	// Detect infrastructure
-	const infra = discoverInfra(worktreePath);
-	let lifecycleEnv: Record<string, string> = {};
-	if (infra) {
-		startSpinner(`${issue.id} \u2014 starting resources...`);
-		const started = await runLifecycle(infra, config.lifecycle, worktreePath);
-		stopSpinner();
-		if (!started.success) {
-			logger.warn(
-				`Lifecycle startup failed for ${issue.id}. Continuing with manual resource instructions.`,
-			);
-		}
-		lifecycleEnv = started.env;
-	}
+	const lifecycleEnv = await startInfra(issue.id, worktreePath, config);
 
 	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
@@ -428,18 +332,7 @@ export async function runManualWorktreeSession(
 	// Hook: before_run (critical — abort on failure)
 	if (!(await executeHook("before_run", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return {
-			success: false,
-			providerUsed: models[0]?.provider ?? "claude",
-			prUrls: [],
-			fallback: {
-				success: false,
-				output: "before_run hook failed",
-				duration: 0,
-				providerUsed: models[0]?.provider ?? "claude",
-				attempts: [],
-			},
-		};
+		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
 
 	const prompt = buildImplementPrompt(
@@ -458,49 +351,28 @@ export async function runManualWorktreeSession(
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
 
 	// Start reconciliation monitor
-	const reconciliation =
-		source && config.reconciliation?.enabled
-			? startReconciliation(source, issue.id, config.reconciliation, config.source_config)
-			: null;
+	const reconciliation = startReconciliationMonitor(source, issue.id, config);
 
-	const result = await runWithFallback(models, prompt, {
-		logFile,
-		cwd: worktreePath,
-		guardrailsDir: workspace,
-		issueId: issue.id,
-		overseer: config.overseer,
-		sessionTimeout: config.loop.session_timeout,
-		outputStallTimeout: config.loop.output_stall_timeout,
-		providerOptions: resolveProviderOptions(config),
-		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-		onProcess: (pid) => {
-			activeProviderPids.set(issue.id, pid);
-		},
-		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-	});
+	const result = await runWithFallback(
+		models,
+		prompt,
+		buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+	);
 	stopSpinner();
 	reconciliation?.stop();
-	if (infra) await stopResources();
+	if (Object.keys(lifecycleEnv).length > 0) await stopResources();
 
 	// Hook: after_run (non-critical)
 	await executeHook("after_run", config.hooks, worktreePath, hookEnv);
 
 	// Check if issue was reconciled (status changed externally)
-	if (reconciliationSet.has(issue.id)) {
-		reconciliationSet.delete(issue.id);
-		logger.warn(`Issue ${issue.id} was closed/cancelled externally. Skipping.`);
+	const reconciled = checkReconciliation(issue.id, result);
+	if (reconciled) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return reconciled;
 	}
 
-	try {
-		appendFileSync(
-			logFile,
-			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
-		);
-	} catch {
-		// Ignore log write errors
-	}
+	appendSessionLog(logFile, result);
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
@@ -512,105 +384,28 @@ export async function runManualWorktreeSession(
 
 	const hasChanges = await hasCodeChanges(worktreePath, baseBranch);
 	if (!hasChanges) {
-		logger.error(
-			`Provider reported success but no code changes detected. Treating as failure for ${issue.id}.`,
-		);
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
-		const emptyCommitResult: typeof result = {
-			success: false,
-			output: "Provider reported success but no code changes detected",
-			duration: result.duration,
-			providerUsed: result.providerUsed,
-			attempts: [
-				{
-					provider: result.providerUsed,
-					model: "",
-					success: false,
-					error: "Eligible error (empty commit)",
-					duration: result.duration,
-				},
-			],
-		};
-		return {
-			success: false,
-			providerUsed: result.providerUsed,
-			prUrls: [],
-			fallback: emptyCommitResult,
-		};
+		return emptyCommitFailure(result);
 	}
 
 	// Proof of Work: run validation commands before PR creation
-	let validationResults: ValidationResult[] | undefined;
-	if (isProofOfWorkEnabled(config.proof_of_work)) {
-		const pow = config.proof_of_work;
-		let retriesLeft = pow?.max_retries ?? 2;
-		let validationPassed = false;
-
-		while (!validationPassed) {
-			// Check reconciliation during validation loop
-			if (reconciliationSet.has(issue.id)) {
-				reconciliationSet.delete(issue.id);
-				logger.warn(`Issue ${issue.id} was closed/cancelled during validation. Skipping.`);
-				await cleanupWorktree(repoPath, worktreePath);
-				return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
-			}
-
-			startSpinner(`${issue.id} \u2014 validating...`);
-			const results = await runValidationCommands(pow?.commands ?? [], worktreePath, pow?.timeout);
-			stopSpinner();
-
-			const failures = results.filter((r) => !r.success);
-
-			if (failures.length === 0) {
-				validationPassed = true;
-				validationResults = results;
-				logger.ok(`All validation checks passed for ${issue.id}`);
-				break;
-			}
-
-			if (retriesLeft <= 0) {
-				logger.error(
-					`Validation failed after max retries for ${issue.id}. Creating PR with failures noted.`,
-				);
-				validationResults = results;
-				break;
-			}
-
-			retriesLeft--;
-			logger.warn(
-				`Validation failed for ${issue.id} (${retriesLeft} retries left). Re-invoking agent...`,
-			);
-
-			const recoveryPrompt = buildValidationRecoveryPrompt(issue, failures);
-			startSpinner(`${issue.id} \u2014 fixing validation failures...`);
-			const recoveryResult = await runWithFallback(models, recoveryPrompt, {
-				logFile,
-				cwd: worktreePath,
-				guardrailsDir: workspace,
-				issueId: issue.id,
-				overseer: config.overseer,
-				sessionTimeout: config.loop.session_timeout,
-				outputStallTimeout: config.loop.output_stall_timeout,
-				providerOptions: resolveProviderOptions(config),
-				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-				onProcess: (pid) => {
-					activeProviderPids.set(issue.id, pid);
-				},
-				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-			});
-			stopSpinner();
-
-			if (!recoveryResult.success) {
-				logger.error(
-					`Validation recovery failed for ${issue.id}. Creating PR with failures noted.`,
-				);
-				validationResults = results;
-				break;
-			}
-		}
+	const powResult = await runProofOfWork(
+		config,
+		issue,
+		models,
+		worktreePath,
+		logFile,
+		workspace,
+		lifecycleEnv,
+		result,
+	);
+	if (powResult.reconciled) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
 	}
+	const validationResults = powResult.results;
 
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
 	const manifest = readManifestFile(manifestPath);
@@ -638,29 +433,14 @@ export async function runManualWorktreeSession(
 			});
 
 			startSpinner(`${issue.id} \u2014 continuation...`);
-			const contResult = await runWithFallback(models, continuationPrompt, {
-				logFile,
-				cwd: worktreePath,
-				guardrailsDir: workspace,
-				issueId: issue.id,
-				overseer: config.overseer,
-				sessionTimeout: config.loop.session_timeout,
-				outputStallTimeout: config.loop.output_stall_timeout,
-				providerOptions: resolveProviderOptions(config),
-				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-				onProcess: (pid) => {
-					activeProviderPids.set(issue.id, pid);
-				},
-				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-			});
+			const contResult = await runWithFallback(
+				models,
+				continuationPrompt,
+				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+			);
 			stopSpinner();
 
-			try {
-				appendFileSync(
-					logFile,
-					`\n${"=".repeat(80)}\nContinuation \u2014 provider: ${contResult.providerUsed}\n${contResult.output}\n`,
-				);
-			} catch {}
+			appendSessionLog(logFile, contResult);
 
 			if (contResult.success) {
 				const contManifest = readManifestFile(manifestPath);
