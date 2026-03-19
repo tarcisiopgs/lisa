@@ -1,4 +1,4 @@
-# VHS tape for recording Lisa kanban TUI demo
+# VHS tape for recording Lisa plan-then-run TUI demo
 # https://github.com/charmbracelet/vhs
 
 Output assets/demo.gif
@@ -13,7 +13,7 @@ Set Theme { "name": "Lisa", "black": "#1a1a2e", "red": "#e74c3c", "green": "#2ec
 
 # Hide the shell prompt and initial Ink mount delay
 Hide
-Type "cd /Users/tarcisiopgs/Workspace/lisa/cli && node dist/index.js run --demo"
+Type "cd /Users/tarcisiopgs/Workspace/lisa/cli && node dist/index.js --demo"
 Enter
 Sleep 4s
 Show

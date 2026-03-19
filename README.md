@@ -1,7 +1,7 @@
 # Lisa
 
 <p align="center">
-  <strong>Label an issue. Walk away. Come back to a PR.</strong>
+  <strong>Plan issues. Run agents. Get PRs.</strong>
 </p>
 
 <p align="center">
@@ -15,23 +15,23 @@
   <img src="assets/demo.gif" alt="Lisa demo" />
 </p>
 
-Lisa connects your issue tracker to an AI coding agent and delivers pull requests — autonomously. Tag an issue with a label, Lisa picks it up, implements it, opens a PR, and updates your board. No babysitting.
+Lisa connects your issue tracker to an AI coding agent and delivers pull requests — autonomously. Describe a goal, Lisa decomposes it into issues, picks them up, implements each one, opens PRs, and updates your board. No babysitting.
 
 ## Quickstart
 
 ```bash
 npm install -g @tarcisiopgs/lisa
 lisa init    # interactive setup wizard
-lisa run
+lisa         # start the agent loop
 ```
 
 ## How It Works
 
 ```
-  Fetch issue → Activate → Build context → Implement → Push → Open PR → Update board → Next
+  Plan → Create issues → Fetch → Implement → Push → Open PR → Update board → Next
 ```
 
-Lisa picks the highest-priority labeled issue, moves it to "In Progress", sends a structured prompt to the AI agent, and monitors execution. The agent works in an isolated git worktree, implements the change, runs tests, and commits. Lisa pushes, opens a PR, moves the ticket to "In Review", and picks up the next one.
+Lisa starts and shows a Kanban board. If the queue is empty, press `n` to plan — describe a goal and the AI decomposes it into atomic issues, created directly in your tracker. Press `r` to start processing. Lisa picks the highest-priority labeled issue, moves it to "In Progress", sends a structured prompt to the AI agent, and monitors execution. The agent works in an isolated git worktree, implements the change, runs tests, and commits. Lisa pushes, opens a PR, moves the ticket to "In Review", and picks up the next one.
 
 If something fails — pre-push hooks, quota limits, stuck processes — Lisa handles it: retries with error context, falls back to the next model, or kills and moves on.
 
@@ -39,13 +39,13 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 
 - **7 issue trackers** — Linear, GitHub Issues, GitLab Issues, Jira, Trello, Plane, Shortcut
 - **8 AI agents** — Claude Code, Gemini CLI, GitHub Copilot CLI, Cursor Agent, Aider, Goose, OpenCode, Codex
+- **AI planning** — describe a goal, the AI decomposes it into issues with dependencies, created in your tracker
 - **Concurrent execution** — process multiple issues in parallel, each in its own worktree
 - **Multi-repo** — plans across repos, creates one PR per repo in the correct order
 - **Model fallback** — chain models; transient errors (429, quota, timeout) auto-switch to the next
-- **Real-time TUI** — Kanban board with live provider output, keyboard controls, PR merge detection
+- **Real-time TUI** — Kanban board with live provider output, plan mode, PR merge detection
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
-- **AI planning** — `lisa plan` decomposes goals into atomic issues with dependencies, creates them in your tracker
 - **Project context** — auto-generates `.lisa/context.md` with your stack, conventions, and constraints
 
 ## Providers
@@ -83,21 +83,21 @@ provider_options:
 ## Commands
 
 ```bash
-lisa run                     # start the agent loop
-lisa run --once              # process a single issue
-lisa run --once --dry-run    # preview config without executing
-lisa run --watch             # poll for new issues after queue empties
-lisa run --concurrency 3     # process 3 issues in parallel
-lisa run --issue INT-42      # process a specific issue
-lisa run --limit 5           # stop after 5 issues
-lisa plan "Add rate limiting" # decompose goal into issues via AI
-lisa plan --issue EPIC-123   # decompose existing issue into sub-issues
-lisa plan --continue         # resume interrupted plan
-lisa init                    # create .lisa/config.yaml interactively
-lisa status                  # show session stats
-lisa doctor                  # diagnose setup issues (config, provider, env, git)
-lisa context refresh         # regenerate project context
-lisa feedback --pr URL       # inject PR review feedback into guardrails
+lisa                        # start the agent loop (Kanban TUI)
+lisa --once                 # process a single issue
+lisa --once --dry-run       # preview config without executing
+lisa --watch                # poll for new issues after queue empties
+lisa -c 3                   # process 3 issues in parallel
+lisa --issue INT-42         # process a specific issue
+lisa --limit 5              # stop after 5 issues
+lisa plan "Add rate limiting" # decompose goal into issues via AI (CLI mode)
+lisa plan --issue EPIC-123  # decompose existing issue into sub-issues
+lisa plan --continue        # resume interrupted plan
+lisa init                   # create .lisa/config.yaml interactively
+lisa status                 # show session stats
+lisa doctor                 # diagnose setup issues (config, provider, env, git)
+lisa context refresh        # regenerate project context
+lisa feedback --pr URL      # inject PR review feedback into guardrails
 ```
 
 Append `--json` to any command for machine-readable output. Use `--verbose` / `--quiet` to control log verbosity.
@@ -242,16 +242,16 @@ Acceptance criteria:
 
 ## TUI
 
-The real-time Kanban board shows issue progress, streams provider output, and detects PR merges. The sidebar legend updates contextually — only the shortcuts active in the current view are shown.
+The real-time Kanban board shows issue progress, streams provider output, and detects PR merges. When the queue is empty, Lisa enters idle mode — plan new issues with `n`, then start processing with `r`.
 
 **Board view**
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
-| `←` `→` | Switch columns | `p` | Pause / resume provider |
-| `1` `2` `3` | Jump to column | `k` | Kill current issue |
-| `↑` `↓` | Navigate cards | `s` | Skip current issue |
-| `↵` | Open detail view | `q` | Quit |
+| `←` `→` | Switch columns | `k` | Kill current issue |
+| `↑` `↓` | Navigate cards | `n` | Open plan mode |
+| `↵` | Open detail view | `r` | Run (from idle) |
+| `p` | Pause / resume | `q` | Quit |
 
 **Detail view**
 
@@ -260,6 +260,16 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 | `↑` `↓` | Scroll output log |
 | `o` | Open PR in browser |
 | `Esc` | Back to board |
+
+**Plan mode**
+
+| Key | Action |
+|-----|--------|
+| `↵` | Send message / view detail |
+| `e` | Edit issue in $EDITOR |
+| `d` | Delete issue |
+| `a` | Approve and create issues |
+| `Esc` | Cancel / back |
 
 ## License
 

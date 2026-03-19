@@ -84,15 +84,29 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			});
 		};
 
+		const onDemoOpenPlan = (userMessage: string) => {
+			setActiveView("plan-chat");
+			setPlanMessages([{ role: "user", content: userMessage }]);
+			setPlanGoal(userMessage);
+			setPlanThinking(true);
+		};
+		const onDemoApprovePlan = () => {
+			setActiveView("board");
+		};
+
 		kanbanEmitter.on("plan:ai-message", onAiMessage);
 		kanbanEmitter.on("plan:thinking", onThinking);
 		kanbanEmitter.on("plan:issues-ready", onIssuesReady);
 		kanbanEmitter.on("plan:edit-result", onEditResult);
+		kanbanEmitter.on("demo:open-plan", onDemoOpenPlan);
+		kanbanEmitter.on("demo:approve-plan", onDemoApprovePlan);
 		return () => {
 			kanbanEmitter.off("plan:ai-message", onAiMessage);
 			kanbanEmitter.off("plan:thinking", onThinking);
 			kanbanEmitter.off("plan:issues-ready", onIssuesReady);
 			kanbanEmitter.off("plan:edit-result", onEditResult);
+			kanbanEmitter.off("demo:open-plan", onDemoOpenPlan);
+			kanbanEmitter.off("demo:approve-plan", onDemoApprovePlan);
 		};
 	}, []);
 
