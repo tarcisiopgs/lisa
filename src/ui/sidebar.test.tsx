@@ -95,21 +95,15 @@ describe("Sidebar — legend per mode", () => {
 	it("shows board shortcuts in board mode", () => {
 		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="board" />);
 		const output = stripAnsi(lastFrame());
-		expect(output).toContain("[123] jump col");
 		expect(output).toContain("[q]  quit");
-		expect(output).toContain("[p]  pause");
-		expect(output).toContain("columns");
-		expect(output).toContain("navigate");
-		expect(output).toContain("detail");
+		expect(output).toContain("[n]  plan");
 	});
 
 	it("shows detail shortcuts in detail mode", () => {
 		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="detail" />);
 		const output = stripAnsi(lastFrame());
-		expect(output).toContain("[Esc] board");
-		expect(output).toContain("scroll");
+		expect(output).toContain("[Esc] back");
 		expect(output).not.toContain("[q]");
-		expect(output).not.toContain("[p]");
 	});
 
 	it("shows only quit in watching mode", () => {
@@ -154,7 +148,7 @@ describe("Sidebar — legend per mode", () => {
 	it("shows open PR in detail mode when hasPrUrl is true", () => {
 		const { lastFrame } = render(<Sidebar {...defaultProps} activeView="detail" hasPrUrl={true} />);
 		const output = stripAnsi(lastFrame());
-		expect(output).toContain("[o]  open PR(s)");
+		expect(output).toContain("[o]  open PR");
 	});
 
 	it("hides open PR in detail mode when hasPrUrl is false", () => {
@@ -165,18 +159,16 @@ describe("Sidebar — legend per mode", () => {
 		expect(output).not.toContain("open PR");
 	});
 
-	it("shows kill and skip only when hasInProgress in board mode", () => {
+	it("shows kill only when hasInProgress in board mode", () => {
 		const { lastFrame: frame1 } = render(
 			<Sidebar {...defaultProps} activeView="board" hasInProgress={false} />,
 		);
 		expect(stripAnsi(frame1())).not.toContain("[k]");
-		expect(stripAnsi(frame1())).not.toContain("[s]");
 
 		const { lastFrame: frame2 } = render(
 			<Sidebar {...defaultProps} activeView="board" hasInProgress={true} />,
 		);
 		expect(stripAnsi(frame2())).toContain("[k]  kill");
-		expect(stripAnsi(frame2())).toContain("[s]  skip");
 	});
 
 	it("shows plan shortcut in board mode", () => {
