@@ -1,10 +1,11 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import * as clack from "@clack/prompts";
 import { CliError } from "../cli/error.js";
 import { resolveModels } from "../loop/models.js";
 import * as logger from "../output/logger.js";
-import { createProvider, runWithFallback } from "../providers/index.js";
+import { runWithFallback } from "../providers/index.js";
 import { createSource } from "../sources/index.js";
 import type { LisaConfig, PlannedIssue, PlanResult } from "../types/index.js";
 import { createPlanIssues } from "./create.js";
@@ -168,4 +169,25 @@ async function reviewAndCreate(
 	for (let i = 0; i < createdIds.length; i++) {
 		logger.log(`  ${plan.issues[i]!.order}. ${createdIds[i]}: ${plan.issues[i]!.title}`);
 	}
+
+	// Handoff prompt
+	const runNow = await clack.confirm({
+		message: `Execute now with lisa run?`,
+		initialValue: false,
+	});
+
+	if (clack.isCancel(runNow) || !runNow) {
+		logger.log("Run `lisa run` when ready.");
+		return;
+	}
+
+	// Dynamic import to avoid circular dependency
+	const { runLoop } = await import("../loop/index.js");
+	await runLoop(config, {
+		once: false,
+		watch: false,
+		limit: createdIds.length,
+		dryRun: false,
+		concurrency: 1,
+	});
 }
