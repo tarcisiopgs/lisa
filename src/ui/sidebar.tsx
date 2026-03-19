@@ -198,9 +198,7 @@ export function Sidebar({
 			{/* Dynamic legend — only shows action shortcuts for the current context */}
 			{activeView === "board" && (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
 					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
-					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
 					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
