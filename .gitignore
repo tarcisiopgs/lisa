@@ -15,3 +15,6 @@ docs/
 .gitnexus
 .aider*
 .claude/
+
+# Claude Code napkin (per-user agent memory)
+.claude/napkin.md
