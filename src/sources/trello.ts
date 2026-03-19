@@ -1,4 +1,4 @@
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
 
 const API_URL = "https://api.trello.com/1";
@@ -207,6 +207,28 @@ export class TrelloSource implements Source {
 
 		if (!card.idLabels.includes(label.id)) return;
 		await trelloDelete(`/cards/${cardId}/idLabels/${label.id}`);
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		const board = await findBoardByName(config.scope);
+		const list = await findListByName(board.id, opts.status);
+
+		// Resolve label IDs
+		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
+		);
+
+		const params = [
+			`idList=${list.id}`,
+			`name=${encodeURIComponent(opts.title)}`,
+			`desc=${encodeURIComponent(opts.description)}`,
+			`pos=${opts.order ?? "bottom"}`,
+			...labelIds.map((id) => `idLabels=${id}`),
+		].join("&");
+
+		const card = await trelloPost<{ id: string }>("/cards", params);
+		return card.id;
 	}
 }
 

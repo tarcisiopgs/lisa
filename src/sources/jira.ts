@@ -1,5 +1,5 @@
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
 
 const PRIORITY_RANK: Record<string, number> = {
@@ -350,6 +350,50 @@ export class JiraSource implements Source {
 		if (filtered.length === currentLabels.length) return;
 
 		await jiraPut(`/issue/${key}`, { fields: { labels: filtered } });
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		const labels = Array.isArray(opts.label) ? opts.label : [opts.label];
+
+		const fields: Record<string, unknown> = {
+			project: { key: config.scope },
+			summary: opts.title,
+			description: {
+				type: "doc",
+				version: 1,
+				content: [
+					{
+						type: "paragraph",
+						content: [{ type: "text", text: opts.description }],
+					},
+				],
+			},
+			issuetype: { name: "Task" },
+			labels,
+		};
+
+		if (opts.parentId) fields.parent = { key: opts.parentId };
+
+		const result = await jiraPost<{ key: string }>("/issue", { fields });
+
+		// Transition to the desired status if specified
+		if (opts.status) {
+			try {
+				await this.updateStatus(result.key, opts.status);
+			} catch {
+				// Non-fatal — issue was created, status transition may not be available
+			}
+		}
+
+		return result.key;
+	}
+
+	async linkDependency(issueId: string, dependsOnId: string): Promise<void> {
+		await jiraPost("/issueLink", {
+			type: { name: "Blocks" },
+			inwardIssue: { key: dependsOnId },
+			outwardIssue: { key: issueId },
+		});
 	}
 }
 

@@ -1,6 +1,6 @@
 import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
 
 function getAuthHeaders(): Record<string, string> {
@@ -384,6 +384,31 @@ export class ShortcutSource implements Source {
 
 		await shortcutPut<ShortcutStory>(`/api/v3/stories/${storyId}`, {
 			labels: labelNames,
+		});
+	}
+
+	async createIssue(opts: CreateIssueOpts, _config: SourceConfig): Promise<string> {
+		const stateId = await resolveWorkflowStateId(opts.status);
+		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
+
+		const body: Record<string, unknown> = {
+			name: opts.title,
+			description: opts.description,
+			workflow_state_id: stateId,
+			labels: labelNames.map((name) => ({ name })),
+		};
+		if (opts.parentId) body.epic_id = Number(opts.parentId);
+
+		const story = await shortcutPost<{ id: number; app_url: string }>("/api/v3/stories", body);
+
+		return String(story.id);
+	}
+
+	async linkDependency(issueId: string, dependsOnId: string): Promise<void> {
+		await shortcutPost("/api/v3/story-links", {
+			subject_id: Number(dependsOnId),
+			object_id: Number(issueId),
+			verb: "blocks",
 		});
 	}
 }

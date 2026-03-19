@@ -1,6 +1,6 @@
 import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
 
 const DEFAULT_BASE_URL = "https://api.plane.so";
@@ -422,5 +422,36 @@ export class PlaneSource implements Source {
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/`,
 			{ labels: updatedLabels },
 		);
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		const workspaceSlug = config.scope;
+		const projectId = await resolveProjectId(workspaceSlug, config.project);
+		const stateId = await resolveStateId(workspaceSlug, projectId, opts.status);
+
+		// Resolve label IDs
+		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
+		const labelIds = await Promise.all(
+			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
+		);
+
+		const body: Record<string, unknown> = {
+			name: opts.title,
+			description_html: `<p>${escapeHtml(opts.description)}</p>`,
+			state: stateId,
+			label_ids: labelIds,
+		};
+		if (opts.order !== undefined) body.priority = opts.order;
+		if (opts.parentId) {
+			const parent = parseIssueId(opts.parentId);
+			body.parent = parent.issueId;
+		}
+
+		const issue = await planePost<{ id: string; sequence_id: number }>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/`,
+			body,
+		);
+
+		return makeIssueId(workspaceSlug, projectId, issue.id);
 	}
 }

@@ -19,6 +19,7 @@ describe("lisa CLI (E2E)", () => {
 			const result = spawnSync(TSX, [CLI, "--help"], { encoding: "utf-8", timeout: 10_000 });
 			expect(result.status).toBe(0);
 			expect(result.stdout).toContain("run");
+			expect(result.stdout).toContain("plan");
 			expect(result.stdout).toContain("init");
 		});
 	});

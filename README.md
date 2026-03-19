@@ -45,6 +45,7 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **Real-time TUI** — Kanban board with live provider output, keyboard controls, PR merge detection
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
+- **AI planning** — `lisa plan` decomposes goals into atomic issues with dependencies, creates them in your tracker
 - **Project context** — auto-generates `.lisa/context.md` with your stack, conventions, and constraints
 
 ## Providers
@@ -89,6 +90,9 @@ lisa run --watch             # poll for new issues after queue empties
 lisa run --concurrency 3     # process 3 issues in parallel
 lisa run --issue INT-42      # process a specific issue
 lisa run --limit 5           # stop after 5 issues
+lisa plan "Add rate limiting" # decompose goal into issues via AI
+lisa plan --issue EPIC-123   # decompose existing issue into sub-issues
+lisa plan --continue         # resume interrupted plan
 lisa init                    # create .lisa/config.yaml interactively
 lisa status                  # show session stats
 lisa doctor                  # diagnose setup issues (config, provider, env, git)

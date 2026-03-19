@@ -1,5 +1,5 @@
 import * as logger from "../output/logger.js";
-import type { Issue, Source, SourceConfig } from "../types/index.js";
+import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
 
 const DEFAULT_BASE_URL = "https://gitlab.com";
@@ -299,6 +299,37 @@ export class GitLabIssuesSource implements Source {
 
 		await api().put(`/projects/${encodedProject}/issues/${iid}`, {
 			labels: filtered.join(","),
+		});
+	}
+
+	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
+		const encodedProject = parseGitLabProject(config.scope);
+		const labels = Array.isArray(opts.label) ? opts.label : [opts.label];
+
+		const issue = await api().post<{ iid: number }>(`/projects/${encodedProject}/issues`, {
+			title: opts.title,
+			description: opts.description,
+			labels: labels.join(","),
+			...(opts.order !== undefined && { weight: opts.order }),
+		});
+
+		return makeIssueId(config.scope, issue.iid);
+	}
+
+	async linkDependency(issueId: string, dependsOnId: string): Promise<void> {
+		const source = splitIssueId(issueId);
+		const target = splitIssueId(dependsOnId);
+		const encodedProject = parseGitLabProject(source.project);
+
+		// Get the numeric project ID for target_project_id
+		const projectInfo = await api().get<{ id: number }>(
+			`/projects/${parseGitLabProject(target.project)}`,
+		);
+
+		await api().post(`/projects/${encodedProject}/issues/${source.iid}/links`, {
+			target_project_id: projectInfo.id,
+			target_issue_iid: Number(target.iid),
+			link_type: "is_blocked_by",
 		});
 	}
 }

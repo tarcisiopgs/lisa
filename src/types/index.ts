@@ -205,6 +205,34 @@ export interface ExecutionPlan {
 	steps: PlanStep[];
 }
 
+export interface CreateIssueOpts {
+	title: string;
+	description: string;
+	status: string;
+	label: string | string[];
+	order?: number;
+	parentId?: string;
+}
+
+export interface PlannedIssue {
+	title: string;
+	description: string;
+	acceptanceCriteria: string[];
+	relevantFiles: string[];
+	order: number;
+	dependsOn: number[];
+	repo?: string;
+}
+
+export interface PlanResult {
+	goal: string;
+	sourceIssueId?: string;
+	issues: PlannedIssue[];
+	createdAt: string;
+	status: "draft" | "approved" | "created";
+	createdIssueIds?: string[];
+}
+
 export interface Source {
 	name: SourceName;
 	fetchNextIssue(config: SourceConfig): Promise<Issue | null>;
@@ -220,6 +248,10 @@ export interface Source {
 		config?: SourceConfig,
 	): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
+
+	// Plan mode — issue creation + dependency linking
+	createIssue?(opts: CreateIssueOpts, config: SourceConfig): Promise<string>;
+	linkDependency?(issueId: string, dependsOnId: string): Promise<void>;
 
 	// Wizard helpers — optional, used by lisa init to present select options
 	listScopes?(): Promise<{ value: string; label: string }[]>;
