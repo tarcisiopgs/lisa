@@ -138,6 +138,16 @@ async function handleApproval(
 	savePlan(resolve(config.workspace), plan);
 
 	logger.ok(`${createdIds.length} issue${createdIds.length !== 1 ? "s" : ""} created via plan.`);
+
+	// Re-fetch issues from source to populate the kanban backlog
+	try {
+		const allIssues = await source.listIssues(config.source_config);
+		for (const issue of allIssues) {
+			kanbanEmitter.emit("issue:queued", issue);
+		}
+	} catch (err) {
+		logger.warn(`Could not refresh kanban: ${err instanceof Error ? err.message : String(err)}`);
+	}
 }
 
 /**

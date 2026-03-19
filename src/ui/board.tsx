@@ -103,7 +103,7 @@ export function Board({
 		);
 	}
 
-	if (isEmpty) {
+	if (isEmpty && cards.length === 0) {
 		return (
 			<Box flexGrow={1} alignItems="center" justifyContent="center">
 				<Box

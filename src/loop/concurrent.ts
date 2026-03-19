@@ -29,6 +29,7 @@ import {
 	providerPausedSet,
 	userKilledSet,
 	userSkippedSet,
+	waitForResume,
 } from "./state.js";
 import { runWorktreeSession } from "./worktree-session.js";
 
@@ -195,12 +196,17 @@ export async function runConcurrentLoop(
 					break; // Break inner fill loop; noMoreIssues stays false → outer while re-enters
 				}
 				if (activeWorkers.size === 0) {
-					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
-					if (tentativeSession === 1) {
-						kanbanEmitter.emit("work:empty");
+					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'.`);
+					kanbanEmitter.emit("work:empty");
+					setTitle("Lisa \u2014 idle");
+
+					await waitForResume();
+					if (isShuttingDown() || hasUserQuitFromWatchPrompt()) {
+						noMoreIssues = true;
+						break;
 					}
+					kanbanEmitter.emit("work:resumed");
 				}
-				noMoreIssues = true;
 				break;
 			}
 

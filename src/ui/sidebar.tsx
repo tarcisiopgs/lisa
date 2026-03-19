@@ -10,6 +10,7 @@ export type SidebarMode =
 	| "watching"
 	| "watch-prompt"
 	| "empty"
+	| "idle"
 	| "plan-chat"
 	| "plan-review";
 
@@ -74,10 +75,21 @@ export function Sidebar({
 
 			{/* Status indicator */}
 			<Box marginBottom={1}>
-				<Text color={paused ? "yellow" : "green"}>{paused ? "⏸ " : "▶ "}</Text>
-				<Text color={paused ? "yellow" : "green"} bold>
-					{paused ? "PAUSED" : "RUNNING"}
-				</Text>
+				{activeView === "idle" || activeView === "empty" ? (
+					<>
+						<Text color="gray">{"◇ "}</Text>
+						<Text color="gray" bold>
+							IDLE
+						</Text>
+					</>
+				) : (
+					<>
+						<Text color={paused ? "yellow" : "green"}>{paused ? "⏸ " : "▶ "}</Text>
+						<Text color={paused ? "yellow" : "green"} bold>
+							{paused ? "PAUSED" : "RUNNING"}
+						</Text>
+					</>
+				)}
 			</Box>
 
 			<Text color="yellow">{"────────────────────────"}</Text>
@@ -222,6 +234,16 @@ export function Sidebar({
 			)}
 			{activeView === "empty" && (
 				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[n]  plan"}</Text>
+					<Text dimColor>{"[q]  quit"}</Text>
+				</Box>
+			)}
+			{activeView === "idle" && (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor>{"[r]  run"}</Text>
+					<Text dimColor>{"[←→] columns"}</Text>
+					<Text dimColor>{"[↑↓] navigate"}</Text>
+					<Text dimColor>{"[↵]  detail"}</Text>
 					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>

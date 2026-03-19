@@ -287,6 +287,7 @@ export function useKanbanState(
 		kanbanEmitter.on("provider:model-changed", onModelChanged);
 
 		const onEmpty = () => setIsEmpty(true);
+		const onResumed = () => setIsEmpty(false);
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
 		const onWatching = () => setIsWatching(true);
 		const onWatchResume = () => setIsWatching(false);
@@ -296,6 +297,7 @@ export function useKanbanState(
 		};
 		const onWatchPromptResolved = () => setIsWatchPrompt(false);
 		kanbanEmitter.on("work:empty", onEmpty);
+		kanbanEmitter.on("work:resumed", onResumed);
 		kanbanEmitter.on("work:complete", onComplete);
 		kanbanEmitter.on("work:watching", onWatching);
 		kanbanEmitter.on("work:watch-resume", onWatchResume);
@@ -324,6 +326,7 @@ export function useKanbanState(
 			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
+			kanbanEmitter.off("work:resumed", onResumed);
 			kanbanEmitter.off("work:complete", onComplete);
 			kanbanEmitter.off("work:watching", onWatching);
 			kanbanEmitter.off("work:watch-resume", onWatchResume);
