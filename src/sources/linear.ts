@@ -679,16 +679,16 @@ export class LinearSource implements Source {
 		);
 
 		// "blocks" means dependsOnId blocks issueId
+		// Linear requires IssueRelationType enum (not String) for the type field
 		await gql<{ issueRelationCreate: { success: boolean } }>(
-			`mutation($issueId: String!, $relatedIssueId: String!, $type: String!) {
-				issueRelationCreate(input: { issueId: $issueId, relatedIssueId: $relatedIssueId, type: $type }) {
+			`mutation($issueId: String!, $relatedIssueId: String!) {
+				issueRelationCreate(input: { issueId: $issueId, relatedIssueId: $relatedIssueId, type: blocks }) {
 					success
 				}
 			}`,
 			{
 				issueId: dependentData.issue.id,
 				relatedIssueId: issueData.issue.id,
-				type: "blocks",
 			},
 		);
 	}
