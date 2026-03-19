@@ -1,3 +1,4 @@
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
@@ -261,9 +262,7 @@ export class PlaneSource implements Source {
 					}
 				} catch (err) {
 					// If we can't fetch the blocker, assume it's still active
-					logger.warn(
-						`Could not fetch blocker ${blockerId}: ${err instanceof Error ? err.message : String(err)}`,
-					);
+					logger.warn(`Could not fetch blocker ${blockerId}: ${formatError(err)}`);
 					activeBlockers.push(blockerId);
 				}
 			}

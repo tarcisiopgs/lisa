@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
+import { formatError } from "../../errors.js";
 import { CliError } from "../error.js";
 
 export const feedback = defineCommand({
@@ -29,10 +30,8 @@ export const feedback = defineCommand({
 		try {
 			prFeedback = await fetchPrFeedback(prUrl);
 		} catch (err) {
-			console.error(
-				pc.red(`Failed to fetch PR feedback: ${err instanceof Error ? err.message : String(err)}`),
-			);
-			throw new CliError(err instanceof Error ? err.message : String(err));
+			console.error(pc.red(`Failed to fetch PR feedback: ${formatError(err)}`));
+			throw new CliError(formatError(err));
 		}
 
 		if (prFeedback.state === "merged") {

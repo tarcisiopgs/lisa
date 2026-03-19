@@ -1,6 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
+import { formatError } from "../errors.js";
 import { appendPlatformAttribution } from "../git/platform.js";
 import { createWorktree, generateBranchName, getDiffStat } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -29,7 +30,7 @@ import type {
 	Source,
 } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { resolveBaseBranch, resolveProviderOptions } from "./helpers.js";
+import { buildRunOptions, defaultProvider, resolveBaseBranch } from "./helpers.js";
 import {
 	cleanupPlanFile,
 	extractPrUrlFromOutput,
@@ -37,7 +38,7 @@ import {
 	readPlanFile,
 } from "./manifest.js";
 import type { SessionResult } from "./result.js";
-import { activeProviderPids, reconciliationSet, userKilledSet, userSkippedSet } from "./state.js";
+import { activeProviderPids, reconciliationSet } from "./state.js";
 import { cleanupWorktree } from "./worktree-session.js";
 
 export interface MultiRepoStepResult {
@@ -64,7 +65,7 @@ export async function runWorktreeMultiRepoSession(
 
 	// Phase 1: Planning — reuse existing plan or generate a new one
 	const cachedPlan = readPlanFile(planPath);
-	let planProviderUsed: string = models[0]?.provider ?? "claude";
+	let planProviderUsed: string = defaultProvider(models);
 	let planFallback: FallbackResult | null = null;
 
 	let sortedSteps: PlanStep[];
@@ -80,24 +81,24 @@ export async function runWorktreeMultiRepoSession(
 
 		const globalContextMd = readContext(workspace);
 		const planPrompt = buildPlanningPrompt(issue, config, planPath, globalContextMd);
-		const planResult = await runWithFallback(models, planPrompt, {
-			logFile,
-			cwd: workspace,
-			guardrailsDir: workspace,
-			issueId: issue.id,
-			overseer: config.overseer,
-			sessionTimeout: config.loop.session_timeout,
-			outputStallTimeout: config.loop.output_stall_timeout,
-			providerOptions: resolveProviderOptions(config),
-			onProcess: (pid) => {
-				activeProviderPids.set(issue.id, pid);
-			},
-			shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-			earlySuccess: () => {
-				const p = readPlanFile(planPath);
-				return !!(p?.steps && p.steps.length > 0);
-			},
-		});
+		const planResult = await runWithFallback(
+			models,
+			planPrompt,
+			buildRunOptions(
+				config,
+				issue,
+				workspace,
+				logFile,
+				workspace,
+				{},
+				{
+					earlySuccess: () => {
+						const p = readPlanFile(planPath);
+						return !!(p?.steps && p.steps.length > 0);
+					},
+				},
+			),
+		);
 		stopSpinner();
 		planProviderUsed = planResult.providerUsed;
 		planFallback = planResult;
@@ -107,7 +108,9 @@ export async function runWorktreeMultiRepoSession(
 				logFile,
 				`\n${"=".repeat(80)}\nPlanning phase — provider: ${planResult.providerUsed}\n${planResult.output}\n`,
 			);
-		} catch {}
+		} catch {
+			/* non-fatal: log write failure */
+		}
 
 		// Agent may exit with non-zero code but still write a valid plan (e.g.,
 		// PTY EOF signal or timeout after the file was already flushed). Check the
@@ -251,8 +254,8 @@ export async function runMultiRepoStep(
 		worktreePath = await createWorktree(repoPath, branchName, baseBranch);
 	} catch (err) {
 		stopSpinner();
-		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
-		return failResult(models[0]?.provider ?? "claude");
+		logger.error(`Failed to create worktree: ${formatError(err)}`);
+		return failResult(defaultProvider(models));
 	}
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
@@ -262,7 +265,7 @@ export async function runMultiRepoStep(
 	// Hook: after_create (critical — abort on failure)
 	if (!(await executeHook("after_create", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return failResult(models[0]?.provider ?? "claude");
+		return failResult(defaultProvider(models));
 	}
 
 	// Detect test runner and package manager
@@ -290,7 +293,7 @@ export async function runMultiRepoStep(
 	// Hook: before_run (critical — abort on failure)
 	if (!(await executeHook("before_run", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return failResult(models[0]?.provider ?? "claude");
+		return failResult(defaultProvider(models));
 	}
 
 	// Run scoped implementation
@@ -313,21 +316,11 @@ export async function runMultiRepoStep(
 	);
 	startSpinner(`${issue.id} step ${stepNum} \u2014 implementing...`);
 
-	const result = await runWithFallback(models, prompt, {
-		logFile,
-		cwd: worktreePath,
-		guardrailsDir: workspace,
-		issueId: issue.id,
-		overseer: config.overseer,
-		sessionTimeout: config.loop.session_timeout,
-		outputStallTimeout: config.loop.output_stall_timeout,
-		providerOptions: resolveProviderOptions(config),
-		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-		onProcess: (pid) => {
-			activeProviderPids.set(issue.id, pid);
-		},
-		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-	});
+	const result = await runWithFallback(
+		models,
+		prompt,
+		buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+	);
 	stopSpinner();
 	if (infra) await stopResources();
 
@@ -336,7 +329,9 @@ export async function runMultiRepoStep(
 			logFile,
 			`\n${"=".repeat(80)}\nStep ${stepNum} — provider: ${result.providerUsed}\n${result.output}\n`,
 		);
-	} catch {}
+	} catch {
+		/* non-fatal: log write failure */
+	}
 
 	// Hook: after_run (non-critical)
 	await executeHook("after_run", config.hooks, worktreePath, hookEnv);
@@ -376,21 +371,11 @@ export async function runMultiRepoStep(
 			});
 
 			startSpinner(`${issue.id} step ${stepNum} — continuation...`);
-			const contResult = await runWithFallback(models, continuationPrompt, {
-				logFile,
-				cwd: worktreePath,
-				guardrailsDir: workspace,
-				issueId: issue.id,
-				overseer: config.overseer,
-				sessionTimeout: config.loop.session_timeout,
-				outputStallTimeout: config.loop.output_stall_timeout,
-				providerOptions: resolveProviderOptions(config),
-				env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
-				onProcess: (pid) => {
-					activeProviderPids.set(issue.id, pid);
-				},
-				shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-			});
+			const contResult = await runWithFallback(
+				models,
+				continuationPrompt,
+				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+			);
 			stopSpinner();
 
 			try {
@@ -398,7 +383,9 @@ export async function runMultiRepoStep(
 					logFile,
 					`\n${"=".repeat(80)}\nStep ${stepNum} continuation — provider: ${contResult.providerUsed}\n${contResult.output}\n`,
 				);
-			} catch {}
+			} catch {
+				/* non-fatal: log write failure */
+			}
 
 			if (contResult.success) {
 				const contManifest = readManifestFile(manifestPath);

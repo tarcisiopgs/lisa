@@ -44,7 +44,9 @@ export async function runBranchSession(
 	// Clean any stale manifest from a previous interrupted run
 	try {
 		unlinkSync(manifestPath);
-	} catch {}
+	} catch {
+		/* best-effort cleanup */
+	}
 
 	// Detect test runner for prompt enhancement
 	const testRunner = detectTestRunner(workspace);
@@ -102,7 +104,7 @@ export async function runBranchSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return failureResult(result.providerUsed, result);
 	}
 
 	const hasChanges = await hasCodeChanges(workspace, config.base_branch);
@@ -129,7 +131,9 @@ export async function runBranchSession(
 	const manifest = readManifestFile(manifestPath);
 	try {
 		unlinkSync(manifestPath);
-	} catch {}
+	} catch {
+		/* best-effort cleanup */
+	}
 
 	let prUrl = manifest?.prUrl;
 	if (!prUrl) {
@@ -139,7 +143,7 @@ export async function runBranchSession(
 			prUrl = extractedUrl;
 		} else {
 			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
-			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+			return failureResult(result.providerUsed, result);
 		}
 	}
 

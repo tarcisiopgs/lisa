@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { formatLabels } from "../config.js";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { notify, resetTitle, setTitle } from "../output/terminal.js";
 import { getLogsDir } from "../paths.js";
@@ -65,9 +66,7 @@ export async function runConcurrentLoop(
 				await source.addLabel?.(issue.id, "needs-spec");
 				logger.ok(`Added label "needs-spec" to ${issue.id}`);
 			} catch (err) {
-				logger.warn(
-					`Failed to add label "needs-spec": ${err instanceof Error ? err.message : String(err)}`,
-				);
+				logger.warn(`Failed to add label "needs-spec": ${formatError(err)}`);
 			}
 			issue.specWarning = specResult.reason;
 		}
@@ -81,7 +80,7 @@ export async function runConcurrentLoop(
 			await source.updateStatus(issue.id, config.source_config.in_progress, config.source_config);
 			logger.ok(`Moved ${issue.id} to "${config.source_config.in_progress}"`);
 		} catch (err) {
-			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
+			logger.warn(`Failed to update status: ${formatError(err)}`);
 		}
 
 		activeCleanups.set(issue.id, { previousStatus, source, sourceConfig: config.source_config });
@@ -90,16 +89,12 @@ export async function runConcurrentLoop(
 		try {
 			sessionResult = await runWorktreeSession(config, issue, logFile, session, models, source);
 		} catch (err) {
-			logger.error(
-				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.error(`Unhandled error in session for ${issue.id}: ${formatError(err)}`);
 			try {
 				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (revertErr) {
-				logger.error(
-					`Failed to revert status: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}`,
-				);
+				logger.error(`Failed to revert status: ${formatError(revertErr)}`);
 			}
 			activeCleanups.delete(issue.id);
 			activeProviderPids.delete(issue.id);
@@ -168,7 +163,7 @@ export async function runConcurrentLoop(
 				consecutiveFetchErrors = 0;
 			} catch (err) {
 				consecutiveFetchErrors++;
-				logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
+				logger.error(`Failed to fetch issues: ${formatError(err)}`);
 				// Don't count failed fetches — tentativeSession was never committed
 				if (consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
 					logger.error(

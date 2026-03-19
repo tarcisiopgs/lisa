@@ -42,16 +42,22 @@ export function killProviderForIssue(issueId: string): void {
 	if (providerPausedSet.has(issueId)) {
 		try {
 			process.kill(pid, "SIGCONT");
-		} catch {}
+		} catch {
+			/* process already exited */
+		}
 		providerPausedSet.delete(issueId);
 	}
 	try {
 		process.kill(pid, "SIGTERM");
-	} catch {}
+	} catch {
+		/* process already exited */
+	}
 	setTimeout(() => {
 		try {
 			process.kill(pid, "SIGKILL");
-		} catch {}
+		} catch {
+			/* process already exited */
+		}
 	}, 5000);
 }
 
@@ -70,7 +76,9 @@ export function setupEventListeners(): void {
 			if (pid) {
 				try {
 					process.kill(pid, "SIGSTOP");
-				} catch {}
+				} catch {
+					/* process already exited */
+				}
 				providerPausedSet.add(issueId);
 			}
 		} else {
@@ -78,7 +86,9 @@ export function setupEventListeners(): void {
 			for (const [id, pid] of activeProviderPids) {
 				try {
 					process.kill(pid, "SIGSTOP");
-				} catch {}
+				} catch {
+					/* process already exited */
+				}
 				providerPausedSet.add(id);
 			}
 		}
@@ -91,7 +101,9 @@ export function setupEventListeners(): void {
 			if (pid && providerPausedSet.has(issueId)) {
 				try {
 					process.kill(pid, "SIGCONT");
-				} catch {}
+				} catch {
+					/* process already exited */
+				}
 				providerPausedSet.delete(issueId);
 			}
 		} else {
@@ -101,7 +113,9 @@ export function setupEventListeners(): void {
 				if (pid) {
 					try {
 						process.kill(pid, "SIGCONT");
-					} catch {}
+					} catch {
+						/* process already exited */
+					}
 				}
 			}
 			providerPausedSet.clear();

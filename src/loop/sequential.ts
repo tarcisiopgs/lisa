@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { formatLabels } from "../config.js";
+import { formatError } from "../errors.js";
 import { resolveFirstDependency } from "../git/dependency.js";
 import { determineRepoPath } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -94,7 +95,7 @@ export async function runSequentialLoop(
 		} catch (err) {
 			stopSpinner();
 			consecutiveFetchErrors++;
-			logger.error(`Failed to fetch issues: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Failed to fetch issues: ${formatError(err)}`);
 			if (opts.once || consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
 				if (consecutiveFetchErrors >= MAX_CONSECUTIVE_FETCH_ERRORS) {
 					logger.error(
@@ -169,9 +170,7 @@ export async function runSequentialLoop(
 				await source.addLabel?.(issue.id, "needs-spec");
 				logger.ok(`Added label "needs-spec" to ${issue.id}`);
 			} catch (err) {
-				logger.warn(
-					`Failed to add label "needs-spec": ${err instanceof Error ? err.message : String(err)}`,
-				);
+				logger.warn(`Failed to add label "needs-spec": ${formatError(err)}`);
 			}
 			issue.specWarning = specResult.reason;
 		}
@@ -202,7 +201,7 @@ export async function runSequentialLoop(
 			await source.updateStatus(issue.id, inProgress, config.source_config);
 			logger.ok(`Moved ${issue.id} to "${inProgress}"`);
 		} catch (err) {
-			logger.warn(`Failed to update status: ${err instanceof Error ? err.message : String(err)}`);
+			logger.warn(`Failed to update status: ${formatError(err)}`);
 		}
 
 		// Register active issue for signal handler cleanup
@@ -216,16 +215,12 @@ export async function runSequentialLoop(
 					: await runBranchSession(config, issue, logFile, session, models, source);
 		} catch (err) {
 			stopSpinner();
-			logger.error(
-				`Unhandled error in session for ${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.error(`Unhandled error in session for ${issue.id}: ${formatError(err)}`);
 			try {
 				await source.updateStatus(issue.id, previousStatus, config.source_config);
 				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
 			} catch (revertErr) {
-				logger.error(
-					`Failed to revert status: ${revertErr instanceof Error ? revertErr.message : String(revertErr)}`,
-				);
+				logger.error(`Failed to revert status: ${formatError(revertErr)}`);
 			}
 			activeCleanups.delete(issue.id);
 			if (config.bell !== false) notify(2);

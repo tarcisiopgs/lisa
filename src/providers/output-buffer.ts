@@ -1,4 +1,5 @@
 import { appendFileSync } from "node:fs";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 
 let logWriteWarned = false;
@@ -13,9 +14,7 @@ export function safeAppendLog(logFile: string, text: string): void {
 	} catch (err) {
 		if (!logWriteWarned) {
 			logWriteWarned = true;
-			logger.warn(
-				`Failed to write to log file ${logFile}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Failed to write to log file ${logFile}: ${formatError(err)}`);
 		}
 	}
 }

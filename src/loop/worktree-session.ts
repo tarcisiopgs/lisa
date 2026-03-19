@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { execa } from "execa";
 import { analyzeProject } from "../context.js";
+import { formatError } from "../errors.js";
 import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
 import {
 	createWorktree,
@@ -32,6 +33,7 @@ import {
 	checkReconciliation,
 	defaultProvider,
 	emptyCommitFailure,
+	failureResult,
 	hookFailure,
 	resolveBaseBranch,
 	runProofOfWork,
@@ -102,7 +104,7 @@ export async function cleanupWorktree(repoRoot: string, worktreePath: string): P
 		await removeWorktree(repoRoot, worktreePath);
 		logger.log("Worktree cleaned up.");
 	} catch (err) {
-		logger.warn(`Failed to clean up worktree: ${err instanceof Error ? err.message : String(err)}`);
+		logger.warn(`Failed to clean up worktree: ${formatError(err)}`);
 	}
 }
 
@@ -227,7 +229,7 @@ export async function runNativeWorktreeSession(
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
 		cleanupManifest(workspace, issue.id);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return failureResult(result.providerUsed, result);
 	}
 
 	const hasChanges = await hasCodeChanges(repoPath, _defaultBranch);
@@ -251,7 +253,7 @@ export async function runNativeWorktreeSession(
 				? await findWorktreeForBranch(repoPath, manifest.branch)
 				: null;
 			if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
-			return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+			return failureResult(result.providerUsed, result);
 		}
 	}
 
@@ -298,7 +300,7 @@ export async function runManualWorktreeSession(
 		worktreePath = await createWorktree(repoPath, branchName, baseBranch);
 	} catch (err) {
 		stopSpinner();
-		logger.error(`Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
+		logger.error(`Failed to create worktree: ${formatError(err)}`);
 		return hookFailure(defaultProvider(models), "");
 	}
 
@@ -379,7 +381,7 @@ export async function runManualWorktreeSession(
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return failureResult(result.providerUsed, result);
 	}
 
 	const hasChanges = await hasCodeChanges(worktreePath, baseBranch);
@@ -403,7 +405,7 @@ export async function runManualWorktreeSession(
 	);
 	if (powResult.reconciled) {
 		await cleanupWorktree(repoPath, worktreePath);
-		return { success: false, providerUsed: result.providerUsed, prUrls: [], fallback: result };
+		return failureResult(result.providerUsed, result);
 	}
 	const validationResults = powResult.results;
 

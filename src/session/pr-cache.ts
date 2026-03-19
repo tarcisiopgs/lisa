@@ -38,7 +38,9 @@ function writeCacheSafe(cwd: string, cache: PrCache): void {
 		writeFileSync(path, data, "utf-8");
 		try {
 			unlinkSync(tmpPath);
-		} catch {}
+		} catch {
+			/* best-effort cleanup */
+		}
 	}
 }
 

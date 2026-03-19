@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig, validateConfig } from "../../config.js";
+import { formatError } from "../../errors.js";
 import { isGhCliAvailable } from "../../git/github.js";
 import { createProvider } from "../../providers/index.js";
 import { getMissingEnvVars } from "../detection.js";
@@ -40,7 +41,7 @@ export const doctor = defineCommand({
 				validateConfig(config);
 				results.push({ passed: true, label: "Configuration is valid" });
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err);
+				const msg = formatError(err);
 				results.push({
 					passed: false,
 					label: "Configuration is valid",
@@ -111,7 +112,9 @@ export const doctor = defineCommand({
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 			hasRemote = true;
-		} catch {}
+		} catch {
+			/* no git remote */
+		}
 		results.push({
 			passed: hasRemote,
 			label: "Git remote configured",
@@ -127,7 +130,9 @@ export const doctor = defineCommand({
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 			baseBranchExists = true;
-		} catch {}
+		} catch {
+			/* branch not found */
+		}
 		results.push({
 			passed: baseBranchExists,
 			label: `Base branch "${baseBranch}" exists`,

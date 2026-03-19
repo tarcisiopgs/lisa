@@ -24,7 +24,9 @@ export function readLisaManifest(cwd: string, issueId?: string): LisaManifest | 
 export function cleanupManifest(cwd: string, issueId?: string): void {
 	try {
 		unlinkSync(getManifestPath(cwd, issueId));
-	} catch {}
+	} catch {
+		/* best-effort cleanup */
+	}
 }
 
 export function readManifestFile(filePath: string): LisaManifest | null {
@@ -32,6 +34,7 @@ export function readManifestFile(filePath: string): LisaManifest | null {
 	try {
 		return JSON.parse(readFileSync(filePath, "utf-8").trim()) as LisaManifest;
 	} catch {
+		/* non-fatal: malformed data */
 		return null;
 	}
 }
@@ -54,6 +57,7 @@ export function readPlanFile(filePath: string): ExecutionPlan | null {
 	try {
 		return JSON.parse(readFileSync(filePath, "utf-8").trim()) as ExecutionPlan;
 	} catch {
+		/* non-fatal: malformed data */
 		return null;
 	}
 }
@@ -64,11 +68,15 @@ export function readPlanFile(filePath: string): ExecutionPlan | null {
 export function cleanupPlanFile(filePath: string): void {
 	try {
 		unlinkSync(filePath);
-	} catch {}
+	} catch {
+		/* best-effort cleanup */
+	}
 	try {
 		const dir = dirname(filePath);
 		if (existsSync(dir) && readdirSync(dir).length === 0) {
 			rmdirSync(dir);
 		}
-	} catch {}
+	} catch {
+		/* best-effort cleanup */
+	}
 }

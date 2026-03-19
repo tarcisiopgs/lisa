@@ -69,7 +69,9 @@ export class AiderProvider implements Provider {
 			} finally {
 				try {
 					rmSync(aiderTmpDir, { recursive: true, force: true });
-				} catch {}
+				} catch {
+					/* best-effort cleanup */
+				}
 			}
 		} catch (err) {
 			return { success: false, output: formatError(err), duration: 0 };

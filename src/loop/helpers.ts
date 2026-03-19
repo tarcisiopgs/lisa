@@ -1,6 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execa } from "execa";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { runWithFallback } from "../providers/index.js";
@@ -56,9 +57,7 @@ export async function checkoutBaseBranches(config: LisaConfig, workspace: string
 			await execa("git", ["checkout", branch], { cwd });
 			logger.ok(`Checked out ${branch} in ${cwd}`);
 		} catch (err) {
-			logger.warn(
-				`Could not checkout ${branch} in ${cwd}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Could not checkout ${branch} in ${cwd}: ${formatError(err)}`);
 		}
 	}
 }
@@ -123,7 +122,9 @@ export function appendSessionLog(logFile: string, result: FallbackResult): void 
 			logFile,
 			`\n${"=".repeat(80)}\nProvider used: ${result.providerUsed}\nFull output:\n${result.output}\n`,
 		);
-	} catch {}
+	} catch {
+		/* non-fatal: log write failure */
+	}
 }
 
 /** Check if issue was reconciled and return early result if so. */

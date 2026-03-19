@@ -1,3 +1,4 @@
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { resetTitle, stopSpinner } from "../output/terminal.js";
 import { kanbanEmitter } from "../ui/state.js";
@@ -18,7 +19,9 @@ export function installSignalHandlers(onBeforeExit?: () => void): void {
 		for (const [, pid] of activeProviderPids) {
 			try {
 				process.kill(pid, "SIGTERM");
-			} catch {}
+			} catch {
+				/* process already exited */
+			}
 		}
 
 		// Revert all active issues
@@ -33,9 +36,7 @@ export function installSignalHandlers(onBeforeExit?: () => void): void {
 					]);
 					logger.ok(`Reverted ${issueId} to "${previousStatus}"`);
 				} catch (err) {
-					logger.error(
-						`Failed to revert ${issueId}: ${err instanceof Error ? err.message : String(err)}`,
-					);
+					logger.error(`Failed to revert ${issueId}: ${formatError(err)}`);
 				}
 				kanbanEmitter.emit("issue:reverted", issueId);
 			},

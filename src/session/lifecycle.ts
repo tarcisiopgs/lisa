@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { resolve } from "node:path";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { LifecycleConfig } from "../types/index.js";
 
@@ -182,7 +183,7 @@ export async function startResources(
 			await runSetupCommand(command, baseCwd, allocatedEnv);
 			logger.ok(`Setup complete: ${command}`);
 		} catch (err) {
-			logger.error(`Setup failed: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Setup failed: ${formatError(err)}`);
 			await stopResources();
 			return { success: false, env: allocatedEnv };
 		}
@@ -264,9 +265,7 @@ export async function stopResources(): Promise<void> {
 			}
 			logger.ok(`Resource "${name}" stopped`);
 		} catch (err) {
-			logger.warn(
-				`Failed to stop resource "${name}": ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.warn(`Failed to stop resource "${name}": ${formatError(err)}`);
 		}
 	}
 

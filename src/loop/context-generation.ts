@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { formatError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import { runWithFallback } from "../providers/index.js";
 import { contextExists, getContextPath } from "../session/context-manager.js";
@@ -68,7 +69,7 @@ export async function generateRepoContext(
 		logger.ok(`Context generated: ${outputPath}`);
 	} catch (err) {
 		logger.warn(
-			`Context generation failed for ${repoPath}: ${err instanceof Error ? err.message : String(err)}. Proceeding without context.md.`,
+			`Context generation failed for ${repoPath}: ${formatError(err)}. Proceeding without context.md.`,
 		);
 	}
 }
@@ -95,7 +96,7 @@ export async function generateGlobalContext(
 		logger.ok(`Global context generated: ${outputPath}`);
 	} catch (err) {
 		logger.warn(
-			`Global context generation failed: ${err instanceof Error ? err.message : String(err)}. Proceeding without global context.md.`,
+			`Global context generation failed: ${formatError(err)}. Proceeding without global context.md.`,
 		);
 	}
 }

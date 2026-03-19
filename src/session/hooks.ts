@@ -41,7 +41,9 @@ export function runHook(
 			setTimeout(() => {
 				try {
 					proc.kill("SIGKILL");
-				} catch {}
+				} catch {
+					/* process already exited */
+				}
 			}, 1_000);
 		}, timeout);
 
