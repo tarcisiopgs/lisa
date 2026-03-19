@@ -195,13 +195,9 @@ export function Sidebar({
 
 			<Text color="yellow">{"────────────────────────"}</Text>
 
-			{/* Dynamic legend — only shows shortcuts active in the current context */}
+			{/* Dynamic legend — only shows action shortcuts for the current context */}
 			{activeView === "board" && (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{"[←→] columns"}</Text>
-					<Text dimColor>{"[123] jump col"}</Text>
-					<Text dimColor>{"[↑↓] navigate"}</Text>
-					<Text dimColor>{"[↵]  detail"}</Text>
 					<Text dimColor>{paused ? "[p]  resume" : "[p]  pause"}</Text>
 					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
 					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
@@ -211,9 +207,8 @@ export function Sidebar({
 			)}
 			{activeView === "detail" && (
 				<Box marginTop={1} flexDirection="column">
-					<Text dimColor>{"[↑↓] scroll"}</Text>
-					{hasPrUrl && <Text dimColor>{"[o]  open PR(s)"}</Text>}
-					<Text dimColor>{"[Esc] board"}</Text>
+					{hasPrUrl && <Text dimColor>{"[o]  open PR"}</Text>}
+					<Text dimColor>{"[Esc] back"}</Text>
 				</Box>
 			)}
 			{activeView === "watching" && (
@@ -241,9 +236,6 @@ export function Sidebar({
 			{activeView === "idle" && (
 				<Box marginTop={1} flexDirection="column">
 					<Text dimColor>{"[r]  run"}</Text>
-					<Text dimColor>{"[←→] columns"}</Text>
-					<Text dimColor>{"[↑↓] navigate"}</Text>
-					<Text dimColor>{"[↵]  detail"}</Text>
 					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>
