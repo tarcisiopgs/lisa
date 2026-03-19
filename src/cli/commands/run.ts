@@ -251,7 +251,15 @@ export const run = defineCommand({
 			const initialCards = persistence.load();
 			persistedCards = initialCards;
 			persistence.start();
-			onBeforeExit = () => persistence.stop();
+
+			// Register plan mode backend (listens for plan:* events from TUI)
+			const { registerPlanBridge } = await import("../../plan/tui-bridge.js");
+			const cleanupPlan = registerPlanBridge(merged);
+
+			onBeforeExit = () => {
+				persistence.stop();
+				cleanupPlan();
+			};
 
 			const { render } = await import("ink");
 			const { createElement } = await import("react");
