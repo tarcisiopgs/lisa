@@ -73,13 +73,26 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			setPlanThinking(false);
 		};
 
+		const onEditResult = (index: number, updated: Partial<PlannedIssue> | null) => {
+			if (!updated) return;
+			setPlanIssues((prev) => {
+				const next = [...prev];
+				if (next[index]) {
+					next[index] = { ...next[index], ...updated };
+				}
+				return next;
+			});
+		};
+
 		kanbanEmitter.on("plan:ai-message", onAiMessage);
 		kanbanEmitter.on("plan:thinking", onThinking);
 		kanbanEmitter.on("plan:issues-ready", onIssuesReady);
+		kanbanEmitter.on("plan:edit-result", onEditResult);
 		return () => {
 			kanbanEmitter.off("plan:ai-message", onAiMessage);
 			kanbanEmitter.off("plan:thinking", onThinking);
 			kanbanEmitter.off("plan:issues-ready", onIssuesReady);
+			kanbanEmitter.off("plan:edit-result", onEditResult);
 		};
 	}, []);
 
@@ -193,7 +206,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				return;
 			}
 			if (input === "e") {
-				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex);
+				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex, planIssues[planSelectedIndex]);
 				return;
 			}
 			return;
@@ -206,7 +219,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				return;
 			}
 			if (input === "e") {
-				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex);
+				kanbanEmitter.emit("plan:edit-issue", planSelectedIndex, planIssues[planSelectedIndex]);
 				return;
 			}
 			return;
@@ -377,7 +390,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 						setPlanSelectedIndex(idx);
 						setActiveView("plan-detail");
 					}}
-					onEdit={(idx) => kanbanEmitter.emit("plan:edit-issue", idx)}
+					onEdit={(idx) => kanbanEmitter.emit("plan:edit-issue", idx, planIssues[idx])}
 					onDelete={(idx) => {
 						const newIssues = [...planIssues];
 						newIssues.splice(idx, 1);
@@ -394,7 +407,9 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				<PlanDetail
 					issue={planIssues[planSelectedIndex]}
 					onBack={() => setActiveView("plan-review")}
-					onEdit={() => kanbanEmitter.emit("plan:edit-issue", planSelectedIndex)}
+					onEdit={() =>
+						kanbanEmitter.emit("plan:edit-issue", planSelectedIndex, planIssues[planSelectedIndex])
+					}
 				/>
 			) : activeView === "board" || !selectedCard ? (
 				<Board

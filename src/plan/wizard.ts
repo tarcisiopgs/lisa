@@ -199,7 +199,7 @@ async function reorderIssues(plan: PlanResult, _workspace: string): Promise<void
 	clack.log.success("Issues reordered.");
 }
 
-function issueToMarkdown(issue: PlannedIssue): string {
+export function issueToMarkdown(issue: PlannedIssue): string {
 	let md = `# ${issue.title}\n\n`;
 	md += `${issue.description}\n`;
 
@@ -213,7 +213,7 @@ function issueToMarkdown(issue: PlannedIssue): string {
 	return md;
 }
 
-function markdownToIssue(content: string, original: PlannedIssue): Partial<PlannedIssue> {
+export function markdownToIssue(content: string, original: PlannedIssue): Partial<PlannedIssue> {
 	const lines = content.split("\n");
 	const titleLine = lines.find((l) => l.startsWith("# "));
 	const title = titleLine ? titleLine.replace(/^#\s+/, "").trim() : original.title;

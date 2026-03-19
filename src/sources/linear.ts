@@ -637,6 +637,25 @@ export class LinearSource implements Source {
 			labelIds.push(label.id);
 		}
 
+		// Resolve project ID from project name
+		let projectId: string | undefined;
+		if (config.project) {
+			const projectData = await gql<{
+				projects: { nodes: { id: string; name: string }[] };
+			}>(
+				`query($teamId: ID!) {
+					projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) {
+						nodes { id name }
+					}
+				}`,
+				{ teamId: team.id },
+			);
+			const project = projectData.projects.nodes.find(
+				(p) => p.name.toLowerCase() === config.project.toLowerCase(),
+			);
+			if (project) projectId = project.id;
+		}
+
 		// Build mutation input
 		const input: Record<string, unknown> = {
 			teamId: team.id,
@@ -645,6 +664,7 @@ export class LinearSource implements Source {
 			stateId: state.id,
 			labelIds,
 		};
+		if (projectId) input.projectId = projectId;
 		if (opts.order !== undefined) input.priority = opts.order;
 		if (opts.parentId) input.parentId = opts.parentId;
 
