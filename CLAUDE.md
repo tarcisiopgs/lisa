@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Lisa?
 
-A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider) and delivers pull requests via GitHub. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
+A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider, Codex) and delivers pull requests via GitHub, GitLab, or Bitbucket. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
 
 ## Language
 
@@ -48,24 +48,29 @@ Biome enforces: tabs, double quotes, semicolons, 100-char line width, recommende
 
 ```
 src/
-├── index.ts              # Entry point → delegates to cli/
-├── config.ts             # YAML config loading/saving with backward compat
+├── index.ts              # Entry point → delegates to cli/, catches CliError
+├── config.ts             # YAML config loading/saving with Zod validation + backward compat
 ├── context.ts            # API client detection + agent prompt enrichment
-├── prompt.ts             # Prompt templates + detectTestRunner() + detectPackageManager()
+├── errors.ts             # Shared formatError() utility
+├── prompt.ts             # Unified buildPrompt(variant, opts) — single prompt builder
 ├── paths.ts              # Shared path resolution utilities
 ├── templates.ts          # Init template definitions (source+provider combos)
 ├── validation.ts         # Issue spec validation (acceptance criteria check)
+├── version.ts            # NPM update check with 24h cache
 ├── types/
 │   └── index.ts          # All TypeScript interfaces and type aliases
 ├── cli/                  # CLI layer (citty commands + interactive wizard)
 │   ├── index.ts          # Main CLI definition, top-level command registration
+│   ├── error.ts          # CliError class (typed exit codes, replaces process.exit)
 │   ├── wizard.ts         # Interactive init/config wizard (clack prompts)
 │   ├── detection.ts      # Provider/model auto-detection for init
 │   └── commands/         # One file per CLI subcommand
 │       ├── run.ts        # `lisa run` — flags, validation, loop entry
 │       ├── init.ts       # `lisa init` — template selection + guided setup
 │       ├── config.ts     # `lisa config` — show/set/edit config
-│       ├── status.ts     # `lisa status` — session stats
+│       ├── context.ts    # `lisa context refresh` — regenerate project context
+│       ├── status.ts     # `lisa status` — session stats (supports --json)
+│       ├── doctor.ts     # `lisa doctor` — diagnose setup (config, provider, env, git)
 │       ├── issue.ts      # `lisa issue get/done` — worktree helper commands
 │       └── feedback.ts   # `lisa feedback` — inject PR review into guardrails
 ├── loop/                 # Main agent loop orchestration
@@ -79,7 +84,8 @@ src/
 │   ├── manifest.ts       # .lisa-manifest.json read/write
 │   ├── recovery.ts       # Push recovery (re-invoke agent on hook failure)
 │   ├── result.ts         # Session result handling
-│   ├── helpers.ts        # Shared loop utilities
+│   ├── helpers.ts        # Shared loop utilities (buildRunOptions, failureResult, etc.)
+│   ├── context-generation.ts  # Project context auto-generation
 │   ├── signals.ts        # SIGINT/SIGTERM graceful shutdown
 │   ├── state.ts          # Loop state management
 │   └── demo.ts           # Dry-run / demo mode
@@ -96,22 +102,30 @@ src/
 │   ├── lifecycle.ts      # Port utilities (isPortInUse, waitForPort)
 │   ├── overseer.ts       # Stuck-provider detection via periodic git status checks
 │   ├── guardrails.ts     # Failed-session log: reads/writes .lisa/guardrails.md
+│   ├── hooks.ts          # Lifecycle hooks (before_run, after_run, etc.)
+│   ├── proof-of-work.ts  # Validation commands (lint, typecheck, test)
+│   ├── reconciliation.ts # Active run reconciliation
 │   ├── discovery.ts      # Docker Compose auto-discovery + infrastructure setup
+│   ├── context-manager.ts # Context file lifecycle management
+│   ├── kanban-persistence.ts # TUI state persistence across restarts
 │   └── pr-cache.ts       # PR URL caching across multi-repo sessions
 ├── output/               # Logging and terminal output
-│   ├── logger.ts         # Logging (console + file, supports default/tui modes)
+│   ├── logger.ts         # Logging (stderr + file, supports default/tui/quiet/verbose)
+│   ├── line-color.ts     # Provider output line colorization for TUI
 │   └── terminal.ts       # Terminal title (OSC), spinner, bell notification
 ├── ui/                   # TUI (ink/React) components for Kanban board
-│   ├── board.tsx         # Top-level board layout
-│   ├── kanban.tsx        # Kanban board container
-│   ├── column.tsx        # Kanban column (Backlog, In Progress, In Review)
-│   ├── card.tsx          # Issue card component
+│   ├── board.tsx         # Top-level board layout (kanban, watching, empty states)
+│   ├── kanban.tsx        # Kanban app — input routing, view state, sidebar mode
+│   ├── column.tsx        # Kanban column with scroll + dynamic card width
+│   ├── card.tsx          # Issue card (status glyph, title wrap, timer)
 │   ├── detail.tsx        # Issue detail view (streaming provider output)
-│   ├── sidebar.tsx       # Contextual keyboard shortcut legend
-│   ├── state.ts          # TUI state management
+│   ├── sidebar.tsx       # Contextual sidebar legend (5 modes: board/detail/watching/watch-prompt/empty)
+│   ├── format.ts         # Shared formatElapsed() utility
+│   ├── state.ts          # TUI state management + merge polling
 │   └── use-terminal-size.ts # Terminal dimensions hook
 ├── providers/            # AI agent implementations (spawn child processes)
 │   ├── index.ts          # Provider factory, runWithFallback(), fallback eligibility
+│   ├── run-provider.ts   # Shared runProviderProcess() + cached isCommandAvailable()
 │   ├── claude.ts         # Claude Code: claude -p --dangerously-skip-permissions [--worktree]
 │   ├── gemini.ts         # Gemini CLI: gemini --yolo -p
 │   ├── opencode.ts       # OpenCode: opencode run
@@ -120,9 +134,13 @@ src/
 │   ├── goose.ts          # Goose (Block): goose run --text
 │   ├── aider.ts          # Aider: aider --message ... --yes-always [--model MODEL]
 │   ├── codex.ts          # OpenAI Codex: codex --approval-mode full-auto
-│   └── pty.ts            # PTY-based provider execution (alternative to sh -c)
+│   ├── pty.ts            # PTY-based provider execution (alternative to sh -c)
+│   ├── output-buffer.ts  # Provider output buffering
+│   ├── heap.ts           # Priority heap for model scheduling
+│   └── timeout.ts        # Provider timeout management
 └── sources/              # Issue tracker integrations
     ├── index.ts           # Source factory
+    ├── base.ts            # Shared createApiClient(), normalizeLabels(), REQUEST_TIMEOUT_MS
     ├── linear.ts          # Linear GraphQL API
     ├── trello.ts          # Trello REST API
     ├── plane.ts           # Plane REST API
@@ -196,9 +214,28 @@ The two core abstractions are `Provider` and `Source` (both in `types/index.ts`)
 
 Adding a new provider: implement `Provider`, register in `providers/index.ts` registry. Adding a new source: implement `Source`, register in `sources/index.ts` factory.
 
+### Shared infrastructure
+
+- **`sources/base.ts`**: `createApiClient(baseUrl, getHeaders, name)` — typed HTTP client used by all REST sources (Jira, Plane, Shortcut, GitHub Issues, GitLab Issues). Also exports `normalizeLabels()` and `REQUEST_TIMEOUT_MS`.
+- **`providers/run-provider.ts`**: `runProviderProcess()` — shared spawn logic for all providers. `isCommandAvailable(cmd)` — async cached check (avoids repeated `which` calls).
+- **`errors.ts`**: `formatError(err)` — universal `Error | unknown → string`.
+- **`cli/error.ts`**: `CliError` — typed error with `exitCode`, caught by `index.ts` instead of `process.exit(1)`.
+
+### Prompt unification (`prompt.ts`)
+
+Four separate prompt builders were consolidated into `buildPrompt(variant, opts)` with `PromptVariant` type (`"worktree"`, `"branch"`, `"native-worktree"`, `"multi-repo-plan"`).
+
+### Config validation (`config.ts`)
+
+Zod schemas validate provider, source, platform, workflow, and models[] at load time. `ConfigValidationError` is thrown with actionable messages. `enumOrEmpty()` helper allows empty strings for partially configured files.
+
+### TUI keyboard scoping (`ui/kanban.tsx`)
+
+The sidebar legend is the source of truth for available shortcuts. The kanban input handler gates all actions behind an `activeView` / state check (`board`, `detail`, `watching`, `watch-prompt`, `empty`). Shortcuts not shown in the legend are inactive.
+
 ## Configuration
 
-YAML config at `.lisa/config.yaml`. `config.ts` handles backward compatibility (old field names `board`→`scope`, `team`→`scope`, `list`→`project`), derives `models[]` from `provider` if not set, and merges CLI flag overrides.
+YAML config at `.lisa/config.yaml`. `config.ts` handles backward compatibility (old field names `board`→`scope`, `team`→`scope`, `list`→`project`), derives `models[]` from `provider` if not set, and merges CLI flag overrides. Config is validated at load time via Zod schemas — invalid values produce actionable `ConfigValidationError` messages.
 
 Key config fields:
 - `provider` + `models[]`: provider name + optional list of model names within that provider (v1.4.0+). First model = primary, rest = fallbacks.
@@ -206,6 +243,20 @@ Key config fields:
 - `platform`: `PRPlatform` — PR delivery method; accepts `"cli"` (GitHub CLI), `"token"` (GitHub API token), `"gitlab"`, or `"bitbucket"`.
 - `overseer`: optional stuck-provider detection (`enabled`, `check_interval`, `stuck_threshold`)
 - `repos[]`: multi-repo config; each repo can have `match` (issue title prefix routing)
+- `hooks`: lifecycle hooks (`before_run`, `after_run`, `after_create`, `before_remove`)
+- `proof_of_work`: validation commands run after provider completes (lint, typecheck, test)
+- `reconciliation`: detect and clean up stale active runs
+
+### CLI flags
+
+Global flags parsed from `process.argv` before citty: `--verbose` / `-v`, `--quiet` / `-q`, `--json`. The `--json` flag outputs machine-readable JSON to stdout. Unknown flags on `lisa run` are rejected with an error.
+
+## Output conventions
+
+- All human-readable output goes to **stderr** (`console.error`). Only machine-readable data (JSON, issue payloads) goes to **stdout** (`console.log`). This allows `lisa run 2>/dev/null | jq` piping.
+- `logger.ts` supports 3 modes: `default` (stderr), `tui` (file only, suppresses console), `quiet` (file only).
+- `logger.ts` supports 3 log levels: `default`, `quiet` (suppress non-error console), `verbose` (extra debug output).
+- `CliError` replaces `process.exit(1)` — thrown from commands and caught in `index.ts` for clean exit with typed exit codes.
 
 ## Versioning
 

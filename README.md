@@ -91,9 +91,12 @@ lisa run --issue INT-42      # process a specific issue
 lisa run --limit 5           # stop after 5 issues
 lisa init                    # create .lisa/config.yaml interactively
 lisa status                  # show session stats
+lisa doctor                  # diagnose setup issues (config, provider, env, git)
 lisa context refresh         # regenerate project context
 lisa feedback --pr URL       # inject PR review feedback into guardrails
 ```
+
+Append `--json` to any command for machine-readable output. Use `--verbose` / `--quiet` to control log verbosity.
 
 ## Configuration
 
@@ -235,15 +238,24 @@ Acceptance criteria:
 
 ## TUI
 
-The real-time Kanban board shows issue progress, streams provider output, and detects PR merges.
+The real-time Kanban board shows issue progress, streams provider output, and detects PR merges. The sidebar legend updates contextually — only the shortcuts active in the current view are shown.
+
+**Board view**
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
 | `←` `→` | Switch columns | `p` | Pause / resume provider |
-| `↑` `↓` | Navigate cards | `k` | Kill current issue |
-| `↵` | Open detail view | `s` | Skip current issue |
-| `Esc` | Back to board | `o` | Open PR in browser |
-| `q` | Quit | | |
+| `1` `2` `3` | Jump to column | `k` | Kill current issue |
+| `↑` `↓` | Navigate cards | `s` | Skip current issue |
+| `↵` | Open detail view | `q` | Quit |
+
+**Detail view**
+
+| Key | Action |
+|-----|--------|
+| `↑` `↓` | Scroll output log |
+| `o` | Open PR in browser |
+| `Esc` | Back to board |
 
 ## License
 
