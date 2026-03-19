@@ -202,7 +202,11 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 					issue.dependsOn = issue.dependsOn.filter((d) => d !== removed?.order);
 				}
 				setPlanIssues(newIssues);
-				setPlanSelectedIndex(Math.min(planSelectedIndex, Math.max(0, newIssues.length - 1)));
+				if (newIssues.length === 0) {
+					setActiveView("plan-chat");
+				} else {
+					setPlanSelectedIndex(Math.min(planSelectedIndex, Math.max(0, newIssues.length - 1)));
+				}
 				return;
 			}
 			if (input === "e") {
@@ -395,7 +399,11 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 						const newIssues = [...planIssues];
 						newIssues.splice(idx, 1);
 						setPlanIssues(newIssues);
-						setPlanSelectedIndex(Math.min(idx, Math.max(0, newIssues.length - 1)));
+						if (newIssues.length === 0) {
+							setActiveView("plan-chat");
+						} else {
+							setPlanSelectedIndex(Math.min(idx, Math.max(0, newIssues.length - 1)));
+						}
 					}}
 					onApprove={() => {
 						kanbanEmitter.emit("plan:approved", planIssues, planGoal);
