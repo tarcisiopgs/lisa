@@ -275,6 +275,11 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
+		if (input === "r" && isEmpty && backlog.length > 0) {
+			kanbanEmitter.emit("loop:run");
+			return;
+		}
+
 		if (input === "n") {
 			setActiveView("plan-chat");
 			setPlanMessages([]);
@@ -351,7 +356,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	let sidebarMode: SidebarMode = "board";
 	if (isWatchPrompt) sidebarMode = "watch-prompt";
 	else if (isWatching) sidebarMode = "watching";
-	else if (isEmpty && activeView === "board") sidebarMode = "empty";
+	else if (isEmpty && activeView === "board" && cards.length === 0) sidebarMode = "empty";
+	else if (isEmpty && activeView === "board" && cards.length > 0) sidebarMode = "idle";
 	else if (activeView === "plan-chat") sidebarMode = "plan-chat";
 	else if (activeView === "plan-review" || activeView === "plan-detail")
 		sidebarMode = "plan-review";

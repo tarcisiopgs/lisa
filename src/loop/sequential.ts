@@ -32,6 +32,7 @@ import {
 	providerPausedSet,
 	userKilledSet,
 	userSkippedSet,
+	waitForResume,
 } from "./state.js";
 import { runWorktreeSession } from "./worktree-session.js";
 
@@ -153,11 +154,19 @@ export async function runSequentialLoop(
 				continue;
 			}
 
-			logger.ok(`No more issues with label '${formatLabels(config.source_config)}'. Done.`);
-			if (session === 1) {
-				kanbanEmitter.emit("work:empty");
+			// Queue empty — pause and wait for user action (plan → run)
+			logger.ok(`No more issues with label '${formatLabels(config.source_config)}'.`);
+			kanbanEmitter.emit("work:empty");
+			setTitle("Lisa \u2014 idle");
+
+			// Wait until the loop is resumed (e.g. after plan creates issues)
+			await waitForResume();
+			if (isShuttingDown() || hasUserQuitFromWatchPrompt()) {
+				break;
 			}
-			break;
+			kanbanEmitter.emit("work:resumed");
+			session--;
+			continue;
 		}
 
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);

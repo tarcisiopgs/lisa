@@ -15,6 +15,8 @@ export const reconciliationSet = new Set<string>();
 let _shuttingDown = false;
 let _loopPaused = false;
 let _userQuitFromWatchPrompt = false;
+let _loopIdle = false;
+let _idleResolve: (() => void) | null = null;
 
 export function isShuttingDown(): boolean {
 	return _shuttingDown;
@@ -34,6 +36,30 @@ export function hasUserQuitFromWatchPrompt(): boolean {
 
 export function setUserQuitFromWatchPrompt(value: boolean): void {
 	_userQuitFromWatchPrompt = value;
+}
+
+export function isLoopIdle(): boolean {
+	return _loopIdle;
+}
+
+/**
+ * Block until `resolveIdle()` is called (e.g. when the user triggers a run
+ * after planning). Resolves immediately if the loop is shutting down.
+ */
+export function waitForResume(): Promise<void> {
+	if (_shuttingDown || _userQuitFromWatchPrompt) return Promise.resolve();
+	_loopIdle = true;
+	return new Promise<void>((resolve) => {
+		_idleResolve = resolve;
+	});
+}
+
+function resolveIdle(): void {
+	_loopIdle = false;
+	if (_idleResolve) {
+		_idleResolve();
+		_idleResolve = null;
+	}
 }
 
 export function killProviderForIssue(issueId: string): void {
@@ -150,8 +176,13 @@ export function setupEventListeners(): void {
 		}
 	});
 
+	kanbanEmitter.on("loop:run", () => {
+		resolveIdle();
+	});
+
 	kanbanEmitter.on("loop:quit", () => {
 		_userQuitFromWatchPrompt = true;
 		setShuttingDown(true);
+		resolveIdle();
 	});
 }
