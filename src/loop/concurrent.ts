@@ -12,6 +12,7 @@ import {
 	checkIssueSpec,
 	checkoutBaseBranches,
 	moveToInProgress,
+	refreshKanban,
 	revertIssueStatus,
 	sleep,
 	waitIfPaused,
@@ -197,6 +198,7 @@ export async function runConcurrentLoop(
 				}
 				if (activeWorkers.size === 0) {
 					logger.ok(`No more issues with label '${formatLabels(config.source_config)}'.`);
+					await refreshKanban(source, config);
 					kanbanEmitter.emit("work:empty");
 					setTitle("Lisa \u2014 idle");
 

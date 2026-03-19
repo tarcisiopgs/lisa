@@ -15,6 +15,7 @@ import {
 	checkIssueSpec,
 	checkoutBaseBranches,
 	moveToInProgress,
+	refreshKanban,
 	resolveBaseBranch,
 	revertIssueStatus,
 	sleep,
@@ -154,8 +155,9 @@ export async function runSequentialLoop(
 				continue;
 			}
 
-			// Queue empty — pause and wait for user action (plan → run)
+			// Queue empty — refresh kanban, then pause and wait for user action
 			logger.ok(`No more issues with label '${formatLabels(config.source_config)}'.`);
+			await refreshKanban(source, config);
 			kanbanEmitter.emit("work:empty");
 			setTitle("Lisa \u2014 idle");
 
