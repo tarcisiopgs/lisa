@@ -51,6 +51,11 @@ export const run = defineCommand({
 		},
 		label: { type: "string", description: "Label to filter issues" },
 		platform: { type: "string", description: "PR platform: cli, token, gitlab, or bitbucket" },
+		json: {
+			type: "boolean",
+			description: "Output machine-readable JSON (use with --dry-run)",
+			default: false,
+		},
 	},
 	async run({ args }) {
 		const argv = process.argv.slice(2);
@@ -77,6 +82,7 @@ export const run = defineCommand({
 			"--lifecycle",
 			"--lifecycle-timeout",
 			"--demo",
+			"--json",
 			"--help",
 			"-h",
 		]);
@@ -189,6 +195,27 @@ export const run = defineCommand({
 		}
 
 		const concurrency = Math.max(1, Number.parseInt(args.concurrency, 10) || 1);
+
+		if (args["dry-run"] && args.json) {
+			console.log(
+				JSON.stringify(
+					{
+						provider: merged.provider,
+						source: merged.source,
+						platform: merged.platform,
+						workflow: merged.workflow,
+						label: merged.source_config.label,
+						models: merged.provider_options?.[merged.provider]?.models ?? [],
+						workspace: merged.workspace,
+						base_branch: merged.base_branch,
+						concurrency,
+					},
+					null,
+					2,
+				),
+			);
+			return;
+		}
 
 		// Force worktree mode when concurrency > 1 (parallel issues need isolation)
 		if (concurrency > 1 && merged.workflow !== "worktree") {

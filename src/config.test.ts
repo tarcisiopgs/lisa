@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	ConfigValidationError,
 	configExists,
 	findConfigDir,
 	formatLabels,
@@ -12,6 +13,7 @@ import {
 	loadConfig,
 	mergeWithFlags,
 	saveConfig,
+	validateConfig,
 } from "./config.js";
 import type { LisaConfig, SourceConfig } from "./types/index.js";
 
@@ -741,5 +743,81 @@ describe("findConfigDir", () => {
 		mkdirSync(configDir);
 		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
 		expect(findConfigDir(tmpRoot)).toBe(tmpRoot);
+	});
+});
+
+describe("validateConfig", () => {
+	function makeValidConfig(overrides: Partial<LisaConfig> = {}): LisaConfig {
+		return {
+			provider: "claude",
+			source: "linear",
+			source_config: {
+				scope: "team",
+				project: "project",
+				label: "ready",
+				pick_from: "Todo",
+				in_progress: "In Progress",
+				done: "Done",
+			},
+			platform: "cli",
+			workflow: "worktree",
+			workspace: "/workspace",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 1 },
+			...overrides,
+		} as LisaConfig;
+	}
+
+	it("does not throw for valid config", () => {
+		expect(() => validateConfig(makeValidConfig())).not.toThrow();
+	});
+
+	it("does not throw for empty provider/source (partial config)", () => {
+		expect(() =>
+			validateConfig(
+				makeValidConfig({
+					provider: "" as LisaConfig["provider"],
+					source: "" as LisaConfig["source"],
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("throws ConfigValidationError for invalid provider name", () => {
+		expect(() =>
+			validateConfig(makeValidConfig({ provider: "invalid" as LisaConfig["provider"] })),
+		).toThrow(ConfigValidationError);
+	});
+
+	it("throws ConfigValidationError for invalid source name", () => {
+		expect(() =>
+			validateConfig(makeValidConfig({ source: "invalid" as LisaConfig["source"] })),
+		).toThrow(ConfigValidationError);
+	});
+
+	it("throws ConfigValidationError for invalid platform", () => {
+		expect(() =>
+			validateConfig(makeValidConfig({ platform: "invalid" as LisaConfig["platform"] })),
+		).toThrow(ConfigValidationError);
+	});
+
+	it("throws ConfigValidationError for invalid workflow", () => {
+		expect(() =>
+			validateConfig(makeValidConfig({ workflow: "invalid" as LisaConfig["workflow"] })),
+		).toThrow(ConfigValidationError);
+	});
+
+	it("error message includes the valid options", () => {
+		try {
+			validateConfig(makeValidConfig({ provider: "bogus" as LisaConfig["provider"] }));
+			expect.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ConfigValidationError);
+			const message = (err as ConfigValidationError).message;
+			expect(message).toContain("claude");
+			expect(message).toContain("gemini");
+			expect(message).toContain("Must be one of");
+		}
 	});
 });

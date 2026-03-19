@@ -1,6 +1,7 @@
 import { defineCommand, runMain } from "citty";
 import { config } from "./commands/config.js";
 import { context } from "./commands/context.js";
+import { doctor } from "./commands/doctor.js";
 import { feedback } from "./commands/feedback.js";
 import { init } from "./commands/init.js";
 import { issue } from "./commands/issue.js";
@@ -15,7 +16,7 @@ export const main = defineCommand({
 		description:
 			"Deterministic autonomous issue resolver — structured AI agent loop for any issue tracker",
 	},
-	subCommands: { run, config, init, status, issue, feedback, context },
+	subCommands: { run, config, init, status, issue, feedback, context, doctor },
 });
 
 export function runCli(): void {
