@@ -428,6 +428,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			) : activeView === "board" || !selectedCard ? (
 				<Board
 					cards={cards}
+					columns={{ backlog, inProgress, done }}
 					labels={labels}
 					isEmpty={isEmpty}
 					isWatching={isWatching}
