@@ -18,5 +18,7 @@ Enter
 Sleep 4s
 Show
 
-# Capture the full kanban animation: issues queue, process, and complete
-Sleep 22s
+# Capture the full plan-then-run animation:
+# idle(2s) + plan(2.5s) + review(3s) + approve+queue(2.2s) + wait(1.5s) +
+# 4 issues × ~3s each(12s) + final(4s) = ~27s + buffer
+Sleep 32s
