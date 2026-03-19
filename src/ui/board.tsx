@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { useMemo } from "react";
 import { Column } from "./column.js";
 import type { KanbanCard } from "./state.js";
 
@@ -37,9 +38,9 @@ export function Board({
 	activeCardIndex = 0,
 	paused = false,
 }: BoardProps) {
-	const backlog = cards.filter((c) => c.column === "backlog");
-	const inProgress = cards.filter((c) => c.column === "in_progress");
-	const done = cards.filter((c) => c.column === "done");
+	const backlog = useMemo(() => cards.filter((c) => c.column === "backlog"), [cards]);
+	const inProgress = useMemo(() => cards.filter((c) => c.column === "in_progress"), [cards]);
+	const done = useMemo(() => cards.filter((c) => c.column === "done"), [cards]);
 
 	if (isWatching) {
 		return (

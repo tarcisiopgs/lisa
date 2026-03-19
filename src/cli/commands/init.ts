@@ -3,16 +3,21 @@ import { defineCommand } from "citty";
 import pc from "picocolors";
 import { configExists, loadConfig } from "../../config.js";
 import { getCachedUpdateInfo } from "../../version.js";
+import { CliError } from "../error.js";
 import { runConfigWizard } from "../wizard.js";
 
 export const init = defineCommand({
-	meta: { name: "init", description: "Interactive setup wizard for .lisa/config.yaml" },
+	meta: {
+		name: "init",
+		description:
+			"Interactive setup wizard for .lisa/config.yaml\n\n  Examples:\n    lisa init                          Start fresh setup\n    lisa init                          Edit existing config (pre-fills values)",
+	},
 	async run() {
 		if (!process.stdin.isTTY) {
 			console.error(
 				pc.red("Interactive mode requires a TTY. Cannot run init in non-interactive environments."),
 			);
-			process.exit(1);
+			throw new CliError("Interactive mode requires a TTY.");
 		}
 
 		const updateInfo = getCachedUpdateInfo();

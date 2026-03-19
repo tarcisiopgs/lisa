@@ -9,6 +9,7 @@ import { resolveModels } from "../../loop/models.js";
 import * as logger from "../../output/logger.js";
 import { runWithFallback } from "../../providers/index.js";
 import { getContextPath, readContext } from "../../session/context-manager.js";
+import { CliError } from "../error.js";
 
 const refresh = defineCommand({
 	meta: { description: "Regenerate .lisa/context.md for all repos (or a specific one)" },
@@ -29,7 +30,7 @@ const refresh = defineCommand({
 			const repo = config.repos.find((r) => r.name === args.repo);
 			if (!repo) {
 				logger.error(`Repo "${args.repo}" not found in config.`);
-				process.exit(1);
+				throw new CliError(`Repo "${args.repo}" not found in config.`);
 			}
 			const absPath = resolve(workspace, repo.path);
 			const prompt = buildContextGenerationPrompt(absPath, getContextPath(absPath));

@@ -1,8 +1,16 @@
-process.on("uncaughtException", () => {
+import { CliError } from "./cli/error.js";
+
+process.on("uncaughtException", (err) => {
+	if (err instanceof CliError) {
+		process.exit(err.exitCode);
+	}
 	process.exit(1);
 });
 
-process.on("unhandledRejection", () => {
+process.on("unhandledRejection", (err) => {
+	if (err instanceof CliError) {
+		process.exit((err as CliError).exitCode);
+	}
 	process.exit(1);
 });
 

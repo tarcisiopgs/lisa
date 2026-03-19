@@ -4,9 +4,11 @@ import pc from "picocolors";
 import type { UpdateInfo } from "../version.js";
 
 export type OutputMode = "default" | "tui";
+export type LogLevel = "quiet" | "default" | "verbose";
 
 let logFilePath: string | null = null;
 let outputMode: OutputMode = "default";
+let logLevel: LogLevel = "default";
 
 export function setOutputMode(mode: OutputMode): void {
 	outputMode = mode;
@@ -16,8 +18,16 @@ export function getOutputMode(): OutputMode {
 	return outputMode;
 }
 
+export function setLogLevel(level: LogLevel): void {
+	logLevel = level;
+}
+
+export function getLogLevel(): LogLevel {
+	return logLevel;
+}
+
 function shouldPrintToConsole(): boolean {
-	return outputMode !== "tui";
+	return outputMode !== "tui" && logLevel !== "quiet";
 }
 
 export function initLogFile(path: string): void {
@@ -67,12 +77,20 @@ export function ok(message: string): void {
 	writeToFile("ok", message);
 }
 
+export function verbose(message: string): void {
+	if (logLevel !== "verbose") return;
+	if (shouldPrintToConsole()) {
+		console.error(`${pc.dim("[lisa]")} ${pc.dim(timestamp())} ${pc.dim(message)}`);
+	}
+	writeToFile("verbose", message);
+}
+
 export function divider(session: number): void {
 	log(`${"━".repeat(3)} Session ${session} ${"━".repeat(3)}`);
 }
 
 export function banner(): void {
-	if (outputMode !== "default") return;
+	if (outputMode !== "default" || logLevel === "quiet") return;
 
 	const title = " lisa ♪  autonomous issue resolver ";
 	const border = "─".repeat(title.length);
@@ -83,7 +101,7 @@ export function banner(): void {
 }
 
 export function updateNotice(update: UpdateInfo): void {
-	if (outputMode !== "default") return;
+	if (outputMode !== "default" || logLevel === "quiet") return;
 
 	const msg = `Update available ${pc.dim(update.currentVersion)} → ${pc.green(pc.bold(update.latestVersion))}`;
 	const cmd = `Run ${pc.cyan("npm i -g @tarcisiopgs/lisa")} to update`;

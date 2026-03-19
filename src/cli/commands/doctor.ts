@@ -5,6 +5,7 @@ import { configExists, loadConfig, validateConfig } from "../../config.js";
 import { isGhCliAvailable } from "../../git/github.js";
 import { createProvider } from "../../providers/index.js";
 import { getMissingEnvVars } from "../detection.js";
+import { CliError } from "../error.js";
 
 interface CheckResult {
 	passed: boolean;
@@ -13,7 +14,11 @@ interface CheckResult {
 }
 
 export const doctor = defineCommand({
-	meta: { name: "doctor", description: "Check your setup for common issues" },
+	meta: {
+		name: "doctor",
+		description:
+			"Check your setup for common issues\n\n  Examples:\n    lisa doctor                        Run all diagnostic checks",
+	},
 	async run() {
 		console.error("\nLisa Doctor\n");
 
@@ -156,7 +161,7 @@ export const doctor = defineCommand({
 		console.error("");
 		if (hasFailure) {
 			console.error("Some checks failed.\n");
-			process.exit(1);
+			throw new CliError("Some checks failed.");
 		} else {
 			console.error("All checks passed!\n");
 		}

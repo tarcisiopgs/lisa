@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 import { findConfigDir, getRemoveLabel, loadConfig } from "../../config.js";
 import { createSource } from "../../sources/index.js";
 import type { Issue } from "../../types/index.js";
+import { CliError } from "../error.js";
 
 // Rate limit guard: prevents rapid-fire calls to the issue tracker API when
 // the provider invokes multiple `lisa issue` commands in quick succession.
@@ -19,7 +20,7 @@ const issueGet = defineCommand({
 		const configDir = findConfigDir();
 		if (!configDir) {
 			console.error(JSON.stringify({ error: "No .lisa/config.yaml found in directory tree" }));
-			process.exit(1);
+			throw new CliError("No .lisa/config.yaml found in directory tree");
 		}
 		const config = loadConfig(configDir);
 		const source = createSource(config.source);
@@ -28,11 +29,11 @@ const issueGet = defineCommand({
 			issue = await source.fetchIssueById(args.id);
 		} catch (err) {
 			console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-			process.exit(1);
+			throw new CliError(err instanceof Error ? err.message : String(err));
 		}
 		if (!issue) {
 			console.error(JSON.stringify({ error: `Issue ${args.id} not found` }));
-			process.exit(1);
+			throw new CliError(`Issue ${args.id} not found`);
 		}
 		console.log(JSON.stringify(issue));
 	},
@@ -49,7 +50,7 @@ const issueDone = defineCommand({
 		const configDir = findConfigDir();
 		if (!configDir) {
 			console.error(JSON.stringify({ error: "No .lisa/config.yaml found in directory tree" }));
-			process.exit(1);
+			throw new CliError("No .lisa/config.yaml found in directory tree");
 		}
 		const config = loadConfig(configDir);
 		const source = createSource(config.source);
@@ -68,7 +69,7 @@ const issueDone = defineCommand({
 					issueId: args.id,
 				}),
 			);
-			process.exit(1);
+			throw new CliError(err instanceof Error ? err.message : String(err));
 		}
 	},
 });
