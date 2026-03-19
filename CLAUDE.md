@@ -70,9 +70,17 @@ src/
 │       ├── config.ts     # `lisa config` — show/set/edit config
 │       ├── context.ts    # `lisa context refresh` — regenerate project context
 │       ├── status.ts     # `lisa status` — session stats (supports --json)
+│       ├── plan.ts       # `lisa plan` — AI-powered issue decomposition
 │       ├── doctor.ts     # `lisa doctor` — diagnose setup (config, provider, env, git)
 │       ├── issue.ts      # `lisa issue get/done` — worktree helper commands
 │       └── feedback.ts   # `lisa feedback` — inject PR review into guardrails
+├── plan/                 # AI-powered issue planning and decomposition
+│   ├── index.ts          # Orchestrator: prompt → AI → parse → wizard → create
+│   ├── prompt.ts         # Planning-specific prompt builder (codebase context)
+│   ├── parser.ts         # Parse AI JSON response into PlannedIssue[]
+│   ├── wizard.ts         # Interactive review wizard (clack + $EDITOR)
+│   ├── create.ts         # Batch issue creation in source with dependency linking
+│   └── persistence.ts    # Save/load plan to .lisa/plans/{timestamp}.json
 ├── loop/                 # Main agent loop orchestration
 │   ├── index.ts          # Loop entry point, orchestration
 │   ├── sequential.ts     # Sequential issue processing
