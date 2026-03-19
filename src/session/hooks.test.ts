@@ -34,6 +34,12 @@ describe("runHook", () => {
 		// /tmp may resolve to /private/tmp on macOS
 		expect(result.output.trim()).toMatch(/\/tmp$/);
 	});
+
+	it("returns failure with timeout message when hook exceeds timeout", async () => {
+		const result = await runHook("before_run", "sleep 10", process.cwd(), {}, 200);
+		expect(result.success).toBe(false);
+		expect(result.output).toContain("timed out");
+	}, 10_000);
 });
 
 describe("executeHook", () => {

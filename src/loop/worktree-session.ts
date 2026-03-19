@@ -49,9 +49,9 @@ import {
 import { runWorktreeMultiRepoSession } from "./multi-repo-session.js";
 import type { SessionResult } from "./result.js";
 
-export async function findWorktreeForBranch(
+async function findWorktree(
 	repoRoot: string,
-	branch: string,
+	predicate: (branchLine: string) => boolean,
 ): Promise<string | null> {
 	try {
 		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
@@ -61,14 +61,22 @@ export async function findWorktreeForBranch(
 			if (line.startsWith("worktree ")) {
 				currentPath = line.slice("worktree ".length);
 			}
-			if (line.startsWith("branch ") && line.endsWith(`/${branch}`)) {
+			if (line.startsWith("branch ") && predicate(line)) {
 				return currentPath;
 			}
 		}
 		return null;
 	} catch {
+		/* non-fatal: git operation may fail */
 		return null;
 	}
+}
+
+export async function findWorktreeForBranch(
+	repoRoot: string,
+	branch: string,
+): Promise<string | null> {
+	return findWorktree(repoRoot, (line) => line.endsWith(`/${branch}`));
 }
 
 /**
@@ -81,22 +89,7 @@ export async function findWorktreeByIssueId(
 ): Promise<string | null> {
 	if (!issueId) return null;
 	const needle = issueId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-	try {
-		const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
-		const lines = stdout.split("\n");
-		let currentPath: string | null = null;
-		for (const line of lines) {
-			if (line.startsWith("worktree ")) {
-				currentPath = line.slice("worktree ".length);
-			}
-			if (line.startsWith("branch ") && line.toLowerCase().includes(needle)) {
-				return currentPath;
-			}
-		}
-		return null;
-	} catch {
-		return null;
-	}
+	return findWorktree(repoRoot, (line) => line.toLowerCase().includes(needle));
 }
 
 export async function cleanupWorktree(repoRoot: string, worktreePath: string): Promise<void> {

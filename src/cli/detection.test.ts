@@ -3,7 +3,16 @@ import type { Dirent } from "node:fs";
 import { existsSync, readdirSync } from "node:fs";
 import * as clack from "@clack/prompts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { detectGitRepos, detectPlatformFromRemoteUrl, fetchOpenCodeModels } from "./detection.js";
+import {
+	detectDefaultBranch,
+	detectGitRepos,
+	detectPlatformFromRemoteUrl,
+	fetchCopilotModels,
+	fetchOpenCodeModels,
+	getGitRepoName,
+	getVersion,
+	verifyPlatformCredential,
+} from "./detection.js";
 
 vi.mock("node:child_process", () => ({ execSync: vi.fn() }));
 
@@ -15,9 +24,13 @@ vi.mock("node:fs", () => ({
 
 vi.mock("@clack/prompts", () => ({
 	multiselect: vi.fn(),
-	log: { info: vi.fn() },
+	log: { info: vi.fn(), warning: vi.fn() },
 	isCancel: vi.fn(() => false),
 	select: vi.fn(),
+}));
+
+vi.mock("../git/github.js", () => ({
+	isGhCliAvailable: vi.fn().mockResolvedValue(true),
 }));
 
 describe("fetchOpenCodeModels", () => {
@@ -247,5 +260,98 @@ describe("detectGitRepos", () => {
 		const result = await detectGitRepos(existingRepos);
 
 		expect(result[0]).toMatchObject({ path: "./repo-a", match: "AUTH:", base_branch: "develop" });
+	});
+});
+
+describe("getVersion", () => {
+	it("returns a version string", () => {
+		const version = getVersion();
+		expect(typeof version).toBe("string");
+	});
+});
+
+describe("fetchCopilotModels", () => {
+	it("returns preferred models list", () => {
+		const models = fetchCopilotModels();
+		expect(models).toContain("claude-haiku-4.5");
+		expect(models.length).toBeGreaterThan(0);
+	});
+});
+
+describe("detectDefaultBranch", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it("returns detected branch from git", () => {
+		vi.mocked(execSync).mockReturnValue("origin/develop\n");
+		expect(detectDefaultBranch("/some/path")).toBe("develop");
+	});
+
+	it("returns main when git fails", () => {
+		vi.mocked(execSync).mockImplementation(() => {
+			throw new Error("fatal: no remote");
+		});
+		expect(detectDefaultBranch("/some/path")).toBe("main");
+	});
+});
+
+describe("getGitRepoName", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it("extracts repo name from HTTPS remote URL", () => {
+		vi.mocked(execSync).mockReturnValue("https://github.com/org/my-repo.git\n");
+		expect(getGitRepoName("/some/path")).toBe("my-repo");
+	});
+
+	it("extracts repo name from SSH remote URL", () => {
+		vi.mocked(execSync).mockReturnValue("git@github.com:org/my-repo.git\n");
+		expect(getGitRepoName("/some/path")).toBe("my-repo");
+	});
+
+	it("returns null when git fails", () => {
+		vi.mocked(execSync).mockImplementation(() => {
+			throw new Error("fatal");
+		});
+		expect(getGitRepoName("/some/path")).toBeNull();
+	});
+});
+
+describe("verifyPlatformCredential", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it("warns when gh CLI is not available for cli platform", async () => {
+		const { isGhCliAvailable } = await import("../git/github.js");
+		vi.mocked(isGhCliAvailable).mockResolvedValue(false);
+		await verifyPlatformCredential("cli");
+		expect(clack.log.warning).toHaveBeenCalled();
+	});
+
+	it("warns when GITHUB_TOKEN is missing for token platform", async () => {
+		const origToken = process.env.GITHUB_TOKEN;
+		delete process.env.GITHUB_TOKEN;
+		await verifyPlatformCredential("token");
+		expect(clack.log.warning).toHaveBeenCalled();
+		if (origToken) process.env.GITHUB_TOKEN = origToken;
+	});
+
+	it("warns when GITLAB_TOKEN is missing for gitlab platform", async () => {
+		const origToken = process.env.GITLAB_TOKEN;
+		delete process.env.GITLAB_TOKEN;
+		await verifyPlatformCredential("gitlab");
+		expect(clack.log.warning).toHaveBeenCalled();
+		if (origToken) process.env.GITLAB_TOKEN = origToken;
+	});
+
+	it("warns when BITBUCKET_TOKEN is missing for bitbucket platform", async () => {
+		const origToken = process.env.BITBUCKET_TOKEN;
+		delete process.env.BITBUCKET_TOKEN;
+		await verifyPlatformCredential("bitbucket");
+		expect(clack.log.warning).toHaveBeenCalled();
+		if (origToken) process.env.BITBUCKET_TOKEN = origToken;
 	});
 });

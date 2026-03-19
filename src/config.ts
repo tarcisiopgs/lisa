@@ -96,6 +96,18 @@ export function validateConfig(config: LisaConfig): void {
 		});
 		throw new ConfigValidationError(`Invalid configuration:\n${issues.join("\n")}`);
 	}
+
+	// Validate models if provider_options has models configured
+	if (config.provider && config.provider_options?.[config.provider]?.models) {
+		const models = config.provider_options[config.provider]?.models ?? [];
+		for (const model of models) {
+			if (typeof model !== "string" || !model.trim()) {
+				throw new ConfigValidationError(
+					`Invalid configuration:\n  provider_options.${config.provider}.models contains an empty or non-string value`,
+				);
+			}
+		}
+	}
 }
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {

@@ -41,6 +41,9 @@ import {
 	emptyCommitFailure,
 	failureResult,
 	hookFailure,
+	resolveBaseBranch,
+	resolveProviderOptions,
+	sleep,
 } from "./helpers.js";
 import { reconciliationSet, userKilledSet, userSkippedSet } from "./state.js";
 
@@ -313,5 +316,50 @@ describe("buildRunOptions", () => {
 		userKilledSet.delete("ISSUE-1");
 		userSkippedSet.add("ISSUE-1");
 		expect(opts.shouldAbort?.()).toBe(true);
+	});
+});
+
+describe("resolveProviderOptions", () => {
+	it("returns undefined when no provider_options configured", () => {
+		const config = makeConfig();
+		expect(resolveProviderOptions(config)).toBeUndefined();
+	});
+
+	it("returns undefined when provider has no effort setting", () => {
+		const config = makeConfig({
+			provider_options: { claude: {} },
+		} as Partial<LisaConfig>);
+		expect(resolveProviderOptions(config)).toBeUndefined();
+	});
+
+	it("returns effort when configured for the active provider", () => {
+		const config = makeConfig({
+			provider_options: { claude: { effort: "low" } },
+		} as Partial<LisaConfig>);
+		expect(resolveProviderOptions(config)).toEqual({ effort: "low" });
+	});
+});
+
+describe("resolveBaseBranch", () => {
+	it("returns config.base_branch when no repos match", () => {
+		const config = makeConfig({ base_branch: "main", repos: [] });
+		expect(resolveBaseBranch(config, "/some/path")).toBe("main");
+	});
+
+	it("returns repo-specific base_branch when repo path matches", () => {
+		const config = makeConfig({
+			workspace: "/workspace",
+			base_branch: "main",
+			repos: [{ name: "app", path: "./app", match: "", base_branch: "develop" }],
+		});
+		expect(resolveBaseBranch(config, resolve("/workspace", "./app"))).toBe("develop");
+	});
+});
+
+describe("sleep", () => {
+	it("resolves after the specified delay", async () => {
+		const start = Date.now();
+		await sleep(50);
+		expect(Date.now() - start).toBeGreaterThanOrEqual(40);
 	});
 });

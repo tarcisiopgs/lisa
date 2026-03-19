@@ -10,9 +10,16 @@ import { isCompleteProviderExhaustion } from "../providers/index.js";
 import { loadPrUrls } from "../session/pr-cache.js";
 import type { LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
-import { validateIssueSpec } from "../validation.js";
 import { runBranchSession } from "./branch-session.js";
-import { checkoutBaseBranches, resolveBaseBranch, sleep, waitIfPaused } from "./helpers.js";
+import {
+	checkIssueSpec,
+	checkoutBaseBranches,
+	moveToInProgress,
+	resolveBaseBranch,
+	revertIssueStatus,
+	sleep,
+	waitIfPaused,
+} from "./helpers.js";
 import type { LoopOptions } from "./models.js";
 import { WATCH_POLL_INTERVAL_MS } from "./models.js";
 import { injectRejectedPrFeedback } from "./recovery.js";
@@ -163,17 +170,7 @@ export async function runSequentialLoop(
 		}
 
 		// Validate minimum issue spec before accepting
-		const specResult = validateIssueSpec(issue, config.validation);
-		if (!specResult.valid) {
-			logger.warn(`Issue ${issue.id}: ${specResult.reason} — proceeding with incomplete spec`);
-			try {
-				await source.addLabel?.(issue.id, "needs-spec");
-				logger.ok(`Added label "needs-spec" to ${issue.id}`);
-			} catch (err) {
-				logger.warn(`Failed to add label "needs-spec": ${formatError(err)}`);
-			}
-			issue.specWarning = specResult.reason;
-		}
+		await checkIssueSpec(issue, config, source);
 
 		// Resolve dependency if the issue has completed blockers with open PRs
 		if (issue.completedBlockerIds && issue.completedBlockerIds.length > 0) {
@@ -195,14 +192,8 @@ export async function runSequentialLoop(
 
 		// Move issue to in-progress status before starting work
 		const previousStatus = config.source_config.pick_from;
-		try {
-			const inProgress = config.source_config.in_progress;
-			kanbanEmitter.emit("issue:started", issue.id);
-			await source.updateStatus(issue.id, inProgress, config.source_config);
-			logger.ok(`Moved ${issue.id} to "${inProgress}"`);
-		} catch (err) {
-			logger.warn(`Failed to update status: ${formatError(err)}`);
-		}
+		kanbanEmitter.emit("issue:started", issue.id);
+		await moveToInProgress(issue, source, config);
 
 		// Register active issue for signal handler cleanup
 		activeCleanups.set(issue.id, { previousStatus, source, sourceConfig: config.source_config });
@@ -216,12 +207,7 @@ export async function runSequentialLoop(
 		} catch (err) {
 			stopSpinner();
 			logger.error(`Unhandled error in session for ${issue.id}: ${formatError(err)}`);
-			try {
-				await source.updateStatus(issue.id, previousStatus, config.source_config);
-				logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
-			} catch (revertErr) {
-				logger.error(`Failed to revert status: ${formatError(revertErr)}`);
-			}
+			await revertIssueStatus(issue, source, config);
 			activeCleanups.delete(issue.id);
 			if (config.bell !== false) notify(2);
 			if (opts.once) break;

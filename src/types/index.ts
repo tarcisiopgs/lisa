@@ -18,6 +18,17 @@ export type ProviderName =
 	| "codex";
 export type WorkflowMode = "worktree" | "branch";
 
+export interface ProviderOptions {
+	/** Single model override (legacy, prefer models[]) */
+	model?: string;
+	/** Ordered list of models to try (first = primary, rest = fallbacks) */
+	models?: string[];
+	/** Claude-specific: reasoning effort level */
+	effort?: string;
+	/** Goose-specific: underlying LLM provider (e.g. "gemini-cli") */
+	goose_provider?: string;
+}
+
 export interface RepoConfig {
 	name: string;
 	path: string;
@@ -94,12 +105,7 @@ export interface ReconciliationConfig {
 
 export interface LisaConfig {
 	provider: ProviderName;
-	provider_options?: Partial<
-		Record<
-			ProviderName,
-			{ model?: string; models?: string[]; goose_provider?: string; effort?: string }
-		>
-	>;
+	provider_options?: Partial<Record<ProviderName, ProviderOptions>>;
 	bell?: boolean;
 	source: SourceName;
 	source_config: SourceConfig;

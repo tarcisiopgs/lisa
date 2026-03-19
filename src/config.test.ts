@@ -808,6 +808,22 @@ describe("validateConfig", () => {
 		).toThrow(ConfigValidationError);
 	});
 
+	it("throws ConfigValidationError for empty model name in models array", () => {
+		const cfg = makeValidConfig({
+			provider_options: { claude: { models: ["claude-sonnet-4-6", ""] } },
+		} as Partial<LisaConfig>);
+		expect(() => validateConfig(cfg)).toThrow(ConfigValidationError);
+	});
+
+	it("does not throw for valid models array", () => {
+		const cfg = makeValidConfig({
+			provider_options: {
+				claude: { models: ["claude-sonnet-4-6", "claude-opus-4-6"] },
+			},
+		} as Partial<LisaConfig>);
+		expect(() => validateConfig(cfg)).not.toThrow();
+	});
+
 	it("error message includes the valid options", () => {
 		try {
 			validateConfig(makeValidConfig({ provider: "bogus" as LisaConfig["provider"] }));

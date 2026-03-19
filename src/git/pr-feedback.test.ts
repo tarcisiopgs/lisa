@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrFeedback } from "./pr-feedback.js";
-import { formatPrFeedbackEntry, parsePrUrl } from "./pr-feedback.js";
+import { fetchPrFeedback, formatPrFeedbackEntry, parsePrUrl } from "./pr-feedback.js";
+
+vi.mock("execa", () => ({
+	execa: vi.fn(),
+}));
 
 describe("parsePrUrl", () => {
 	it("parses a valid HTTPS PR URL", () => {
@@ -151,5 +155,84 @@ describe("formatPrFeedbackEntry", () => {
 	it("starts with the ## header (no leading newline)", () => {
 		const entry = formatPrFeedbackEntry(baseFeedback, "INT-100", "2026-02-27");
 		expect(entry.startsWith("## PR Feedback")).toBe(true);
+	});
+});
+
+describe("fetchPrFeedback", () => {
+	it("throws on invalid URL", async () => {
+		await expect(fetchPrFeedback("https://example.com")).rejects.toThrow("Invalid GitHub PR URL");
+	});
+
+	it("returns feedback with merged state when mergedAt is set", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa)
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify({
+					title: "feat: test",
+					state: "MERGED",
+					mergedAt: "2026-01-01T00:00:00Z",
+				}),
+			} as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never);
+
+		const result = await fetchPrFeedback("https://github.com/owner/repo/pull/1");
+		expect(result.state).toBe("merged");
+		expect(result.title).toBe("feat: test");
+	});
+
+	it("returns feedback with closed state when state is CLOSED and not merged", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa)
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify({ title: "fix: test", state: "CLOSED", mergedAt: null }),
+			} as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never);
+
+		const result = await fetchPrFeedback("https://github.com/owner/repo/pull/2");
+		expect(result.state).toBe("closed");
+	});
+
+	it("returns feedback with open state otherwise", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa)
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify({ title: "feat: wip", state: "OPEN", mergedAt: null }),
+			} as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never);
+
+		const result = await fetchPrFeedback("https://github.com/owner/repo/pull/3");
+		expect(result.state).toBe("open");
+	});
+
+	it("filters out reviews with empty body", async () => {
+		const { execa } = await import("execa");
+		vi.mocked(execa)
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify({ title: "feat: test", state: "OPEN", mergedAt: null }),
+			} as never)
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify([
+					{
+						user: { login: "a" },
+						state: "APPROVED",
+						body: "",
+						submitted_at: "2026-01-01",
+					},
+					{
+						user: { login: "b" },
+						state: "CHANGES_REQUESTED",
+						body: "fix this",
+						submitted_at: "2026-01-01",
+					},
+				]),
+			} as never)
+			.mockResolvedValueOnce({ stdout: "[]" } as never);
+
+		const result = await fetchPrFeedback("https://github.com/owner/repo/pull/4");
+		expect(result.reviews).toHaveLength(1);
+		expect(result.reviews[0]?.author).toBe("b");
 	});
 });
