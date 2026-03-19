@@ -164,3 +164,183 @@ describe("setLogLevel", () => {
 		expect(content).toContain("verbose file message");
 	});
 });
+
+describe("getOutputMode / getLogLevel", () => {
+	afterEach(() => {
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+	});
+
+	it("returns the current output mode", () => {
+		expect(logger.getOutputMode()).toBe("default");
+		logger.setOutputMode("tui");
+		expect(logger.getOutputMode()).toBe("tui");
+	});
+
+	it("returns the current log level", () => {
+		expect(logger.getLogLevel()).toBe("default");
+		logger.setLogLevel("quiet");
+		expect(logger.getLogLevel()).toBe("quiet");
+	});
+});
+
+describe("warn / error / ok", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-log-funcs-"));
+		logger.initLogFile(join(tmpDir, "test.log"));
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+	});
+
+	afterEach(() => {
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("warn prints to stderr and writes to file", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.warn("warn message");
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+		const content = readFileSync(join(tmpDir, "test.log"), "utf-8");
+		expect(content).toContain("warn message");
+	});
+
+	it("error prints to stderr and writes to file", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.error("error message");
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+		const content = readFileSync(join(tmpDir, "test.log"), "utf-8");
+		expect(content).toContain("error message");
+	});
+
+	it("ok prints to stderr and writes to file", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.ok("ok message");
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+		const content = readFileSync(join(tmpDir, "test.log"), "utf-8");
+		expect(content).toContain("ok message");
+	});
+});
+
+describe("banner", () => {
+	afterEach(() => {
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+	});
+
+	it("prints banner in default mode", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.banner();
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+
+	it("suppresses banner in tui mode", () => {
+		logger.setOutputMode("tui");
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.banner();
+			expect(consoleSpy).not.toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+});
+
+describe("updateNotice", () => {
+	afterEach(() => {
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+	});
+
+	it("prints update notice in default mode", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.updateNotice({
+				currentVersion: "1.0.0",
+				latestVersion: "2.0.0",
+				updateType: "major" as const,
+			});
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+
+	it("suppresses update notice in tui mode", () => {
+		logger.setOutputMode("tui");
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.updateNotice({
+				currentVersion: "1.0.0",
+				latestVersion: "2.0.0",
+				updateType: "major" as const,
+			});
+			expect(consoleSpy).not.toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+
+	it("suppresses update notice in quiet mode", () => {
+		logger.setLogLevel("quiet");
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.updateNotice({
+				currentVersion: "1.0.0",
+				latestVersion: "2.0.0",
+				updateType: "major" as const,
+			});
+			expect(consoleSpy).not.toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+});
+
+describe("divider", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-divider-"));
+		logger.initLogFile(join(tmpDir, "test.log"));
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+	});
+
+	afterEach(() => {
+		logger.setOutputMode("default");
+		logger.setLogLevel("default");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("writes session divider", () => {
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			logger.divider(1);
+			expect(consoleSpy).toHaveBeenCalled();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+		const content = readFileSync(join(tmpDir, "test.log"), "utf-8");
+		expect(content).toContain("Session 1");
+	});
+});

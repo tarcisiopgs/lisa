@@ -83,6 +83,81 @@ describe("concurrency flag parsing", () => {
 	});
 });
 
+describe("resolveModels — basic", () => {
+	function makeConfig(provider: ProviderName, models?: string[]): LisaConfig {
+		return {
+			provider,
+			provider_options: models ? { [provider]: { models } } : undefined,
+			source: "linear",
+			source_config: {
+				scope: "",
+				project: "",
+				label: "",
+				pick_from: "",
+				in_progress: "",
+				done: "",
+			},
+			platform: "cli",
+			workflow: "worktree",
+			workspace: ".",
+			base_branch: "main",
+			repos: [],
+			loop: { cooldown: 0, max_sessions: 0 },
+		} as LisaConfig;
+	}
+
+	it("returns single spec with no model when no models configured", () => {
+		const config = makeConfig("claude");
+		const models = resolveModels(config);
+		expect(models).toEqual([{ provider: "claude" }]);
+	});
+
+	it("returns single spec when models array is empty", () => {
+		const config = makeConfig("claude", []);
+		const models = resolveModels(config);
+		expect(models).toEqual([{ provider: "claude" }]);
+	});
+
+	it("warns when a model name matches a known provider name", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("claude", ["gemini"]);
+		resolveModels(config);
+		const warnCalls = warnSpy.mock.calls.flat().join(" ");
+		expect(warnCalls).toContain("looks like a provider name");
+		warnSpy.mockRestore();
+	});
+
+	it("does not warn when model matches own provider name", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("claude", ["claude"]);
+		resolveModels(config);
+		const warnCalls = warnSpy.mock.calls.flat().join(" ");
+		expect(warnCalls).not.toContain("looks like a provider name");
+		warnSpy.mockRestore();
+	});
+
+	it("forces auto model for cursor when no auto model present", () => {
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const config = makeConfig("cursor" as ProviderName, ["some-model"]);
+		const models = resolveModels(config);
+		expect(models).toEqual([{ provider: "cursor", model: "auto" }]);
+		warnSpy.mockRestore();
+	});
+
+	it("does not force auto for cursor when auto is already present", () => {
+		const config = makeConfig("cursor" as ProviderName, ["auto"]);
+		const models = resolveModels(config);
+		expect(models).toEqual([{ provider: "cursor", model: "auto" }]);
+	});
+
+	it("sets model to undefined when model name matches provider name", () => {
+		const config = makeConfig("claude", ["claude", "claude-sonnet-4-6"]);
+		const models = resolveModels(config);
+		expect(models[0]).toEqual({ provider: "claude", model: undefined });
+		expect(models[1]).toEqual({ provider: "claude", model: "claude-sonnet-4-6" });
+	});
+});
+
 describe("resolveModels — provider-prefixed model warning", () => {
 	function makeConfig(provider: ProviderName, models: string[]): LisaConfig {
 		return {

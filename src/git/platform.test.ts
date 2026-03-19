@@ -1,16 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
-import { appendPlatformAttribution, buildPrCreateInstruction } from "./platform.js";
+import type { ValidationResult } from "../types/index.js";
+import {
+	appendPlatformAttribution,
+	appendPlatformProofOfWork,
+	buildPrCreateInstruction,
+} from "./platform.js";
 
 vi.mock("./github.js", () => ({
 	appendPrAttribution: vi.fn().mockResolvedValue(undefined),
+	appendPrBody: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./gitlab.js", () => ({
 	appendMrAttribution: vi.fn().mockResolvedValue(undefined),
+	appendMrBody: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./bitbucket.js", () => ({
 	appendPrAttribution: vi.fn().mockResolvedValue(undefined),
+	appendPrBody: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("appendPlatformAttribution", () => {
@@ -102,5 +110,45 @@ describe("buildPrCreateInstruction", () => {
 	it("includes destination branch in Bitbucket instruction", () => {
 		const instruction = buildPrCreateInstruction("bitbucket", "develop");
 		expect(instruction).toContain("develop");
+	});
+});
+
+describe("appendPlatformProofOfWork", () => {
+	const results: ValidationResult[] = [
+		{ name: "pnpm test", success: true, output: "ok", duration: 100 },
+	];
+
+	it("routes to GitHub for 'cli' platform", async () => {
+		const { appendPrBody } = await import("./github.js");
+		await appendPlatformProofOfWork("https://github.com/org/repo/pull/1", results, "cli");
+		expect(appendPrBody).toHaveBeenCalled();
+	});
+
+	it("routes to GitLab for 'gitlab' platform", async () => {
+		const { appendMrBody } = await import("./gitlab.js");
+		await appendPlatformProofOfWork(
+			"https://gitlab.com/org/repo/-/merge_requests/1",
+			results,
+			"gitlab",
+		);
+		expect(appendMrBody).toHaveBeenCalled();
+	});
+
+	it("routes to Bitbucket for 'bitbucket' platform", async () => {
+		const { appendPrBody } = await import("./bitbucket.js");
+		await appendPlatformProofOfWork(
+			"https://bitbucket.org/ws/repo/pull-requests/1",
+			results,
+			"bitbucket",
+		);
+		expect(appendPrBody).toHaveBeenCalled();
+	});
+
+	it("does not throw when platform call fails", async () => {
+		const { appendPrBody } = await import("./github.js");
+		vi.mocked(appendPrBody).mockRejectedValueOnce(new Error("API error"));
+		await expect(
+			appendPlatformProofOfWork("https://github.com/org/repo/pull/1", results, "cli"),
+		).resolves.toBeUndefined();
 	});
 });

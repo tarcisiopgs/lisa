@@ -22,6 +22,7 @@ import type {
 	Source,
 	ValidationResult,
 } from "../types/index.js";
+import { validateIssueSpec } from "../validation.js";
 import type { SessionResult } from "./result.js";
 import {
 	activeProviderPids,
@@ -30,6 +31,63 @@ import {
 	userKilledSet,
 	userSkippedSet,
 } from "./state.js";
+
+// ── Shared issue processing helpers ─────────────────────────────────────
+
+/**
+ * Validate issue spec and add "needs-spec" label if validation fails.
+ * Returns true if the issue is valid (or validation is disabled), false otherwise.
+ * When false, the issue is annotated with `specWarning` but NOT skipped — callers
+ * decide control flow.
+ */
+export async function checkIssueSpec(
+	issue: Issue,
+	config: LisaConfig,
+	source: Source,
+): Promise<boolean> {
+	const specResult = validateIssueSpec(issue, config.validation);
+	if (!specResult.valid) {
+		logger.warn(`Issue ${issue.id}: ${specResult.reason} — proceeding with incomplete spec`);
+		try {
+			await source.addLabel?.(issue.id, "needs-spec");
+			logger.ok(`Added label "needs-spec" to ${issue.id}`);
+		} catch (err) {
+			logger.warn(`Failed to add label "needs-spec": ${formatError(err)}`);
+		}
+		issue.specWarning = specResult.reason;
+		return false;
+	}
+	return true;
+}
+
+/** Move an issue to the in_progress status. Logs on failure but does not throw. */
+export async function moveToInProgress(
+	issue: Issue,
+	source: Source,
+	config: LisaConfig,
+): Promise<void> {
+	try {
+		await source.updateStatus(issue.id, config.source_config.in_progress, config.source_config);
+		logger.ok(`Moved ${issue.id} to "${config.source_config.in_progress}"`);
+	} catch (err) {
+		logger.warn(`Failed to update status: ${formatError(err)}`);
+	}
+}
+
+/** Revert an issue back to its previous status (typically pick_from). Logs on failure. */
+export async function revertIssueStatus(
+	issue: Issue,
+	source: Source,
+	config: LisaConfig,
+): Promise<void> {
+	const previousStatus = config.source_config.pick_from;
+	try {
+		await source.updateStatus(issue.id, previousStatus, config.source_config);
+		logger.ok(`Reverted ${issue.id} to "${previousStatus}"`);
+	} catch (revertErr) {
+		logger.error(`Failed to revert status: ${formatError(revertErr)}`);
+	}
+}
 
 export function resolveProviderOptions(config: LisaConfig): { effort?: string } | undefined {
 	const opts = config.provider_options?.[config.provider];
