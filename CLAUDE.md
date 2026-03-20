@@ -301,3 +301,5 @@ This project is indexed by GitNexus as **cli** (767 symbols, 2026 relationships,
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+Always read and curate .claude/napkin.md at the start of every session. Apply its contents silently.
