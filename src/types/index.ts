@@ -224,6 +224,11 @@ export interface PlannedIssue {
 	repo?: string;
 }
 
+export interface ChatMessage {
+	role: "user" | "ai";
+	content: string;
+}
+
 export interface PlanResult {
 	goal: string;
 	sourceIssueId?: string;
@@ -231,6 +236,7 @@ export interface PlanResult {
 	createdAt: string;
 	status: "draft" | "approved" | "created";
 	createdIssueIds?: string[];
+	brainstormHistory?: ChatMessage[];
 }
 
 export interface Source {

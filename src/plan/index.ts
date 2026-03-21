@@ -4,6 +4,7 @@ import { CliError } from "../cli/error.js";
 import * as logger from "../output/logger.js";
 import { createSource } from "../sources/index.js";
 import type { LisaConfig, PlanResult } from "../types/index.js";
+import { runBrainstormingPhase } from "./brainstorm.js";
 import { createPlanIssues } from "./create.js";
 import { generatePlan } from "./generate.js";
 import { loadLatestPlan, savePlan } from "./persistence.js";
@@ -16,6 +17,7 @@ export interface RunPlanOptions {
 	continueLatest?: boolean;
 	jsonOutput?: boolean;
 	yes?: boolean;
+	noBrainstorm?: boolean;
 }
 
 export async function runPlan(opts: RunPlanOptions): Promise<void> {
@@ -51,16 +53,38 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		);
 	}
 
+	// Brainstorming phase (unless skipped)
+	let refinedGoal = goal;
+	let brainstormHistory: { role: "user" | "ai"; content: string }[] | undefined;
+
+	if (!opts.noBrainstorm && !opts.jsonOutput && !opts.yes) {
+		const brainstorm = await runBrainstormingPhase(goal, config);
+		refinedGoal = brainstorm.refinedGoal;
+		brainstormHistory = brainstorm.history.length > 0 ? brainstorm.history : undefined;
+
+		// Confirmation gate: verify understanding before generating
+		if (!opts.yes && brainstorm.summary !== goal) {
+			const confirmed = await clack.confirm({
+				message: "Proceed with this understanding?",
+			});
+			if (clack.isCancel(confirmed) || !confirmed) {
+				logger.log("Plan cancelled.");
+				return;
+			}
+		}
+	}
+
 	// Generate plan via AI
-	const issues = await generatePlan(goal, config, { parentDescription });
+	const issues = await generatePlan(refinedGoal, config, { parentDescription });
 
 	// Create plan result
 	const plan: PlanResult = {
-		goal,
+		goal: refinedGoal,
 		sourceIssueId: opts.issueId,
 		issues,
 		createdAt: new Date().toISOString(),
 		status: "draft",
+		brainstormHistory,
 	};
 
 	const planPath = savePlan(workspace, plan);

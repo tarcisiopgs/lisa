@@ -14,8 +14,6 @@ import { buildPlanningPrompt } from "./prompt.js";
 import { parseStructuredOutput } from "./structured-output.js";
 import { issueToMarkdown, markdownToIssue } from "./wizard.js";
 
-const MAX_PARSE_RETRIES = 2;
-
 /**
  * Register plan event listeners on the kanban emitter.
  * Called once when the TUI starts. Returns a cleanup function.

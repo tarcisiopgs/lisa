@@ -37,6 +37,11 @@ export const plan = defineCommand({
 			required: false,
 			description: "Skip confirmations (for scripts/CI)",
 		},
+		"no-brainstorm": {
+			type: "boolean",
+			required: false,
+			description: "Skip brainstorming phase, decompose directly",
+		},
 	},
 	async run({ args }) {
 		const configDir = findConfigDir();
@@ -53,6 +58,7 @@ export const plan = defineCommand({
 				continueLatest: !!args.continue,
 				jsonOutput: !!args.json,
 				yes: !!args.yes,
+				noBrainstorm: !!args["no-brainstorm"],
 			});
 		} catch (err) {
 			if (err instanceof CliError) throw err;
