@@ -263,6 +263,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 						: [],
 					max_retries: rawProofOfWork.max_retries,
 					timeout: rawProofOfWork.timeout,
+					block_on_failure: rawProofOfWork.block_on_failure,
 				}
 			: undefined,
 		reconciliation: rawReconciliation

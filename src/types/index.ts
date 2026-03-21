@@ -89,6 +89,7 @@ export interface ProofOfWorkConfig {
 	commands: ValidationCommand[];
 	max_retries?: number; // default: 2
 	timeout?: number; // ms per command, default: 120000
+	block_on_failure?: boolean; // default: false — if true, skip PR creation when validation fails
 }
 
 export interface ValidationResult {

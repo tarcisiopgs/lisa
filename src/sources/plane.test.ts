@@ -376,16 +376,16 @@ describe("PlaneSource", () => {
 			);
 		});
 
-		it("throws when label not found", async () => {
+		it("returns null when label not found (graceful degradation)", async () => {
 			global.fetch = mockFetchSequence([
 				ok(makePage([makeProject()])),
 				ok([makeState()]),
 				ok([makeLabel({ name: "wip" })]), // no 'ready' label
+				ok(makePage([])), // empty issues page
 			]);
 
-			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow(
-				'Plane label "ready" not found',
-			);
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
 		});
 
 		it("throws on API error", async () => {

@@ -160,7 +160,10 @@ export class ShortcutSource implements Source {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
 		const labelNames = normalizeLabels(config);
 		const primaryLabel = labelNames[0] ?? "";
-		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
+		const labelIdResults = await Promise.allSettled(labelNames.map((name) => resolveLabelId(name)));
+		const labelIds = labelIdResults
+			.filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		// Resolve all workflow states to determine "done" states
 		const workflows = await shortcutGet<ShortcutWorkflow[]>("/api/v3/workflows");
@@ -319,7 +322,10 @@ export class ShortcutSource implements Source {
 		const stateIds = await resolveAllWorkflowStateIds(config.pick_from);
 		const labelNames = normalizeLabels(config);
 		const primaryLabel = labelNames[0] ?? "";
-		const labelIds = await Promise.all(labelNames.map((name) => resolveLabelId(name)));
+		const labelIdResults = await Promise.allSettled(labelNames.map((name) => resolveLabelId(name)));
+		const labelIds = labelIdResults
+			.filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		// Search stories per workflow state (API only accepts singular workflow_state_id)
 		const seen = new Set<number>();

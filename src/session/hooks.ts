@@ -11,6 +11,36 @@ export interface HookResult {
 
 const DEFAULT_HOOK_TIMEOUT = 60_000;
 
+/** Env var patterns to exclude from hook processes to prevent secret leakage. */
+const SENSITIVE_ENV_PATTERNS = [
+	/^GITHUB_TOKEN$/,
+	/^GH_TOKEN$/,
+	/^GITLAB_TOKEN$/,
+	/^BITBUCKET_.*(TOKEN|PASSWORD|SECRET)/i,
+	/^LINEAR_API_KEY$/,
+	/^TRELLO_(API_KEY|TOKEN)$/,
+	/^PLANE_API_TOKEN$/,
+	/^SHORTCUT_API_TOKEN$/,
+	/^JIRA_(API_TOKEN|TOKEN)$/,
+	/^AWS_(SECRET|SESSION).*KEY/i,
+	/^ANTHROPIC_API_KEY$/,
+	/^OPENAI_API_KEY$/,
+	/^GOOGLE_API_KEY$/,
+	/^GEMINI_API_KEY$/,
+	/^NPM_TOKEN$/,
+	/^PYPI_TOKEN$/,
+];
+
+function sanitizeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (value !== undefined && !SENSITIVE_ENV_PATTERNS.some((p) => p.test(key))) {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
 /**
  * Runs a single lifecycle hook command in the given working directory.
  * Returns { success, output }. Rejects only on internal errors, not on
@@ -29,7 +59,7 @@ export function runHook(
 		const proc = spawn("sh", ["-c", command], {
 			cwd,
 			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env, ...env },
+			env: { ...sanitizeEnv(process.env), ...env },
 		});
 
 		let output = "";

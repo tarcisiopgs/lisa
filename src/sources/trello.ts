@@ -98,9 +98,12 @@ export class TrelloSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
@@ -162,9 +165,12 @@ export class TrelloSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
@@ -215,9 +221,12 @@ export class TrelloSource implements Source {
 
 		// Resolve label IDs
 		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const params = [
 			`idList=${list.id}`,

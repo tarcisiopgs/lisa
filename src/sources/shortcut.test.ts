@@ -238,26 +238,28 @@ describe("ShortcutSource", () => {
 			);
 		});
 
-		it("throws when label not found", async () => {
+		it("returns null when label not found (graceful degradation)", async () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel({ name: "other-label" })]),
+				ok([makeWorkflow()]), // workflow states fetch
+				ok([]), // empty stories
 			]);
 
-			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow(
-				'Shortcut label "lisa" not found',
-			);
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
 		});
 
-		it("skips archived labels when resolving", async () => {
+		it("returns null when archived labels skipped (graceful degradation)", async () => {
 			global.fetch = mockFetchSequence([
 				ok([makeWorkflow()]),
 				ok([makeLabel({ name: "lisa", archived: true })]),
+				ok([makeWorkflow()]), // workflow states fetch
+				ok([]), // empty stories
 			]);
 
-			await expect(source.fetchNextIssue(baseConfig)).rejects.toThrow(
-				'Shortcut label "lisa" not found',
-			);
+			const result = await source.fetchNextIssue(baseConfig);
+			expect(result).toBeNull();
 		});
 
 		it("throws on API error", async () => {

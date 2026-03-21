@@ -215,9 +215,12 @@ export class PlaneSource implements Source {
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
 		const labelNames = normalizeLabels(config);
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
@@ -363,9 +366,12 @@ export class PlaneSource implements Source {
 		const projectId = await resolveProjectId(workspaceSlug, config.project);
 		const stateId = await resolveStateId(workspaceSlug, projectId, config.pick_from);
 		const labelNames = normalizeLabels(config);
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const data = await planeGet<PlanePage<PlaneIssue>>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
@@ -431,9 +437,12 @@ export class PlaneSource implements Source {
 
 		// Resolve label IDs
 		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
-		const labelIds = await Promise.all(
+		const labelResults = await Promise.allSettled(
 			labelNames.map((name) => resolveLabelId(workspaceSlug, projectId, name)),
 		);
+		const labelIds = labelResults
+			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+			.map((r) => r.value);
 
 		const body: Record<string, unknown> = {
 			name: opts.title,
