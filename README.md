@@ -31,7 +31,7 @@ lisa         # start the agent loop
   Plan → Create issues → Fetch → Implement → Push → Open PR → Update board → Next
 ```
 
-Lisa starts and shows a Kanban board. If the queue is empty, press `n` to plan — describe a goal and the AI decomposes it into atomic issues, created directly in your tracker. Press `r` to start processing. Lisa picks the highest-priority labeled issue, moves it to "In Progress", sends a structured prompt to the AI agent, and monitors execution. The agent works in an isolated git worktree, implements the change, runs tests, and commits. Lisa pushes, opens a PR, moves the ticket to "In Review", and picks up the next one.
+Lisa starts and shows a Kanban board. If the queue is empty, press `n` to plan — describe a goal and the AI brainstorms with you (asking clarifying questions), presents its understanding for your confirmation, then decomposes the goal into atomic issues created directly in your tracker. You can review, edit, reorder, delete, or regenerate the plan with feedback before approving. Press `r` to start processing. Lisa picks the highest-priority labeled issue, moves it to "In Progress", sends a structured prompt to the AI agent, and monitors execution. The agent works in an isolated git worktree, implements the change, runs tests, and commits. Lisa pushes, opens a PR, moves the ticket to "In Review", and picks up the next one.
 
 If something fails — pre-push hooks, quota limits, stuck processes — Lisa handles it: retries with error context, falls back to the next model, or kills and moves on.
 
@@ -39,7 +39,8 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 
 - **7 issue trackers** — Linear, GitHub Issues, GitLab Issues, Jira, Trello, Plane, Shortcut
 - **8 AI agents** — Claude Code, Gemini CLI, GitHub Copilot CLI, Cursor Agent, Aider, Goose, OpenCode, Codex
-- **AI planning** — describe a goal, the AI decomposes it into issues with dependencies, created in your tracker
+- **AI planning** — describe a goal, the AI brainstorms with you, decomposes it into issues with dependencies, created in your tracker
+- **Language-aware** — detects your goal's language (pt/en/es) and generates issues in the same language
 - **Concurrent execution** — process multiple issues in parallel, each in its own worktree
 - **Multi-repo** — plans across repos, creates one PR per repo in the correct order
 - **Model fallback** — chain models; transient errors (429, quota, timeout) auto-switch to the next
@@ -90,9 +91,11 @@ lisa --watch                # poll for new issues after queue empties
 lisa -c 3                   # process 3 issues in parallel
 lisa --issue INT-42         # process a specific issue
 lisa --limit 5              # stop after 5 issues
-lisa plan "Add rate limiting" # decompose goal into issues via AI (CLI mode)
+lisa plan "Add rate limiting" # brainstorm + decompose goal into issues via AI
 lisa plan --issue EPIC-123  # decompose existing issue into sub-issues
 lisa plan --continue        # resume interrupted plan
+lisa plan --no-brainstorm "goal" # skip brainstorming, decompose directly
+lisa plan --yes "goal"      # skip confirmations (CI/scripts)
 lisa init                   # create .lisa/config.yaml interactively
 lisa status                 # show session stats
 lisa doctor                 # diagnose setup issues (config, provider, env, git)
@@ -214,6 +217,18 @@ lifecycle:
   mode: auto               # "auto", "skip" (default), "validate-only"
   timeout: 30
 
+proof_of_work:
+  enabled: true
+  block_on_failure: true   # skip PR when validation fails (default: false)
+  max_retries: 2           # retry agent on validation failure
+  commands:
+    - name: lint
+      run: pnpm run lint
+    - name: typecheck
+      run: pnpm run typecheck
+    - name: test
+      run: pnpm run test
+
 validation:
   require_acceptance_criteria: true
 ```
@@ -270,6 +285,8 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 | `d` | Delete issue |
 | `a` | Approve and create issues |
 | `Esc` | Cancel / back |
+
+In CLI mode, the plan wizard also offers **Regenerate with feedback** — describe what to change and the AI regenerates the entire plan incorporating your feedback.
 
 ## License
 
