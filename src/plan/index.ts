@@ -1,17 +1,12 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import * as clack from "@clack/prompts";
 import { CliError } from "../cli/error.js";
-import { resolveModels } from "../loop/models.js";
 import * as logger from "../output/logger.js";
-import { runWithFallback } from "../providers/index.js";
 import { createSource } from "../sources/index.js";
-import type { LisaConfig, PlannedIssue, PlanResult } from "../types/index.js";
+import type { LisaConfig, PlanResult } from "../types/index.js";
 import { createPlanIssues } from "./create.js";
-import { PlanParseError, parsePlanResponse } from "./parser.js";
+import { generatePlan } from "./generate.js";
 import { loadLatestPlan, savePlan } from "./persistence.js";
-import { buildPlanningPrompt } from "./prompt.js";
 import { runPlanWizard } from "./wizard.js";
 
 export interface RunPlanOptions {
@@ -21,8 +16,6 @@ export interface RunPlanOptions {
 	continueLatest?: boolean;
 	jsonOutput?: boolean;
 }
-
-const MAX_PARSE_RETRIES = 2;
 
 export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	const { config } = opts;
@@ -58,7 +51,7 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	}
 
 	// Generate plan via AI
-	const issues = await generatePlan(goal, config, parentDescription);
+	const issues = await generatePlan(goal, config, { parentDescription });
 
 	// Create plan result
 	const plan: PlanResult = {
@@ -77,63 +70,6 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	}
 
 	await reviewAndCreate(plan, planPath, opts);
-}
-
-async function generatePlan(
-	goal: string,
-	config: LisaConfig,
-	parentDescription?: string,
-): Promise<PlannedIssue[]> {
-	const prompt = buildPlanningPrompt(goal, config, parentDescription);
-
-	logger.log("Analyzing codebase and decomposing goal...");
-
-	const models = resolveModels(config);
-	const logDir = mkdtempSync(join(tmpdir(), "lisa-plan-"));
-	const logFile = join(logDir, "plan.log");
-
-	const result = await runWithFallback(models, prompt, {
-		logFile,
-		cwd: resolve(config.workspace),
-		sessionTimeout: 120,
-	});
-
-	if (!result.success) {
-		throw new CliError(`AI provider failed to generate plan: ${result.output.slice(0, 200)}`);
-	}
-
-	// Parse with retries
-	let lastError: PlanParseError | null = null;
-	for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
-		try {
-			if (attempt === 0) {
-				return parsePlanResponse(result.output);
-			}
-			// Retry: re-invoke provider with error feedback
-			const retryPrompt = `${prompt}\n\n## Previous Attempt Failed\n\nYour previous response could not be parsed: ${lastError!.message}\n\nPlease output ONLY valid JSON with the exact structure specified above.`;
-			const retryResult = await runWithFallback(models, retryPrompt, {
-				logFile,
-				cwd: resolve(config.workspace),
-				sessionTimeout: 120,
-			});
-			if (retryResult.success) {
-				return parsePlanResponse(retryResult.output);
-			}
-		} catch (err) {
-			if (err instanceof PlanParseError) {
-				lastError = err;
-				if (attempt < MAX_PARSE_RETRIES) {
-					logger.warn(`Parse attempt ${attempt + 1} failed: ${err.message}. Retrying...`);
-				}
-			} else {
-				throw err;
-			}
-		}
-	}
-
-	throw new CliError(
-		`Failed to parse AI response after ${MAX_PARSE_RETRIES + 1} attempts: ${lastError?.message}`,
-	);
 }
 
 async function reviewAndCreate(

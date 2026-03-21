@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as clack from "@clack/prompts";
 import pc from "picocolors";
+import * as logger from "../output/logger.js";
 import type { PlannedIssue, PlanResult } from "../types/index.js";
+import { generatePlan } from "./generate.js";
 import type { RunPlanOptions } from "./index.js";
 import { savePlan } from "./persistence.js";
 
@@ -29,6 +31,10 @@ export async function runPlanWizard(
 				{ value: "edit", label: `${pc.yellow("Edit")} — edit an issue in $EDITOR` },
 				{ value: "delete", label: `${pc.red("Delete")} — remove an issue` },
 				{ value: "reorder", label: `${pc.cyan("Reorder")} — change execution order` },
+				{
+					value: "regenerate",
+					label: `${pc.magenta("Regenerate")} — regenerate plan with feedback`,
+				},
 				{ value: "cancel", label: `${pc.gray("Cancel")} — save and exit` },
 			],
 		});
@@ -58,6 +64,14 @@ export async function runPlanWizard(
 		if (action === "reorder") {
 			await reorderIssues(plan, workspace);
 			savePlan(workspace, plan);
+		}
+
+		if (action === "regenerate") {
+			const regenerated = await regeneratePlan(plan, opts);
+			if (regenerated) {
+				plan.issues = regenerated;
+				savePlan(workspace, plan);
+			}
 		}
 	}
 }
@@ -197,6 +211,35 @@ async function reorderIssues(plan: PlanResult, _workspace: string): Promise<void
 	}
 
 	clack.log.success("Issues reordered.");
+}
+
+async function regeneratePlan(
+	plan: PlanResult,
+	opts: RunPlanOptions,
+): Promise<PlannedIssue[] | null> {
+	const feedback = await clack.text({
+		message: "What would you like to change?",
+		placeholder: 'e.g., "Group into max 3 issues" or "Add tests for each issue"',
+		validate: (v) => (!v?.trim() ? "Please describe what to change" : undefined),
+	});
+
+	if (clack.isCancel(feedback)) return null;
+
+	const spinner = clack.spinner();
+	spinner.start("Regenerating plan...");
+
+	try {
+		const issues = await generatePlan(plan.goal, opts.config, {
+			feedback: feedback as string,
+			previousTitles: plan.issues.map((i) => i.title),
+		});
+		spinner.stop("Plan regenerated.");
+		return issues;
+	} catch (err) {
+		spinner.stop("Regeneration failed.");
+		logger.error(`Failed to regenerate: ${err instanceof Error ? err.message : String(err)}`);
+		return null;
+	}
 }
 
 export function issueToMarkdown(issue: PlannedIssue): string {
