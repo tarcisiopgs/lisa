@@ -1,17 +1,13 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import * as clack from "@clack/prompts";
 import { CliError } from "../cli/error.js";
-import { resolveModels } from "../loop/models.js";
 import * as logger from "../output/logger.js";
-import { runWithFallback } from "../providers/index.js";
 import { createSource } from "../sources/index.js";
-import type { LisaConfig, PlannedIssue, PlanResult } from "../types/index.js";
+import type { LisaConfig, PlanResult } from "../types/index.js";
+import { runBrainstormingPhase } from "./brainstorm.js";
 import { createPlanIssues } from "./create.js";
-import { PlanParseError, parsePlanResponse } from "./parser.js";
+import { generatePlan } from "./generate.js";
 import { loadLatestPlan, savePlan } from "./persistence.js";
-import { buildPlanningPrompt } from "./prompt.js";
 import { runPlanWizard } from "./wizard.js";
 
 export interface RunPlanOptions {
@@ -20,9 +16,9 @@ export interface RunPlanOptions {
 	issueId?: string;
 	continueLatest?: boolean;
 	jsonOutput?: boolean;
+	yes?: boolean;
+	noBrainstorm?: boolean;
 }
-
-const MAX_PARSE_RETRIES = 2;
 
 export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	const { config } = opts;
@@ -57,16 +53,38 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		);
 	}
 
+	// Brainstorming phase (unless skipped)
+	let refinedGoal = goal;
+	let brainstormHistory: { role: "user" | "ai"; content: string }[] | undefined;
+
+	if (!opts.noBrainstorm && !opts.jsonOutput && !opts.yes) {
+		const brainstorm = await runBrainstormingPhase(goal, config);
+		refinedGoal = brainstorm.refinedGoal;
+		brainstormHistory = brainstorm.history.length > 0 ? brainstorm.history : undefined;
+
+		// Confirmation gate: verify understanding before generating
+		if (!opts.yes && brainstorm.summary !== goal) {
+			const confirmed = await clack.confirm({
+				message: "Proceed with this understanding?",
+			});
+			if (clack.isCancel(confirmed) || !confirmed) {
+				logger.log("Plan cancelled.");
+				return;
+			}
+		}
+	}
+
 	// Generate plan via AI
-	const issues = await generatePlan(goal, config, parentDescription);
+	const issues = await generatePlan(refinedGoal, config, { parentDescription });
 
 	// Create plan result
 	const plan: PlanResult = {
-		goal,
+		goal: refinedGoal,
 		sourceIssueId: opts.issueId,
 		issues,
 		createdAt: new Date().toISOString(),
 		status: "draft",
+		brainstormHistory,
 	};
 
 	const planPath = savePlan(workspace, plan);
@@ -77,63 +95,6 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	}
 
 	await reviewAndCreate(plan, planPath, opts);
-}
-
-async function generatePlan(
-	goal: string,
-	config: LisaConfig,
-	parentDescription?: string,
-): Promise<PlannedIssue[]> {
-	const prompt = buildPlanningPrompt(goal, config, parentDescription);
-
-	logger.log("Analyzing codebase and decomposing goal...");
-
-	const models = resolveModels(config);
-	const logDir = mkdtempSync(join(tmpdir(), "lisa-plan-"));
-	const logFile = join(logDir, "plan.log");
-
-	const result = await runWithFallback(models, prompt, {
-		logFile,
-		cwd: resolve(config.workspace),
-		sessionTimeout: 120,
-	});
-
-	if (!result.success) {
-		throw new CliError(`AI provider failed to generate plan: ${result.output.slice(0, 200)}`);
-	}
-
-	// Parse with retries
-	let lastError: PlanParseError | null = null;
-	for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
-		try {
-			if (attempt === 0) {
-				return parsePlanResponse(result.output);
-			}
-			// Retry: re-invoke provider with error feedback
-			const retryPrompt = `${prompt}\n\n## Previous Attempt Failed\n\nYour previous response could not be parsed: ${lastError!.message}\n\nPlease output ONLY valid JSON with the exact structure specified above.`;
-			const retryResult = await runWithFallback(models, retryPrompt, {
-				logFile,
-				cwd: resolve(config.workspace),
-				sessionTimeout: 120,
-			});
-			if (retryResult.success) {
-				return parsePlanResponse(retryResult.output);
-			}
-		} catch (err) {
-			if (err instanceof PlanParseError) {
-				lastError = err;
-				if (attempt < MAX_PARSE_RETRIES) {
-					logger.warn(`Parse attempt ${attempt + 1} failed: ${err.message}. Retrying...`);
-				}
-			} else {
-				throw err;
-			}
-		}
-	}
-
-	throw new CliError(
-		`Failed to parse AI response after ${MAX_PARSE_RETRIES + 1} attempts: ${lastError?.message}`,
-	);
 }
 
 async function reviewAndCreate(
@@ -156,6 +117,19 @@ async function reviewAndCreate(
 		throw new CliError(
 			`Source "${config.source}" does not support issue creation. Create issues manually.`,
 		);
+	}
+
+	// Confirmation gate before creating issues
+	if (!opts.yes) {
+		const confirm = await clack.confirm({
+			message: `Create ${plan.issues.length} issue${plan.issues.length !== 1 ? "s" : ""} in ${config.source}?`,
+		});
+		if (clack.isCancel(confirm) || !confirm) {
+			plan.status = "draft";
+			savePlan(resolve(config.workspace), plan);
+			logger.log("Plan saved. Resume with: lisa plan --continue");
+			return;
+		}
 	}
 
 	logger.log("Creating issues in source...");

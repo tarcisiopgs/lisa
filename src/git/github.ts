@@ -124,7 +124,13 @@ async function deleteProviderComments(prUrl: string): Promise<void> {
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => JSON.parse(line)) as Array<{ id: number; body: string }>;
+			.flatMap((line) => {
+				try {
+					return [JSON.parse(line) as { id: number; body: string }];
+				} catch {
+					return [];
+				}
+			});
 
 		for (const comment of comments) {
 			if (PROVIDER_ATTRIBUTION_RE.test(comment.body)) {

@@ -400,6 +400,12 @@ export async function runManualWorktreeSession(
 		await cleanupWorktree(repoPath, worktreePath);
 		return failureResult(result.providerUsed, result);
 	}
+	if (powResult.blocked) {
+		logger.error(`Skipping PR for ${issue.id} — validation failed with block_on_failure enabled.`);
+		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
+		await cleanupWorktree(repoPath, worktreePath);
+		return failureResult(result.providerUsed, result);
+	}
 	const validationResults = powResult.results;
 
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)

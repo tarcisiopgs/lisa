@@ -126,6 +126,10 @@ export async function runBranchSession(
 	if (pow.reconciled) {
 		return failureResult(result.providerUsed, result);
 	}
+	if (pow.blocked) {
+		logger.error(`Skipping PR for ${issue.id} — validation failed with block_on_failure enabled.`);
+		return failureResult(result.providerUsed, result);
+	}
 	const validationResults = pow.results;
 
 	const manifest = readManifestFile(manifestPath);

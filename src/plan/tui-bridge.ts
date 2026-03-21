@@ -9,12 +9,10 @@ import { createSource } from "../sources/index.js";
 import type { LisaConfig, PlannedIssue, PlanResult } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { createPlanIssues } from "./create.js";
-import { PlanParseError, parsePlanResponse } from "./parser.js";
 import { savePlan } from "./persistence.js";
 import { buildPlanningPrompt } from "./prompt.js";
+import { parseStructuredOutput } from "./structured-output.js";
 import { issueToMarkdown, markdownToIssue } from "./wizard.js";
-
-const MAX_PARSE_RETRIES = 2;
 
 /**
  * Register plan event listeners on the kanban emitter.
@@ -96,20 +94,26 @@ async function handleUserMessage(
 		return;
 	}
 
-	// Try to parse as issue JSON — if it works, the AI is done brainstorming
-	try {
-		const issues = parsePlanResponse(result.output);
-		chatHistory.push({ role: "ai", content: `Decomposed into ${issues.length} issues.` });
-		kanbanEmitter.emit("plan:issues-ready", issues);
-		return;
-	} catch {
-		// Not JSON — it's a chat response (clarifying question or refinement)
-	}
+	const parsed = parseStructuredOutput(result.output);
 
-	// Extract just the AI's text response (strip any system noise)
-	const response = extractChatResponse(result.output);
-	chatHistory.push({ role: "ai", content: response });
-	kanbanEmitter.emit("plan:ai-message", response);
+	switch (parsed.type) {
+		case "issues": {
+			chatHistory.push({ role: "ai", content: `Decomposed into ${parsed.issues.length} issues.` });
+			kanbanEmitter.emit("plan:issues-ready", parsed.issues);
+			break;
+		}
+		case "summary": {
+			chatHistory.push({ role: "ai", content: parsed.text });
+			kanbanEmitter.emit("plan:ai-message", parsed.text);
+			kanbanEmitter.emit("plan:summary-ready");
+			break;
+		}
+		case "question": {
+			chatHistory.push({ role: "ai", content: parsed.text });
+			kanbanEmitter.emit("plan:ai-message", parsed.text);
+			break;
+		}
+	}
 }
 
 async function handleApproval(
@@ -161,21 +165,31 @@ function buildChatPrompt(
 ): string {
 	const basePrompt = buildPlanningPrompt(goal, config);
 
+	const responseFormat = `## Response Format
+
+ALWAYS respond with a single JSON object (no markdown fences, no extra text). Use one of these formats:
+
+- To ask a clarifying question: {"type": "question", "text": "your question"}
+- To present your understanding before decomposing: {"type": "summary", "text": "your structured summary"}
+- To deliver the final plan: {"type": "issues", "issues": [<issues array as defined above>]}
+
+Output ONLY the JSON object. No wrapping, no explanation before or after.`;
+
 	if (chatHistory.length <= 1) {
-		// First message — add instruction to either ask or decompose
 		return `${basePrompt}
 
 ## Chat Mode
 
 The user has just described their goal. You have two options:
 
-1. **If the goal is clear and specific enough** to decompose into issues, output the JSON immediately.
-2. **If you need clarification** (which endpoints? what technology? what scope?), respond with a SHORT question (1-2 sentences). Do NOT output JSON — just plain text.
+1. **If the goal is clear and specific enough** to decompose into issues, respond with type "issues".
+2. **If you need clarification** (which endpoints? what technology? what scope?), respond with type "question".
 
-Prefer decomposing directly when possible. Only ask if the goal is genuinely ambiguous.`;
+Prefer decomposing directly when possible. Only ask if the goal is genuinely ambiguous.
+
+${responseFormat}`;
 	}
 
-	// Subsequent messages — include chat history
 	const historyBlock = chatHistory
 		.map((m) => `${m.role === "user" ? "User" : "AI"}: ${m.content}`)
 		.join("\n\n");
@@ -189,23 +203,11 @@ ${historyBlock}
 ## Instructions
 
 Based on the conversation above, either:
-1. **Decompose into issues** — output the JSON structure defined above.
-2. **Ask one more question** — respond with SHORT plain text (1-2 sentences). No JSON.
+1. **Decompose into issues** — respond with type "issues".
+2. **Present your understanding** — respond with type "summary" if you're confident you understand but haven't decomposed yet.
+3. **Ask one more question** — respond with type "question".
 
-If you have enough context, decompose now. Do not ask more than 3 questions total.`;
-}
+If you have enough context, decompose now.
 
-/** Extract the meaningful text from provider output, stripping noise. */
-function extractChatResponse(output: string): string {
-	// Remove ANSI escape codes
-	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI stripping
-	const cleaned = output.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
-
-	// If it's very short, return as-is
-	if (cleaned.length < 500) return cleaned;
-
-	// Try to find the last substantial paragraph (skip tool calls, etc.)
-	const lines = cleaned.split("\n").filter((l) => l.trim().length > 0);
-	// Take the last 10 non-empty lines as the response
-	return lines.slice(-10).join("\n");
+${responseFormat}`;
 }

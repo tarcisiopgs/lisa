@@ -89,6 +89,7 @@ export interface ProofOfWorkConfig {
 	commands: ValidationCommand[];
 	max_retries?: number; // default: 2
 	timeout?: number; // ms per command, default: 120000
+	block_on_failure?: boolean; // default: false — if true, skip PR creation when validation fails
 }
 
 export interface ValidationResult {
@@ -224,6 +225,11 @@ export interface PlannedIssue {
 	repo?: string;
 }
 
+export interface ChatMessage {
+	role: "user" | "ai";
+	content: string;
+}
+
 export interface PlanResult {
 	goal: string;
 	sourceIssueId?: string;
@@ -231,6 +237,7 @@ export interface PlanResult {
 	createdAt: string;
 	status: "draft" | "approved" | "created";
 	createdIssueIds?: string[];
+	brainstormHistory?: ChatMessage[];
 }
 
 export interface Source {

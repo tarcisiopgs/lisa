@@ -278,7 +278,7 @@ export async function runProofOfWork(
 	workspace: string,
 	lifecycleEnv: Record<string, string>,
 	result: FallbackResult,
-): Promise<{ results?: ValidationResult[]; reconciled?: boolean }> {
+): Promise<{ results?: ValidationResult[]; reconciled?: boolean; blocked?: boolean }> {
 	if (!isProofOfWorkEnabled(config.proof_of_work)) return {};
 
 	const pow = config.proof_of_work;
@@ -303,6 +303,12 @@ export async function runProofOfWork(
 		}
 
 		if (retriesLeft <= 0) {
+			if (pow?.block_on_failure) {
+				logger.error(
+					`Validation failed after max retries for ${issue.id}. Blocking PR creation (block_on_failure=true).`,
+				);
+				return { results, blocked: true };
+			}
 			logger.error(
 				`Validation failed after max retries for ${issue.id}. Creating PR with failures noted.`,
 			);
@@ -324,6 +330,12 @@ export async function runProofOfWork(
 		stopSpinner();
 
 		if (!recoveryResult.success) {
+			if (pow?.block_on_failure) {
+				logger.error(
+					`Validation recovery failed for ${issue.id}. Blocking PR creation (block_on_failure=true).`,
+				);
+				return { results, blocked: true };
+			}
 			logger.error(`Validation recovery failed for ${issue.id}. Creating PR with failures noted.`);
 			return { results };
 		}
