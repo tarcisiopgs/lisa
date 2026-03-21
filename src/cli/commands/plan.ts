@@ -31,6 +31,12 @@ export const plan = defineCommand({
 			required: false,
 			description: "Output plan as JSON (non-interactive)",
 		},
+		yes: {
+			type: "boolean",
+			alias: "y",
+			required: false,
+			description: "Skip confirmations (for scripts/CI)",
+		},
 	},
 	async run({ args }) {
 		const configDir = findConfigDir();
@@ -46,6 +52,7 @@ export const plan = defineCommand({
 				issueId: args.issue as string | undefined,
 				continueLatest: !!args.continue,
 				jsonOutput: !!args.json,
+				yes: !!args.yes,
 			});
 		} catch (err) {
 			if (err instanceof CliError) throw err;

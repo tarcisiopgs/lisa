@@ -15,6 +15,7 @@ export interface RunPlanOptions {
 	issueId?: string;
 	continueLatest?: boolean;
 	jsonOutput?: boolean;
+	yes?: boolean;
 }
 
 export async function runPlan(opts: RunPlanOptions): Promise<void> {
@@ -92,6 +93,19 @@ async function reviewAndCreate(
 		throw new CliError(
 			`Source "${config.source}" does not support issue creation. Create issues manually.`,
 		);
+	}
+
+	// Confirmation gate before creating issues
+	if (!opts.yes) {
+		const confirm = await clack.confirm({
+			message: `Create ${plan.issues.length} issue${plan.issues.length !== 1 ? "s" : ""} in ${config.source}?`,
+		});
+		if (clack.isCancel(confirm) || !confirm) {
+			plan.status = "draft";
+			savePlan(resolve(config.workspace), plan);
+			logger.log("Plan saved. Resume with: lisa plan --continue");
+			return;
+		}
 	}
 
 	logger.log("Creating issues in source...");
