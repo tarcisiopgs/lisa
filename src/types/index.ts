@@ -104,6 +104,18 @@ export interface ReconciliationConfig {
 	check_interval?: number; // seconds, default: 30
 }
 
+export interface CiMonitorConfig {
+	enabled?: boolean;
+	max_retries?: number; // default: 3
+	poll_interval?: number; // seconds between polls, default: 30
+	poll_timeout?: number; // max seconds to wait for CI, default: 600
+	block_on_failure?: boolean; // default: false
+}
+
+export interface ProgressConfig {
+	enabled?: boolean;
+}
+
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, ProviderOptions>>;
@@ -122,6 +134,8 @@ export interface LisaConfig {
 	hooks?: HooksConfig;
 	proof_of_work?: ProofOfWorkConfig;
 	reconciliation?: ReconciliationConfig;
+	ci_monitor?: CiMonitorConfig;
+	progress_comments?: ProgressConfig;
 }
 
 export interface DependencyContext {
@@ -255,6 +269,10 @@ export interface Source {
 		config?: SourceConfig,
 	): Promise<void>;
 	listIssues(config: SourceConfig): Promise<Issue[]>;
+
+	// Progress comments — optional, used for real-time status updates
+	createComment?(issueId: string, body: string): Promise<string>; // returns comment ID
+	updateComment?(issueId: string, commentId: string, body: string): Promise<void>;
 
 	// Plan mode — issue creation + dependency linking
 	createIssue?(opts: CreateIssueOpts, config: SourceConfig): Promise<string>;

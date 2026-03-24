@@ -302,6 +302,22 @@ export class GitLabIssuesSource implements Source {
 		});
 	}
 
+	async createComment(issueId: string, body: string): Promise<string> {
+		const { project, iid } = splitIssueId(issueId);
+		const encodedProject = parseGitLabProject(project);
+		const note = await api().post<{ id: number }>(
+			`/projects/${encodedProject}/issues/${iid}/notes`,
+			{ body },
+		);
+		return String(note.id);
+	}
+
+	async updateComment(issueId: string, commentId: string, body: string): Promise<void> {
+		const { project, iid } = splitIssueId(issueId);
+		const encodedProject = parseGitLabProject(project);
+		await api().put(`/projects/${encodedProject}/issues/${iid}/notes/${commentId}`, { body });
+	}
+
 	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
 		const encodedProject = parseGitLabProject(config.scope);
 		const labels = Array.isArray(opts.label) ? opts.label : [opts.label];

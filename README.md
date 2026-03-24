@@ -44,7 +44,10 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **Concurrent execution** — process multiple issues in parallel, each in its own worktree
 - **Multi-repo** — plans across repos, creates one PR per repo in the correct order
 - **Model fallback** — chain models; transient errors (429, quota, timeout) auto-switch to the next
-- **Real-time TUI** — Kanban board with live provider output, plan mode, PR merge detection
+- **Real-time TUI** — Kanban board with live provider output, plan mode, merge PRs with `m`
+- **CI monitoring** — polls CI after PR creation, re-invokes the agent to fix failures automatically
+- **Progress comments** — posts real-time status updates on issues as Lisa works through stages
+- **Context enrichment** — greps for issue-related files and surfaces them in the agent prompt
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
 - **Project context** — auto-generates `.lisa/context.md` with your stack, conventions, and constraints
@@ -231,6 +234,16 @@ proof_of_work:
 
 validation:
   require_acceptance_criteria: true
+
+ci_monitor:
+  enabled: true
+  max_retries: 3             # fix attempts on CI failure
+  poll_interval: 30          # seconds between CI status checks
+  poll_timeout: 600          # max seconds to wait for CI
+  block_on_failure: false    # revert issue if CI never passes
+
+progress_comments:
+  enabled: true              # post real-time status on issues
 ```
 
 </details>
@@ -274,6 +287,7 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 |-----|--------|
 | `↑` `↓` | Scroll output log |
 | `o` | Open PR in browser |
+| `m` | Merge PR (warns if CI not passed) |
 | `Esc` | Back to board |
 
 **Plan mode**

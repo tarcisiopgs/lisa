@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { execa } from "execa";
 import { analyzeProject } from "../context.js";
+import { enrichContext } from "../enrichment.js";
 import { formatError } from "../errors.js";
 import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
 import {
@@ -22,9 +23,11 @@ import {
 	detectTestRunner,
 } from "../prompt.js";
 import { createProvider, runWithFallback } from "../providers/index.js";
+import { isCiMonitorEnabled, monitorCi } from "../session/ci-monitor.js";
 import { readContext } from "../session/context-manager.js";
 import { buildHookEnv, executeHook } from "../session/hooks.js";
 import { stopResources } from "../session/lifecycle.js";
+import { ProgressReporter } from "../session/progress.js";
 import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
@@ -108,6 +111,7 @@ export async function runWorktreeSession(
 	session: number,
 	models: ModelSpec[],
 	source?: Source,
+	slotIndex?: number,
 ): Promise<SessionResult> {
 	// Multi-repo: delegate to planning + sequential sessions
 	if (config.repos.length > 1) {
@@ -132,6 +136,7 @@ export async function runWorktreeSession(
 			repoPath,
 			defaultBranch,
 			source,
+			slotIndex,
 		);
 	}
 
@@ -144,6 +149,7 @@ export async function runWorktreeSession(
 		repoPath,
 		defaultBranch,
 		source,
+		slotIndex,
 	);
 }
 
@@ -156,12 +162,14 @@ export async function runNativeWorktreeSession(
 	repoPath: string,
 	_defaultBranch: string,
 	source?: Source,
+	slotIndex?: number,
 ): Promise<SessionResult> {
 	const testRunner = detectTestRunner(repoPath);
 	if (testRunner) logger.log(`Detected test runner: ${testRunner}`);
 	const pm = detectPackageManager(repoPath);
 	const projectContext = analyzeProject(repoPath);
 	const repoContextMd = readContext(repoPath);
+	const relevantFiles = enrichContext(repoPath, issue);
 
 	const workspace = resolve(config.workspace);
 	const hookEnv = buildHookEnv(issue.id, issue.title, "", repoPath);
@@ -177,6 +185,14 @@ export async function runNativeWorktreeSession(
 		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
 
+	// Progress comments
+	const reporter = new ProgressReporter(
+		source ?? ({ name: config.source } as Source),
+		issue.id,
+		config.progress_comments?.enabled === true && !!source,
+	);
+	await reporter.start();
+
 	const prompt = buildNativeWorktreePrompt(
 		issue,
 		repoPath,
@@ -187,11 +203,14 @@ export async function runNativeWorktreeSession(
 		getManifestPath(workspace, issue.id),
 		config.platform,
 		repoContextMd,
+		relevantFiles,
 	);
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing (native worktree)...`);
 	logger.log(`Implementing with native worktree... (log: ${logFile})`);
+
+	await reporter.update("implementing", models[0]?.provider);
 
 	// Start reconciliation monitor
 	const reconciliation = startReconciliationMonitor(source, issue.id, config);
@@ -201,6 +220,7 @@ export async function runNativeWorktreeSession(
 		prompt,
 		buildRunOptions(config, issue, repoPath, logFile, workspace, lifecycleEnv, {
 			useNativeWorktree: true,
+			slotIndex,
 		}),
 	);
 	stopSpinner();
@@ -221,12 +241,14 @@ export async function runNativeWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		await reporter.fail("Implementation failed");
 		cleanupManifest(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 
 	const hasChanges = await hasCodeChanges(repoPath, _defaultBranch);
 	if (!hasChanges) {
+		await reporter.fail("No code changes produced");
 		cleanupManifest(workspace, issue.id);
 		return emptyCommitFailure(result);
 	}
@@ -242,6 +264,7 @@ export async function runNativeWorktreeSession(
 			prUrl = extractedUrl;
 		} else {
 			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}. Aborting.`);
+			await reporter.fail("No PR URL produced");
 			const worktreePath = manifest?.branch
 				? await findWorktreeForBranch(repoPath, manifest.branch)
 				: null;
@@ -259,7 +282,33 @@ export async function runNativeWorktreeSession(
 	}
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+
+	// CI Monitor: poll CI and fix failures if enabled
+	if (isCiMonitorEnabled(config.ci_monitor)) {
+		const manifestBranch = manifest?.branch;
+		if (manifestBranch) {
+			const ciResult = await monitorCi(
+				manifestBranch,
+				config,
+				issue,
+				models,
+				repoPath,
+				logFile,
+				workspace,
+				{},
+				(extra) => buildRunOptions(config, issue, repoPath, logFile, workspace, {}, extra),
+			);
+			if (!ciResult.passed && !ciResult.skipped && config.ci_monitor?.block_on_failure) {
+				logger.error(`CI failed for ${issue.id}. Blocking completion.`);
+				if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+				return failureResult(result.providerUsed, result);
+			}
+		}
+	}
+
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
+
+	await reporter.finish([prUrl]);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
@@ -279,6 +328,7 @@ export async function runManualWorktreeSession(
 	repoPath: string,
 	defaultBranch: string,
 	source?: Source,
+	slotIndex?: number,
 ): Promise<SessionResult> {
 	const branchName = generateBranchName(issue.id, issue.title);
 
@@ -316,6 +366,7 @@ export async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 	const repoContextMd = readContext(repoPath);
+	const relevantFiles = enrichContext(worktreePath, issue);
 
 	// Detect infrastructure
 	const lifecycleEnv = await startInfra(issue.id, worktreePath, config);
@@ -330,6 +381,14 @@ export async function runManualWorktreeSession(
 		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
 
+	// Progress comments
+	const reporter = new ProgressReporter(
+		source ?? ({ name: config.source } as Source),
+		issue.id,
+		config.progress_comments?.enabled === true && !!source,
+	);
+	await reporter.start();
+
 	const prompt = buildImplementPrompt(
 		issue,
 		config,
@@ -339,11 +398,14 @@ export async function runManualWorktreeSession(
 		worktreePath,
 		manifestPath,
 		repoContextMd,
+		relevantFiles,
 	);
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing in worktree... (log: ${logFile})`);
+
+	await reporter.update("implementing", models[0]?.provider);
 
 	// Start reconciliation monitor
 	const reconciliation = startReconciliationMonitor(source, issue.id, config);
@@ -351,7 +413,9 @@ export async function runManualWorktreeSession(
 	const result = await runWithFallback(
 		models,
 		prompt,
-		buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+		buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv, {
+			slotIndex,
+		}),
 	);
 	stopSpinner();
 	reconciliation?.stop();
@@ -371,6 +435,7 @@ export async function runManualWorktreeSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		await reporter.fail("Implementation failed");
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
@@ -379,6 +444,7 @@ export async function runManualWorktreeSession(
 
 	const hasChanges = await hasCodeChanges(worktreePath, baseBranch);
 	if (!hasChanges) {
+		await reporter.fail("No code changes produced");
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
@@ -402,11 +468,16 @@ export async function runManualWorktreeSession(
 	}
 	if (powResult.blocked) {
 		logger.error(`Skipping PR for ${issue.id} — validation failed with block_on_failure enabled.`);
+		await reporter.fail("Validation failed");
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
 		return failureResult(result.providerUsed, result);
 	}
 	const validationResults = powResult.results;
+
+	if (validationResults) {
+		await reporter.update("validating", "Validation passed");
+	}
 
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
 	const manifest = readManifestFile(manifestPath);
@@ -437,7 +508,9 @@ export async function runManualWorktreeSession(
 			const contResult = await runWithFallback(
 				models,
 				continuationPrompt,
-				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv),
+				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv, {
+					slotIndex,
+				}),
 			);
 			stopSpinner();
 
@@ -453,6 +526,7 @@ export async function runManualWorktreeSession(
 
 			if (!prUrl) {
 				logger.error(`Continuation also failed to produce PR for ${issue.id}. Aborting.`);
+				await reporter.fail("No PR URL produced");
 				// Hook: before_remove (non-critical)
 				await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 				await cleanupWorktree(repoPath, worktreePath);
@@ -474,9 +548,34 @@ export async function runManualWorktreeSession(
 		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);
 	}
 
+	// CI Monitor: poll CI and fix failures if enabled
+	if (isCiMonitorEnabled(config.ci_monitor)) {
+		const manifestBranch = manifest?.branch ?? branchName;
+		const ciResult = await monitorCi(
+			manifestBranch,
+			config,
+			issue,
+			models,
+			worktreePath,
+			logFile,
+			workspace,
+			lifecycleEnv,
+			(extra) =>
+				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv, extra),
+		);
+		if (!ciResult.passed && !ciResult.skipped && config.ci_monitor?.block_on_failure) {
+			logger.error(`CI failed for ${issue.id}. Blocking completion (block_on_failure=true).`);
+			await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
+			await cleanupWorktree(repoPath, worktreePath);
+			return failureResult(result.providerUsed, result);
+		}
+	}
+
 	// Hook: before_remove (non-critical)
 	await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 	await cleanupWorktree(repoPath, worktreePath);
+
+	await reporter.finish([prUrl]);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {

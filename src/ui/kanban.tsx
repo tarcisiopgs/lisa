@@ -33,6 +33,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const [activeCardIndex, setActiveCardIndex] = useState(0);
 	const [paused, setPaused] = useState(false);
 	const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+	const [mergeConfirm, setMergeConfirm] = useState<string | null>(null);
+	const [merging, setMerging] = useState<string | null>(null);
 	const [updateInfo] = useState<UpdateInfo | null>(() => getCachedUpdateInfo());
 
 	// Plan state
@@ -163,6 +165,44 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		setActiveCardIndex(newCardIndex);
 	}, [cards, selectedCardId, activeView]);
 
+	const selectedCard =
+		activeView === "detail" && selectedCardId
+			? (cards.find((c) => c.id === selectedCardId) ?? null)
+			: null;
+
+	async function handleMergeRequest(card: KanbanCard) {
+		const { checkPrCiStatus } = await import("../git/merge.js");
+		const prUrl = card.prUrls[0]!;
+		const ciStatus = await checkPrCiStatus(prUrl);
+		if (ciStatus === "passing" || ciStatus === "unknown") {
+			doMerge(card.id);
+		} else {
+			// CI not passing — show confirmation
+			setMergeConfirm(card.id);
+		}
+	}
+
+	async function doMerge(issueId: string) {
+		const card = cards.find((c) => c.id === issueId);
+		if (!card || card.prUrls.length === 0) return;
+		setMerging(issueId);
+		const { mergePr } = await import("../git/merge.js");
+		let allSuccess = true;
+		for (const prUrl of card.prUrls) {
+			const result = await mergePr(prUrl);
+			if (!result.success) {
+				allSuccess = false;
+				kanbanEmitter.emit("issue:output", issueId, `\nMerge failed: ${result.error}\n`);
+			}
+		}
+		if (allSuccess) {
+			kanbanEmitter.emit("issue:merged", issueId);
+			// Post comment on issue via source (best-effort, non-blocking)
+			kanbanEmitter.emit("issue:merge-comment", issueId, card.prUrls);
+		}
+		setMerging(null);
+	}
+
 	useInput((input, key) => {
 		if (isWatchPrompt) {
 			if (input === "w") {
@@ -243,10 +283,37 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
-		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o) are handled.
+		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o, m) are handled.
 		// Scroll and "o" are handled by IssueDetail's own useInput.
 		if (activeView === "detail") {
+			// Merge confirmation response
+			if (mergeConfirm === selectedCardId) {
+				if (input === "y") {
+					setMergeConfirm(null);
+					doMerge(selectedCardId!);
+					return;
+				}
+				if (input === "n" || key.escape) {
+					setMergeConfirm(null);
+					return;
+				}
+				return; // Swallow all other input during confirmation
+			}
+
+			if (
+				input === "m" &&
+				selectedCard &&
+				selectedCard.column === "done" &&
+				!selectedCard.merged &&
+				selectedCard.prUrls.length > 0 &&
+				!merging
+			) {
+				handleMergeRequest(selectedCard);
+				return;
+			}
+
 			if (key.escape) {
+				setMergeConfirm(null);
 				setActiveView("board");
 				setSelectedCardId(null);
 			}
@@ -254,6 +321,16 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		}
 
 		// Board-only shortcuts below — all gated by activeView === "board"
+		if (input === "m") {
+			const card = columnCards[activeColIndex]?.[activeCardIndex];
+			if (card && card.column === "done" && !card.merged && card.prUrls.length > 0 && !merging) {
+				setSelectedCardId(card.id);
+				setActiveView("detail");
+				handleMergeRequest(card);
+			}
+			return;
+		}
+
 		if (input === "q") {
 			// Emit SIGINT — the loop's cleanup will emit "tui:exit" to close Ink cleanly
 			process.emit("SIGINT");
@@ -356,12 +433,11 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		done: config.source_config.done,
 	};
 
-	const selectedCard =
-		activeView === "detail" && selectedCardId
-			? (cards.find((c) => c.id === selectedCardId) ?? null)
-			: null;
-
 	const hasPrUrl = (selectedCard?.prUrls.length ?? 0) > 0;
+	const canMerge =
+		selectedCard?.column === "done" &&
+		!selectedCard?.merged &&
+		(selectedCard?.prUrls.length ?? 0) > 0;
 
 	const providerOptions = config.provider_options?.[config.provider];
 	const models = providerOptions?.models || (providerOptions?.model ? [providerOptions.model] : []);
@@ -390,6 +466,9 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				paused={paused}
 				hasInProgress={hasInProgress}
 				hasPrUrl={hasPrUrl}
+				canMerge={canMerge}
+				mergeConfirm={mergeConfirm}
+				merging={merging}
 				updateInfo={updateInfo}
 				workComplete={workComplete}
 			/>

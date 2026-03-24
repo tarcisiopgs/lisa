@@ -393,6 +393,14 @@ export class ShortcutSource implements Source {
 		});
 	}
 
+	async createComment(issueId: string, body: string): Promise<string> {
+		const storyId = parseShortcutIdentifier(issueId);
+		const result = await shortcutPost<ShortcutComment>(`/api/v3/stories/${storyId}/comments`, {
+			text: body,
+		});
+		return String(result.id);
+	}
+
 	async createIssue(opts: CreateIssueOpts, _config: SourceConfig): Promise<string> {
 		const stateId = await resolveWorkflowStateId(opts.status);
 		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];

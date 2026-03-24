@@ -217,8 +217,20 @@ export function buildRunOptions(
 	logFile: string,
 	workspace: string,
 	lifecycleEnv: Record<string, string>,
-	extra?: Partial<RunOptions>,
+	extra?: Partial<RunOptions> & { slotIndex?: number },
 ): RunOptions {
+	const portEnv: Record<string, string> = {};
+	if (extra?.slotIndex !== undefined) {
+		portEnv.LISA_PORT_BASE = String(3000 + extra.slotIndex * 10);
+		portEnv.LISA_SLOT_INDEX = String(extra.slotIndex);
+	}
+
+	const { slotIndex: _slotIndex, ...restExtra } = extra ?? {};
+	const mergedEnv =
+		Object.keys(lifecycleEnv).length > 0 || Object.keys(portEnv).length > 0
+			? { ...lifecycleEnv, ...portEnv }
+			: undefined;
+
 	return {
 		logFile,
 		cwd,
@@ -228,12 +240,12 @@ export function buildRunOptions(
 		sessionTimeout: config.loop.session_timeout,
 		outputStallTimeout: config.loop.output_stall_timeout,
 		providerOptions: resolveProviderOptions(config),
-		env: Object.keys(lifecycleEnv).length > 0 ? lifecycleEnv : undefined,
+		env: mergedEnv,
 		onProcess: (pid) => {
 			activeProviderPids.set(issue.id, pid);
 		},
 		shouldAbort: () => userKilledSet.has(issue.id) || userSkippedSet.has(issue.id),
-		...extra,
+		...restExtra,
 	};
 }
 

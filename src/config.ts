@@ -3,11 +3,13 @@ import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { array, boolean, literal, number, object, optional, string, union } from "zod";
 import type {
+	CiMonitorConfig,
 	HooksConfig,
 	LifecycleConfig,
 	LisaConfig,
 	OverseerConfig,
 	PRPlatform,
+	ProgressConfig,
 	ProofOfWorkConfig,
 	ProviderName,
 	ReconciliationConfig,
@@ -229,6 +231,8 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		| Partial<ProofOfWorkConfig & { commands?: unknown[] }>
 		| undefined;
 	const rawReconciliation = parsed.reconciliation as Partial<ReconciliationConfig> | undefined;
+	const rawCiMonitor = parsed.ci_monitor as Partial<CiMonitorConfig> | undefined;
+	const rawProgress = parsed.progress_comments as Partial<ProgressConfig> | undefined;
 
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
@@ -272,6 +276,16 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 					check_interval: rawReconciliation.check_interval,
 				}
 			: undefined,
+		ci_monitor: rawCiMonitor
+			? {
+					enabled: rawCiMonitor.enabled ?? false,
+					max_retries: rawCiMonitor.max_retries,
+					poll_interval: rawCiMonitor.poll_interval,
+					poll_timeout: rawCiMonitor.poll_timeout,
+					block_on_failure: rawCiMonitor.block_on_failure,
+				}
+			: undefined,
+		progress_comments: rawProgress ? { enabled: rawProgress.enabled ?? false } : undefined,
 		provider_options: {
 			...(DEFAULT_CONFIG.provider_options || {}),
 			...((parsed.provider_options ?? {}) as LisaConfig["provider_options"]),
