@@ -364,6 +364,20 @@ export class GitHubIssuesSource implements Source {
 		}
 	}
 
+	async createComment(issueId: string, body: string): Promise<string> {
+		const ref = parseGitHubIssueNumber(issueId);
+		const result = await api().post<{ id: number }>(
+			`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
+			{ body },
+		);
+		return String(result.id);
+	}
+
+	async updateComment(issueId: string, commentId: string, body: string): Promise<void> {
+		const ref = parseGitHubIssueNumber(issueId);
+		await api().patch(`/repos/${ref.owner}/${ref.repo}/issues/comments/${commentId}`, { body });
+	}
+
 	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
 		const { owner, repo } = parseOwnerRepo(config.scope);
 		const labels = Array.isArray(opts.label) ? opts.label : [opts.label];

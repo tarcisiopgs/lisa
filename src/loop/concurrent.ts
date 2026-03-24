@@ -53,8 +53,9 @@ export async function runConcurrentLoop(
 	const claimedIssueIds = new Set<string>();
 	let consecutiveExhaustions = 0;
 	const MAX_CONSECUTIVE_EXHAUSTIONS = 3;
+	const slotPool = Array.from({ length: concurrency }, (_, i) => i);
 
-	const processIssue = async (issue: Issue, session: number): Promise<void> => {
+	const processIssue = async (issue: Issue, session: number, slotIndex: number): Promise<void> => {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
 		const logFile = resolve(getLogsDir(workspace), `session_${session}_${timestamp}.log`);
 
@@ -80,7 +81,15 @@ export async function runConcurrentLoop(
 
 		let sessionResult: SessionResult;
 		try {
-			sessionResult = await runWorktreeSession(config, issue, logFile, session, models, source);
+			sessionResult = await runWorktreeSession(
+				config,
+				issue,
+				logFile,
+				session,
+				models,
+				source,
+				slotIndex,
+			);
 		} catch (err) {
 			logger.error(`Unhandled error in session for ${issue.id}: ${formatError(err)}`);
 			await revertIssueStatus(issue, source, config);
@@ -215,8 +224,10 @@ export async function runConcurrentLoop(
 			sessionCounter = tentativeSession;
 			const session = sessionCounter;
 			claimedIssueIds.add(issue.id);
-			const promise = processIssue(issue, session).finally(() => {
+			const slot = slotPool.shift() ?? 0;
+			const promise = processIssue(issue, session, slot).finally(() => {
 				activeWorkers.delete(issue.id);
+				slotPool.push(slot);
 			});
 			activeWorkers.set(issue.id, promise);
 		}

@@ -1,6 +1,7 @@
 import { unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
+import { enrichContext } from "../enrichment.js";
 import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -8,9 +9,11 @@ import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { getManifestPath } from "../paths.js";
 import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
+import { isCiMonitorEnabled, monitorCi } from "../session/ci-monitor.js";
 import { readContext } from "../session/context-manager.js";
 import { buildHookEnv, executeHook } from "../session/hooks.js";
 import { stopResources } from "../session/lifecycle.js";
+import { ProgressReporter } from "../session/progress.js";
 import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
@@ -35,6 +38,7 @@ export async function runBranchSession(
 	session: number,
 	models: ModelSpec[],
 	source?: Source,
+	slotIndex?: number,
 ): Promise<SessionResult> {
 	const workspace = resolve(config.workspace);
 	// Manifest written within the workspace so all providers can access it (branch mode is sequential)
@@ -56,6 +60,7 @@ export async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 	const repoContextMd = readContext(workspace);
+	const relevantFiles = enrichContext(workspace, issue);
 
 	// Detect and start infrastructure
 	const lifecycleEnv = await startInfra(issue.id, workspace, config);
@@ -64,6 +69,14 @@ export async function runBranchSession(
 	if (!(await executeHook("before_run", config.hooks, workspace, hookEnv))) {
 		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
+
+	// Progress comments
+	const reporter = new ProgressReporter(
+		source ?? ({ name: config.source } as Source),
+		issue.id,
+		config.progress_comments?.enabled === true && !!source,
+	);
+	await reporter.start();
 
 	const prompt = buildImplementPrompt(
 		issue,
@@ -74,6 +87,7 @@ export async function runBranchSession(
 		workspace,
 		manifestPath,
 		repoContextMd,
+		relevantFiles,
 	);
 
 	logger.initLogFile(logFile);
@@ -81,13 +95,15 @@ export async function runBranchSession(
 	startSpinner(`${issue.id} \u2014 implementing...`);
 	logger.log(`Implementing... (log: ${logFile})`);
 
+	await reporter.update("implementing", models[0]?.provider);
+
 	// Start reconciliation monitor
 	const reconciliation = startReconciliationMonitor(source, issue.id, config);
 
 	const result = await runWithFallback(
 		models,
 		prompt,
-		buildRunOptions(config, issue, workspace, logFile, workspace, lifecycleEnv),
+		buildRunOptions(config, issue, workspace, logFile, workspace, lifecycleEnv, { slotIndex }),
 	);
 	stopSpinner();
 	reconciliation?.stop();
@@ -104,11 +120,13 @@ export async function runBranchSession(
 
 	if (!result.success) {
 		logger.error(`Session ${session} failed for ${issue.id}. Check ${logFile}`);
+		await reporter.fail("Implementation failed");
 		return failureResult(result.providerUsed, result);
 	}
 
 	const hasChanges = await hasCodeChanges(workspace, config.base_branch);
 	if (!hasChanges) {
+		await reporter.fail("No code changes produced");
 		return emptyCommitFailure(result);
 	}
 
@@ -128,9 +146,14 @@ export async function runBranchSession(
 	}
 	if (pow.blocked) {
 		logger.error(`Skipping PR for ${issue.id} — validation failed with block_on_failure enabled.`);
+		await reporter.fail("Validation failed");
 		return failureResult(result.providerUsed, result);
 	}
 	const validationResults = pow.results;
+
+	if (validationResults) {
+		await reporter.update("validating", "Validation passed");
+	}
 
 	const manifest = readManifestFile(manifestPath);
 	try {
@@ -147,6 +170,7 @@ export async function runBranchSession(
 			prUrl = extractedUrl;
 		} else {
 			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
+			await reporter.fail("No PR URL produced");
 			return failureResult(result.providerUsed, result);
 		}
 	}
@@ -158,6 +182,31 @@ export async function runBranchSession(
 	if (validationResults) {
 		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);
 	}
+
+	// CI Monitor: poll CI and fix failures if enabled
+	if (isCiMonitorEnabled(config.ci_monitor)) {
+		const manifestBranch = manifest?.branch;
+		if (manifestBranch) {
+			const ciResult = await monitorCi(
+				manifestBranch,
+				config,
+				issue,
+				models,
+				workspace,
+				logFile,
+				workspace,
+				lifecycleEnv,
+				(extra) =>
+					buildRunOptions(config, issue, workspace, logFile, workspace, lifecycleEnv, extra),
+			);
+			if (!ciResult.passed && !ciResult.skipped && config.ci_monitor?.block_on_failure) {
+				logger.error(`CI failed for ${issue.id}. Blocking completion.`);
+				return failureResult(result.providerUsed, result);
+			}
+		}
+	}
+
+	await reporter.finish([prUrl]);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {

@@ -40,6 +40,17 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 		});
 	}
 
+	// Listen for TUI merge-comment events to post a comment on the issue tracker
+	kanbanEmitter.on("issue:merge-comment", async (issueId: string, prUrls: string[]) => {
+		if (!source.createComment) return;
+		try {
+			const urls = prUrls.map((url) => `- ${url}`).join("\n");
+			await source.createComment(issueId, `PR merged via Lisa TUI\n\n${urls}`);
+		} catch {
+			// Best-effort
+		}
+	});
+
 	logger.log(
 		`Starting loop (models: ${models.map((m) => (m.model ? `${m.provider}/${m.model}` : m.provider)).join(" → ")}, source: ${config.source}, label: ${formatLabels(config.source_config)}, workflow: ${config.workflow}${concurrency > 1 ? `, concurrency: ${concurrency}` : ""})`,
 	);

@@ -430,6 +430,15 @@ export class PlaneSource implements Source {
 		);
 	}
 
+	async createComment(issueId: string, body: string): Promise<string> {
+		const { workspaceSlug, projectId, issueId: planeIssueId } = parseIssueId(issueId);
+		const result = await planePost<PlaneComment>(
+			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/${planeIssueId}/comments/`,
+			{ comment_html: `<p>${escapeHtml(body)}</p>` },
+		);
+		return result.id;
+	}
+
 	async createIssue(opts: CreateIssueOpts, config: SourceConfig): Promise<string> {
 		const workspaceSlug = config.scope;
 		const projectId = await resolveProjectId(workspaceSlug, config.project);

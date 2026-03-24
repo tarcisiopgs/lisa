@@ -24,6 +24,9 @@ interface SidebarProps {
 	paused?: boolean;
 	hasInProgress?: boolean;
 	hasPrUrl?: boolean;
+	canMerge?: boolean;
+	mergeConfirm?: string | null;
+	merging?: string | null;
 	updateInfo?: UpdateInfo | null;
 	workComplete?: { total: number; duration: number } | null;
 }
@@ -38,6 +41,9 @@ export function Sidebar({
 	paused = false,
 	hasInProgress = false,
 	hasPrUrl = false,
+	canMerge = false,
+	mergeConfirm = null,
+	merging = null,
 	updateInfo = null,
 	workComplete = null,
 }: SidebarProps) {
@@ -206,6 +212,9 @@ export function Sidebar({
 			{activeView === "detail" && (
 				<Box marginTop={1} flexDirection="column">
 					{hasPrUrl && <Text dimColor>{"[o]  open PR"}</Text>}
+					{canMerge && !merging && !mergeConfirm && <Text dimColor>{"[m]  merge"}</Text>}
+					{merging && <Text color="yellow">{"⏳ merging..."}</Text>}
+					{mergeConfirm && <Text color="yellow">{"⚠ CI not passed\n   merge? [y/n]"}</Text>}
 					<Text dimColor>{"[Esc] back"}</Text>
 				</Box>
 			)}

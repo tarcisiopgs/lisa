@@ -23,7 +23,7 @@ export interface KanbanCard {
 	queueOrder?: number;
 }
 
-const MERGE_POLL_INTERVAL_MS = 60_000;
+const MERGE_POLL_INTERVAL_MS = 5_000;
 const activePolls = new Map<string, ReturnType<typeof setInterval>>();
 
 async function checkPrMergedByUrl(prUrl: string): Promise<boolean> {

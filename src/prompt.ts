@@ -69,6 +69,8 @@ export interface BuildPromptOptions {
 	previousResults?: PreviousStepResult[];
 	/** Scoped mode only */
 	isLastStep?: boolean;
+	/** Context enrichment: relevant files discovered by grepping the codebase */
+	relevantFiles?: string | null;
 }
 
 export function buildPrompt(opts: BuildPromptOptions): string {
@@ -86,6 +88,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		step,
 		previousResults = [],
 		isLastStep = false,
+		relevantFiles,
 	} = opts;
 
 	// Resolve manifest path
@@ -102,6 +105,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const relevantFilesBlock = relevantFiles ?? "";
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
 
@@ -309,7 +313,7 @@ ${workContext}
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${depBlock ? `\n${depBlock}\n` : ""}${scopeSection}
+${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${relevantFilesBlock ? `\n${relevantFilesBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}${scopeSection}
 ${instructions}
 
 ${rulesSection}
@@ -333,6 +337,7 @@ export function buildImplementPrompt(
 	cwd?: string,
 	manifestPath?: string,
 	repoContextMd?: string | null,
+	relevantFiles?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
@@ -349,6 +354,7 @@ export function buildImplementPrompt(
 			cwd,
 			platform: config.platform,
 			repoContextMd,
+			relevantFiles,
 		});
 	}
 
@@ -364,6 +370,7 @@ export function buildImplementPrompt(
 		platform: config.platform,
 		repoContextMd,
 		config,
+		relevantFiles,
 	});
 }
 
@@ -377,6 +384,7 @@ export function buildNativeWorktreePrompt(
 	manifestPath?: string,
 	platform: PRPlatform = "cli",
 	repoContextMd?: string | null,
+	relevantFiles?: string | null,
 ): string {
 	return buildPrompt({
 		issue,
@@ -389,6 +397,7 @@ export function buildNativeWorktreePrompt(
 		cwd: repoPath,
 		platform,
 		repoContextMd,
+		relevantFiles,
 	});
 }
 
