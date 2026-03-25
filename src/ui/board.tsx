@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
 import { Column } from "./column.js";
 import { formatElapsed } from "./format.js";
 import type { KanbanCard } from "./state.js";
@@ -16,6 +17,7 @@ interface BoardProps {
 		done: string;
 	};
 	isEmpty: boolean;
+	isFetching?: boolean;
 	isWatching?: boolean;
 	isWatchPrompt?: boolean;
 	workComplete: { total: number; duration: number } | null;
@@ -29,6 +31,7 @@ export function Board({
 	columns,
 	labels,
 	isEmpty,
+	isFetching = false,
 	isWatching = false,
 	isWatchPrompt = false,
 	workComplete,
@@ -37,6 +40,37 @@ export function Board({
 	paused = false,
 }: BoardProps) {
 	const { backlog, inProgress, done } = columns;
+
+	if (isFetching) {
+		return (
+			<Box flexGrow={1} alignItems="center" justifyContent="center">
+				<Box
+					flexDirection="column"
+					borderStyle="single"
+					borderColor="yellow"
+					paddingX={3}
+					paddingY={1}
+				>
+					<Box flexDirection="row">
+						<Text color="yellow">
+							<Spinner type="dots" />
+						</Text>
+						<Text color="yellow" bold>
+							{"  FETCHING ISSUES..."}
+						</Text>
+					</Box>
+					<Box height={1} />
+					<Text color="white" dimColor>
+						Querying the issue tracker for matching items.
+					</Text>
+					<Box height={1} />
+					<Text color="gray" dimColor>
+						Press [q] to quit
+					</Text>
+				</Box>
+			</Box>
+		);
+	}
 
 	if (isWatching) {
 		return (

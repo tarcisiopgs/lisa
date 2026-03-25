@@ -22,10 +22,8 @@ interface KanbanAppProps {
 
 export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const { exit } = useApp();
-	const { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse } = useKanbanState(
-		config.bell ?? true,
-		initialCards,
-	);
+	const { cards, isEmpty, isFetching, isWatching, isWatchPrompt, workComplete, modelInUse } =
+		useKanbanState(config.bell ?? true, initialCards);
 	const { rows } = useTerminalSize();
 
 	const [activeView, setActiveView] = useState<ActiveView>("board");
@@ -446,6 +444,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	let sidebarMode: SidebarMode = "board";
 	if (isWatchPrompt) sidebarMode = "watch-prompt";
 	else if (isWatching) sidebarMode = "watching";
+	else if (isFetching && activeView === "board") sidebarMode = "empty";
 	else if (isEmpty && activeView === "board" && cards.length === 0) sidebarMode = "empty";
 	else if (isEmpty && activeView === "board" && cards.length > 0) sidebarMode = "idle";
 	else if (activeView === "plan-chat") sidebarMode = "plan-chat";
@@ -526,6 +525,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 					columns={{ backlog, inProgress, done }}
 					labels={labels}
 					isEmpty={isEmpty}
+					isFetching={isFetching}
 					isWatching={isWatching}
 					isWatchPrompt={isWatchPrompt}
 					workComplete={workComplete}

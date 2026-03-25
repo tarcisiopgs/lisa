@@ -3,6 +3,19 @@ import { normalizeLabels } from "../sources/base.js";
 import type { PlanResult, Source, SourceConfig } from "../types/index.js";
 
 /**
+ * Ensure the issue description contains acceptance criteria as a `- [ ]` checklist.
+ * If the description already has checklist items, return it unchanged.
+ * Otherwise, append the acceptance criteria from the structured array.
+ */
+function ensureAcceptanceCriteria(description: string, criteria: string[]): string {
+	if (!criteria.length) return description;
+	if (/- \[ \]/.test(description)) return description;
+
+	const checklist = criteria.map((c) => `- [ ] ${c}`).join("\n");
+	return `${description}\n\n## Acceptance Criteria\n\n${checklist}`;
+}
+
+/**
  * Create all plan issues in the source, in order.
  * Links dependencies where the source supports it.
  * Returns array of created issue IDs.
@@ -24,8 +37,9 @@ export async function createPlanIssues(
 	const orderToId = new Map<number, string>();
 
 	for (const issue of sorted) {
-		// Add dependency note to description for sources without native linking
-		let description = issue.description;
+		// Ensure acceptance criteria are embedded in the description as a checklist
+		let description = ensureAcceptanceCriteria(issue.description, issue.acceptanceCriteria);
+
 		if (issue.dependsOn.length > 0 && !source.linkDependency) {
 			const depRefs = issue.dependsOn
 				.map((depOrder) => {
@@ -36,36 +50,42 @@ export async function createPlanIssues(
 			description += `\n\n---\n_Depends on: ${depRefs}_`;
 		}
 
-		const id = await source.createIssue(
-			{
-				title: issue.title,
-				description,
-				status: config.pick_from,
-				label: primaryLabel,
-				order: issue.order,
-				parentId: plan.sourceIssueId,
-			},
-			config,
-		);
+		try {
+			const id = await source.createIssue(
+				{
+					title: issue.title,
+					description,
+					status: config.pick_from,
+					label: primaryLabel,
+					order: issue.order,
+					parentId: plan.sourceIssueId,
+				},
+				config,
+			);
 
-		createdIds.push(id);
-		orderToId.set(issue.order, id);
-		logger.ok(`${id}: ${issue.title}`);
+			createdIds.push(id);
+			orderToId.set(issue.order, id);
+			logger.ok(`${id}: ${issue.title}`);
 
-		// Link dependencies where supported
-		if (source.linkDependency && issue.dependsOn.length > 0) {
-			for (const depOrder of issue.dependsOn) {
-				const depId = orderToId.get(depOrder);
-				if (depId) {
-					try {
-						await source.linkDependency(id, depId);
-					} catch (err) {
-						logger.warn(
-							`Could not link dependency ${id} → ${depId}: ${err instanceof Error ? err.message : String(err)}`,
-						);
+			// Link dependencies where supported
+			if (source.linkDependency && issue.dependsOn.length > 0) {
+				for (const depOrder of issue.dependsOn) {
+					const depId = orderToId.get(depOrder);
+					if (depId) {
+						try {
+							await source.linkDependency(id, depId);
+						} catch (err) {
+							logger.warn(
+								`Could not link dependency ${id} → ${depId}: ${err instanceof Error ? err.message : String(err)}`,
+							);
+						}
 					}
 				}
 			}
+		} catch (err) {
+			logger.warn(
+				`Failed to create issue "${issue.title}": ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 	}
 

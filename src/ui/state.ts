@@ -64,6 +64,7 @@ function startMergePolling(issueId: string, prUrl: string): void {
 export interface KanbanStateData {
 	cards: KanbanCard[];
 	isEmpty: boolean;
+	isFetching: boolean;
 	isWatching: boolean;
 	isWatchPrompt: boolean;
 	workComplete: { total: number; duration: number } | null;
@@ -98,6 +99,7 @@ export function useKanbanState(
 ): KanbanStateData {
 	const [cards, setCards] = useState<KanbanCard[]>(initialCards);
 	const [isEmpty, setIsEmpty] = useState(false);
+	const [isFetching, setIsFetching] = useState(initialCards.length === 0);
 	const [isWatching, setIsWatching] = useState(false);
 	const [isWatchPrompt, setIsWatchPrompt] = useState(false);
 	const [workComplete, setWorkComplete] = useState<{ total: number; duration: number } | null>(
@@ -107,6 +109,7 @@ export function useKanbanState(
 
 	useEffect(() => {
 		const onQueued = (issue: Issue) => {
+			setIsFetching(false);
 			setCards((prev) => {
 				if (prev.some((c) => c.id === issue.id)) return prev;
 				const maxOrder = prev.reduce((max, c) => Math.max(max, c.queueOrder ?? 0), 0);
@@ -286,10 +289,16 @@ export function useKanbanState(
 		const onModelChanged = (model: string) => setModelInUse(model);
 		kanbanEmitter.on("provider:model-changed", onModelChanged);
 
-		const onEmpty = () => setIsEmpty(true);
+		const onEmpty = () => {
+			setIsEmpty(true);
+			setIsFetching(false);
+		};
 		const onResumed = () => setIsEmpty(false);
 		const onComplete = (data: { total: number; duration: number }) => setWorkComplete(data);
-		const onWatching = () => setIsWatching(true);
+		const onWatching = () => {
+			setIsWatching(true);
+			setIsFetching(false);
+		};
 		const onWatchResume = () => setIsWatching(false);
 		const onWatchPrompt = () => {
 			setIsWatchPrompt(true);
@@ -351,5 +360,5 @@ export function useKanbanState(
 		}
 	}, []);
 
-	return { cards, isEmpty, isWatching, isWatchPrompt, workComplete, modelInUse };
+	return { cards, isEmpty, isFetching, isWatching, isWatchPrompt, workComplete, modelInUse };
 }
