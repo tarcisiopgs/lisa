@@ -216,11 +216,13 @@ export async function runConcurrentLoop(
 						noMoreIssues = true;
 						break;
 					}
-					kanbanEmitter.emit("work:resumed");
+					// Don't emit work:resumed here — only signal running when an issue
+					// is actually picked up, preventing idle→running→idle flicker.
 				}
 				break;
 			}
 
+			kanbanEmitter.emit("work:resumed");
 			sessionCounter = tentativeSession;
 			const session = sessionCounter;
 			claimedIssueIds.add(issue.id);
