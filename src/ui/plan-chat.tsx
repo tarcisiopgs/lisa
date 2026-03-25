@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTerminalSize } from "./use-terminal-size.js";
 
 interface ChatMessage {
@@ -17,13 +17,65 @@ interface PlanChatProps {
 
 const SIDEBAR_TOTAL_WIDTH = 30;
 
+/**
+ * Word-wraps a single line to fit within maxWidth columns.
+ * Splits at word boundaries when possible; hard-breaks long words.
+ */
+function wrapLine(text: string, maxWidth: number): string[] {
+	if (maxWidth <= 0) return [text];
+	if (text.length <= maxWidth) return [text];
+
+	const wrapped: string[] = [];
+	let remaining = text;
+
+	while (remaining.length > maxWidth) {
+		let splitAt = remaining.lastIndexOf(" ", maxWidth);
+		if (splitAt <= 0) {
+			splitAt = maxWidth;
+		}
+		wrapped.push(remaining.slice(0, splitAt));
+		remaining = remaining.slice(splitAt).trimStart();
+	}
+	if (remaining.length > 0) {
+		wrapped.push(remaining);
+	}
+
+	return wrapped;
+}
+
 export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatProps) {
 	const [inputBuffer, setInputBuffer] = useState("");
+	const [scrollOffset, setScrollOffset] = useState(0);
+	const [userScrolled, setUserScrolled] = useState(false);
 	const { columns: terminalCols, rows: terminalRows } = useTerminalSize();
 	const maxWidth = Math.max(1, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
 
-	// Reserve rows for: header(1) + separator(1) + input separator(1) + input row(1) + border(2) = 6
-	const messageAreaHeight = Math.max(1, terminalRows - 6);
+	// Reserve rows for: header(1) + separator(1) + scroll hint(1) + input separator(1) + input row(1) + border(2) = 7
+	const messageAreaHeight = Math.max(1, terminalRows - 7);
+
+	// Flatten messages into display lines, word-wrapping long lines to fit terminal width
+	const displayLines: { role: "user" | "ai"; text: string; isFirst: boolean }[] = [];
+	for (const msg of messages) {
+		const rawLines = msg.content.split("\n");
+		let isFirst = true;
+		for (const rawLine of rawLines) {
+			const wrapped = wrapLine(rawLine, maxWidth);
+			for (const wrappedLine of wrapped) {
+				displayLines.push({ role: msg.role, text: wrappedLine, isFirst });
+				isFirst = false;
+			}
+		}
+	}
+
+	const totalLines = displayLines.length;
+	const maxOffset = Math.max(0, totalLines - messageAreaHeight);
+
+	// Auto-scroll to bottom when new messages arrive (unless user scrolled up)
+	useEffect(() => {
+		if (!userScrolled) {
+			setScrollOffset(maxOffset);
+		}
+	}, [maxOffset, userScrolled]);
 
 	useInput((input, key) => {
 		if (key.escape) {
@@ -35,6 +87,7 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 			if (trimmed.length > 0) {
 				onSend(trimmed);
 				setInputBuffer("");
+				setUserScrolled(false);
 			}
 			return;
 		}
@@ -42,30 +95,31 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 			setInputBuffer((prev) => prev.slice(0, -1));
 			return;
 		}
+		if (key.upArrow) {
+			setScrollOffset((prev) => {
+				const next = Math.max(0, prev - 1);
+				if (next < maxOffset) setUserScrolled(true);
+				return next;
+			});
+			return;
+		}
+		if (key.downArrow) {
+			setScrollOffset((prev) => {
+				const next = Math.min(maxOffset, prev + 1);
+				if (next >= maxOffset) setUserScrolled(false);
+				return next;
+			});
+			return;
+		}
 		// Only append printable characters (ignore control sequences)
-		if (
-			input &&
-			!key.ctrl &&
-			!key.meta &&
-			!key.upArrow &&
-			!key.downArrow &&
-			!key.leftArrow &&
-			!key.rightArrow &&
-			!key.tab
-		) {
+		if (input && !key.ctrl && !key.meta && !key.leftArrow && !key.rightArrow && !key.tab) {
 			setInputBuffer((prev) => prev + input);
 		}
 	});
 
-	// Flatten messages into display lines and take the tail that fits
-	const displayLines: { role: "user" | "ai"; text: string; isFirst: boolean }[] = [];
-	for (const msg of messages) {
-		const lines = msg.content.split("\n");
-		for (let i = 0; i < lines.length; i++) {
-			displayLines.push({ role: msg.role, text: lines[i] ?? "", isFirst: i === 0 });
-		}
-	}
-	const visibleMessages = displayLines.slice(-messageAreaHeight);
+	const visibleMessages = displayLines.slice(scrollOffset, scrollOffset + messageAreaHeight);
+	const hiddenAbove = scrollOffset;
+	const hiddenBelow = Math.max(0, totalLines - scrollOffset - messageAreaHeight);
 
 	return (
 		<Box
@@ -77,17 +131,39 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 			paddingY={0}
 		>
 			{/* Header */}
-			<Box>
-				<Text color="yellow" bold>
-					{"PLAN"}
-				</Text>
-				<Text color="gray">{" \u2014 "}</Text>
-				<Text color="white">Describe your goal</Text>
+			<Box justifyContent="space-between">
+				<Box>
+					<Text color="yellow" bold>
+						{"PLAN"}
+					</Text>
+					<Text color="gray">{" \u2014 "}</Text>
+					<Text color="white">Describe your goal</Text>
+				</Box>
+				<Box>
+					{userScrolled ? (
+						<Text color="gray" dimColor>
+							{"\u2191\u2193 scroll"}
+						</Text>
+					) : totalLines > messageAreaHeight ? (
+						<Text color="green" dimColor>
+							{"live"}
+						</Text>
+					) : null}
+				</Box>
 			</Box>
 
 			<Text color="yellow" dimColor>
 				{"\u2500".repeat(Math.max(0, maxWidth))}
 			</Text>
+
+			{/* Scroll-up hint */}
+			{hiddenAbove > 0 ? (
+				<Text color="gray" dimColor>
+					{`\u2191 ${hiddenAbove} more`}
+				</Text>
+			) : (
+				<Text> </Text>
+			)}
 
 			{/* Message area */}
 			<Box height={messageAreaHeight} flexDirection="column" overflow="hidden">
@@ -125,6 +201,15 @@ export function PlanChat({ messages, isThinking, onSend, onCancel }: PlanChatPro
 					</Box>
 				)}
 			</Box>
+
+			{/* Scroll-down hint */}
+			{hiddenBelow > 0 ? (
+				<Text color="gray" dimColor>
+					{`\u2193 ${hiddenBelow} more`}
+				</Text>
+			) : (
+				<Text> </Text>
+			)}
 
 			{/* Input separator */}
 			<Text color="yellow" dimColor>
