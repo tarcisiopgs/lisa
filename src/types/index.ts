@@ -134,6 +134,11 @@ export interface ProgressConfig {
 	enabled?: boolean;
 }
 
+export interface PrConfig {
+	reviewers?: string[];
+	assignees?: string[];
+}
+
 export interface LisaConfig {
 	provider: ProviderName;
 	provider_options?: Partial<Record<ProviderName, ProviderOptions>>;
@@ -155,6 +160,7 @@ export interface LisaConfig {
 	ci_monitor?: CiMonitorConfig;
 	spec_compliance?: SpecComplianceConfig;
 	progress_comments?: ProgressConfig;
+	pr?: PrConfig;
 }
 
 export interface DependencyContext {

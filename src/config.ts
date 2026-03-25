@@ -9,6 +9,7 @@ import type {
 	LisaConfig,
 	OverseerConfig,
 	PRPlatform,
+	PrConfig,
 	ProgressConfig,
 	ProofOfWorkConfig,
 	ProviderName,
@@ -164,6 +165,34 @@ export function findConfigDir(startDir: string = process.cwd()): string | null {
 	}
 }
 
+const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,38}$/;
+
+function isValidPrUsername(s: string): boolean {
+	return s === "self" || USERNAME_RE.test(s);
+}
+
+function isStringArray(v: unknown): v is string[] {
+	return Array.isArray(v) && v.every((item) => typeof item === "string");
+}
+
+function parsePrConfig(raw: Partial<PrConfig> | undefined): PrConfig | undefined {
+	if (!raw) return undefined;
+
+	const reviewers = isStringArray(raw.reviewers)
+		? raw.reviewers.filter(isValidPrUsername)
+		: undefined;
+	const assignees = isStringArray(raw.assignees)
+		? raw.assignees.filter(isValidPrUsername)
+		: undefined;
+
+	if (!reviewers?.length && !assignees?.length) return undefined;
+
+	return {
+		reviewers: reviewers?.length ? reviewers : undefined,
+		assignees: assignees?.length ? assignees : undefined,
+	};
+}
+
 export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const configPath = getConfigPath(cwd);
 
@@ -235,6 +264,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const rawCiMonitor = parsed.ci_monitor as Partial<CiMonitorConfig> | undefined;
 	const rawSpecCompliance = parsed.spec_compliance as Partial<SpecComplianceConfig> | undefined;
 	const rawProgress = parsed.progress_comments as Partial<ProgressConfig> | undefined;
+	const rawPr = parsed.pr as Partial<PrConfig> | undefined;
 
 	const config: LisaConfig = {
 		...DEFAULT_CONFIG,
@@ -295,6 +325,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 				}
 			: undefined,
 		progress_comments: rawProgress ? { enabled: rawProgress.enabled ?? false } : undefined,
+		pr: parsePrConfig(rawPr),
 		provider_options: {
 			...(DEFAULT_CONFIG.provider_options || {}),
 			...((parsed.provider_options ?? {}) as LisaConfig["provider_options"]),
