@@ -254,6 +254,13 @@ ci_monitor:
 progress_comments:
   enabled: true              # post real-time status on issues
 
+pr:
+  reviewers:                   # auto-request reviews on every PR
+    - octocat
+    - hubot
+  assignees:                   # auto-assign PRs ("self" = authenticated user)
+    - self
+
 hooks:
   before_run: "./scripts/setup.sh"
   after_run: "./scripts/cleanup.sh"
