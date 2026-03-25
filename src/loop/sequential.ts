@@ -166,11 +166,13 @@ export async function runSequentialLoop(
 			if (isShuttingDown() || hasUserQuitFromWatchPrompt()) {
 				break;
 			}
-			kanbanEmitter.emit("work:resumed");
+			// Don't emit work:resumed here — only signal running when an issue
+			// is actually picked up, preventing idle→running→idle flicker.
 			session--;
 			continue;
 		}
 
+		kanbanEmitter.emit("work:resumed");
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 
