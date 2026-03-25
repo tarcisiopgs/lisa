@@ -49,6 +49,7 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **CI monitoring** — polls CI after PR creation, re-invokes the agent to fix failures automatically
 - **Progress comments** — posts real-time status updates on issues as Lisa works through stages
 - **Context enrichment** — greps for issue-related files and surfaces them in the agent prompt
+- **PR reviewers & assignees** — auto-request reviews and assign PRs via config; `self` keyword resolves to the authenticated user
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
 - **Project context** — auto-generates `.lisa/context.md` with your stack, conventions, and constraints

@@ -29,6 +29,8 @@ interface SidebarProps {
 	merging?: string | null;
 	updateInfo?: UpdateInfo | null;
 	workComplete?: { total: number; duration: number } | null;
+	reviewers?: string[];
+	assignees?: string[];
 }
 
 export function Sidebar({
@@ -46,6 +48,8 @@ export function Sidebar({
 	merging = null,
 	updateInfo = null,
 	workComplete = null,
+	reviewers,
+	assignees,
 }: SidebarProps) {
 	const dir = basename(cwd).toUpperCase();
 	const cwdLabel = existsSync(join(cwd, ".git")) ? "REPOSITORY" : "WORKSPACE";
@@ -216,6 +220,21 @@ export function Sidebar({
 					{merging && <Text color="yellow">{"⏳ merging..."}</Text>}
 					{mergeConfirm && <Text color="yellow">{"⚠ CI not passed\n   merge? [y/n]"}</Text>}
 					<Text dimColor>{"[Esc] back"}</Text>
+					{hasPrUrl && (reviewers?.length || assignees?.length) ? (
+						<Box marginTop={1} flexDirection="column">
+							<Text color="yellow">{"────────────────────────"}</Text>
+							{reviewers?.length ? (
+								<Text
+									dimColor
+								>{`👀 ${reviewers.length} reviewer${reviewers.length > 1 ? "s" : ""}`}</Text>
+							) : null}
+							{assignees?.length ? (
+								<Text
+									dimColor
+								>{`👤 ${assignees.map((a) => (a === "self" ? "you" : a)).join(", ")}`}</Text>
+							) : null}
+						</Box>
+					) : null}
 				</Box>
 			)}
 			{activeView === "watching" && (

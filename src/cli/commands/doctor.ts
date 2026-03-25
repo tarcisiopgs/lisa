@@ -149,6 +149,26 @@ function runAdvancedChecks(config: LisaConfig): CheckResult[] {
 		category: "advanced",
 	});
 
+	// PR reviewers/assignees: check for platform incompatibilities
+	if (config.pr) {
+		if (config.platform === "bitbucket" && config.pr.assignees?.length) {
+			results.push({
+				passed: false,
+				label: "PR assignees compatible with platform",
+				suggestion:
+					"Bitbucket does not support PR assignees. Remove pr.assignees or switch platform.",
+				category: "advanced",
+			});
+		}
+		if (config.pr.reviewers?.length || config.pr.assignees?.length) {
+			results.push({
+				passed: true,
+				label: `PR config: ${config.pr.reviewers?.length ?? 0} reviewer(s), ${config.pr.assignees?.length ?? 0} assignee(s)`,
+				category: "advanced",
+			});
+		}
+	}
+
 	return results;
 }
 
