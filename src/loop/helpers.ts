@@ -148,6 +148,9 @@ export async function refreshKanban(source: Source, config: LisaConfig): Promise
 		for (const issue of allIssues) {
 			kanbanEmitter.emit("issue:queued", issue);
 		}
+		// Remove stale backlog cards that are no longer in the source
+		const sourceIds = new Set(allIssues.map((i) => i.id));
+		kanbanEmitter.emit("kanban:reconcile-backlog", sourceIds);
 	} catch {
 		// Non-fatal
 	}
