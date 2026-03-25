@@ -6,13 +6,21 @@ import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { runWithFallback } from "../providers/index.js";
 import { discoverInfra } from "../session/discovery.js";
-import { runLifecycle, stopResources } from "../session/lifecycle.js";
+import { runLifecycle } from "../session/lifecycle.js";
 import {
 	buildValidationRecoveryPrompt,
 	isProofOfWorkEnabled,
 	runValidationCommands,
 } from "../session/proof-of-work.js";
 import { startReconciliation } from "../session/reconciliation.js";
+import {
+	buildCompliancePrompt,
+	buildComplianceRecoveryPrompt,
+	extractAcceptanceCriteria,
+	getFullDiff,
+	isSpecComplianceEnabled,
+	parseComplianceResponse,
+} from "../session/spec-compliance.js";
 import type {
 	FallbackResult,
 	Issue,
@@ -20,6 +28,7 @@ import type {
 	ModelSpec,
 	RunOptions,
 	Source,
+	SpecComplianceResult,
 	ValidationResult,
 } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
@@ -289,7 +298,7 @@ export async function runProofOfWork(
 	logFile: string,
 	workspace: string,
 	lifecycleEnv: Record<string, string>,
-	result: FallbackResult,
+	_result: FallbackResult,
 ): Promise<{ results?: ValidationResult[]; reconciled?: boolean; blocked?: boolean }> {
 	if (!isProofOfWorkEnabled(config.proof_of_work)) return {};
 
@@ -350,6 +359,115 @@ export async function runProofOfWork(
 			}
 			logger.error(`Validation recovery failed for ${issue.id}. Creating PR with failures noted.`);
 			return { results };
+		}
+	}
+}
+
+/** Run spec compliance check: verify implementation satisfies acceptance criteria via LLM. */
+export async function runSpecCompliance(
+	config: LisaConfig,
+	issue: Issue,
+	models: ModelSpec[],
+	cwd: string,
+	baseBranch: string,
+	logFile: string,
+	workspace: string,
+	lifecycleEnv: Record<string, string>,
+): Promise<{ result?: SpecComplianceResult; reconciled?: boolean; blocked?: boolean }> {
+	if (!isSpecComplianceEnabled(config.spec_compliance)) return {};
+
+	const criteria = extractAcceptanceCriteria(issue.description);
+	if (criteria.length === 0) {
+		logger.warn(`No extractable acceptance criteria for ${issue.id}. Skipping spec compliance.`);
+		return {};
+	}
+
+	const sc = config.spec_compliance;
+	let retriesLeft = sc?.max_retries ?? 1;
+
+	while (true) {
+		if (reconciliationSet.has(issue.id)) {
+			reconciliationSet.delete(issue.id);
+			logger.warn(`Issue ${issue.id} was closed/cancelled during spec compliance. Skipping.`);
+			return { reconciled: true };
+		}
+
+		startSpinner(`${issue.id} \u2014 checking spec compliance...`);
+		const diff = await getFullDiff(cwd, baseBranch);
+		if (!diff) {
+			stopSpinner();
+			logger.warn(`No diff available for spec compliance on ${issue.id}. Skipping.`);
+			return {};
+		}
+
+		const compliancePrompt = buildCompliancePrompt(issue, criteria, diff);
+		const checkResult = await runWithFallback(
+			models,
+			compliancePrompt,
+			buildRunOptions(config, issue, cwd, logFile, workspace, lifecycleEnv),
+		);
+		stopSpinner();
+
+		if (!checkResult.success) {
+			logger.warn(`Spec compliance check failed to run for ${issue.id}. Proceeding without it.`);
+			return {};
+		}
+
+		const compliance = parseComplianceResponse(checkResult.output);
+		if (!compliance) {
+			logger.warn(
+				`Could not parse spec compliance response for ${issue.id}. Proceeding without it.`,
+			);
+			return {};
+		}
+
+		if (compliance.passed) {
+			logger.ok(`Spec compliance passed for ${issue.id}: ${compliance.summary}`);
+			return { result: compliance };
+		}
+
+		// Some criteria not met
+		const unmet = compliance.criteria.filter((c) => !c.met);
+		logger.warn(
+			`Spec compliance failed for ${issue.id}: ${compliance.summary} (${unmet.length} unmet)`,
+		);
+
+		if (retriesLeft <= 0) {
+			if (sc?.block_on_failure) {
+				logger.error(
+					`Spec compliance failed after max retries for ${issue.id}. Blocking PR creation.`,
+				);
+				return { result: compliance, blocked: true };
+			}
+			logger.warn(
+				`Spec compliance failed after max retries for ${issue.id}. Creating PR with failures noted.`,
+			);
+			return { result: compliance };
+		}
+
+		retriesLeft--;
+		logger.warn(
+			`Re-invoking agent to fix unmet criteria for ${issue.id} (${retriesLeft} retries left)...`,
+		);
+
+		const recoveryPrompt = buildComplianceRecoveryPrompt(issue, unmet);
+		startSpinner(`${issue.id} \u2014 fixing unmet criteria...`);
+		const recoveryResult = await runWithFallback(
+			models,
+			recoveryPrompt,
+			buildRunOptions(config, issue, cwd, logFile, workspace, lifecycleEnv),
+		);
+		stopSpinner();
+
+		if (!recoveryResult.success) {
+			if (sc?.block_on_failure) {
+				logger.error(`Spec compliance recovery failed for ${issue.id}. Blocking PR creation.`);
+				return { result: compliance, blocked: true };
+			}
+			logger.warn(
+				`Spec compliance recovery failed for ${issue.id}. Creating PR with failures noted.`,
+			);
+			return { result: compliance };
 		}
 	}
 }

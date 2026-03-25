@@ -8,7 +8,6 @@ import { buildContextMdBlock } from "../prompt.js";
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import type { ChatMessage, LisaConfig } from "../types/index.js";
-import { detectLanguage, languageName } from "./language.js";
 import { parseStructuredOutput } from "./structured-output.js";
 
 export interface BrainstormResult {
@@ -99,8 +98,6 @@ export function buildBrainstormingPrompt(
 	const workspace = resolve(config.workspace);
 	const contextMd = readContext(workspace);
 	const contextBlock = buildContextMdBlock(contextMd);
-	const language = detectLanguage(goal);
-	const langName = languageName(language);
 
 	const historyBlock =
 		history.length > 0
@@ -109,14 +106,12 @@ export function buildBrainstormingPrompt(
 
 	return `You are a requirements analyst. Your job is to deeply understand the user's goal before any implementation planning begins.
 
+Always respond in the same language the user wrote their goal in.
+
 ## Goal
 
 ${goal}
 ${contextBlock}${historyBlock}
-## Language
-
-Respond in ${langName}.
-
 ## Instructions
 
 Ask focused questions about: scope, constraints, existing patterns, edge cases, and success criteria.
@@ -124,8 +119,8 @@ Ask at most 2-3 focused questions total. When you fully understand the goal, pre
 
 ALWAYS respond with a single JSON object (no markdown fences, no extra text):
 
-- To ask a question: {"type": "question", "text": "your question in ${langName}"}
-- To present your understanding: {"type": "summary", "text": "structured summary of what you understood in ${langName}"}
+- To ask a question: {"type": "question", "text": "your question"}
+- To present your understanding: {"type": "summary", "text": "structured summary of what you understood"}
 
 Output ONLY the JSON object.`;
 }

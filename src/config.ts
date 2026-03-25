@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import { array, boolean, literal, number, object, optional, string, union } from "zod";
+import { literal, object, string, union } from "zod";
 import type {
 	CiMonitorConfig,
 	HooksConfig,
@@ -15,6 +15,7 @@ import type {
 	ReconciliationConfig,
 	SourceConfig,
 	SourceName,
+	SpecComplianceConfig,
 	ValidationCommand,
 } from "./types/index.js";
 
@@ -232,6 +233,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		| undefined;
 	const rawReconciliation = parsed.reconciliation as Partial<ReconciliationConfig> | undefined;
 	const rawCiMonitor = parsed.ci_monitor as Partial<CiMonitorConfig> | undefined;
+	const rawSpecCompliance = parsed.spec_compliance as Partial<SpecComplianceConfig> | undefined;
 	const rawProgress = parsed.progress_comments as Partial<ProgressConfig> | undefined;
 
 	const config: LisaConfig = {
@@ -283,6 +285,13 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 					poll_interval: rawCiMonitor.poll_interval,
 					poll_timeout: rawCiMonitor.poll_timeout,
 					block_on_failure: rawCiMonitor.block_on_failure,
+				}
+			: undefined,
+		spec_compliance: rawSpecCompliance
+			? {
+					enabled: rawSpecCompliance.enabled ?? false,
+					max_retries: rawSpecCompliance.max_retries,
+					block_on_failure: rawSpecCompliance.block_on_failure,
 				}
 			: undefined,
 		progress_comments: rawProgress ? { enabled: rawProgress.enabled ?? false } : undefined,

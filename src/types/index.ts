@@ -104,6 +104,24 @@ export interface ReconciliationConfig {
 	check_interval?: number; // seconds, default: 30
 }
 
+export interface SpecComplianceConfig {
+	enabled?: boolean;
+	max_retries?: number; // default: 1
+	block_on_failure?: boolean; // default: false — if true, skip PR creation when compliance fails
+}
+
+export interface SpecComplianceCriterion {
+	criterion: string;
+	met: boolean;
+	evidence: string; // explanation or reason for failure
+}
+
+export interface SpecComplianceResult {
+	criteria: SpecComplianceCriterion[];
+	passed: boolean;
+	summary: string;
+}
+
 export interface CiMonitorConfig {
 	enabled?: boolean;
 	max_retries?: number; // default: 3
@@ -135,6 +153,7 @@ export interface LisaConfig {
 	proof_of_work?: ProofOfWorkConfig;
 	reconciliation?: ReconciliationConfig;
 	ci_monitor?: CiMonitorConfig;
+	spec_compliance?: SpecComplianceConfig;
 	progress_comments?: ProgressConfig;
 }
 

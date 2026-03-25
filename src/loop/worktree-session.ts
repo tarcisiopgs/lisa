@@ -3,7 +3,11 @@ import { execa } from "execa";
 import { analyzeProject } from "../context.js";
 import { enrichContext } from "../enrichment.js";
 import { formatError } from "../errors.js";
-import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
+import {
+	appendPlatformAttribution,
+	appendPlatformProofOfWork,
+	appendPlatformSpecCompliance,
+} from "../git/platform.js";
 import {
 	createWorktree,
 	determineRepoPath,
@@ -40,6 +44,7 @@ import {
 	hookFailure,
 	resolveBaseBranch,
 	runProofOfWork,
+	runSpecCompliance,
 	startInfra,
 	startReconciliationMonitor,
 } from "./helpers.js";
@@ -479,6 +484,31 @@ export async function runManualWorktreeSession(
 		await reporter.update("validating", "Validation passed");
 	}
 
+	// Spec Compliance: verify implementation satisfies acceptance criteria via LLM
+	const complianceResult = await runSpecCompliance(
+		config,
+		issue,
+		models,
+		worktreePath,
+		baseBranch,
+		logFile,
+		workspace,
+		lifecycleEnv,
+	);
+	if (complianceResult.reconciled) {
+		await cleanupWorktree(repoPath, worktreePath);
+		return failureResult(result.providerUsed, result);
+	}
+	if (complianceResult.blocked) {
+		logger.error(
+			`Skipping PR for ${issue.id} — spec compliance failed with block_on_failure enabled.`,
+		);
+		await reporter.fail("Spec compliance failed");
+		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
+		await cleanupWorktree(repoPath, worktreePath);
+		return failureResult(result.providerUsed, result);
+	}
+
 	// Read manifest from worktree (accessible by all providers; worktree cleanup removes it)
 	const manifest = readManifestFile(manifestPath);
 
@@ -546,6 +576,11 @@ export async function runManualWorktreeSession(
 	// Append proof of work to PR body if validation was run
 	if (validationResults) {
 		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);
+	}
+
+	// Append spec compliance results to PR body if check was run
+	if (complianceResult.result) {
+		await appendPlatformSpecCompliance(prUrl, complianceResult.result, config.platform);
 	}
 
 	// CI Monitor: poll CI and fix failures if enabled

@@ -1,5 +1,6 @@
 import { formatProofOfWork } from "../session/proof-of-work.js";
-import type { PRPlatform, ValidationResult } from "../types/index.js";
+import { formatSpecCompliance } from "../session/spec-compliance.js";
+import type { PRPlatform, SpecComplianceResult, ValidationResult } from "../types/index.js";
 import {
 	appendPrAttribution as appendBitbucketAttribution,
 	appendPrBody as appendBitbucketBody,
@@ -52,6 +53,29 @@ export async function appendPlatformProofOfWork(
 		}
 	} catch {
 		// Non-fatal — proof of work append is best-effort
+	}
+}
+
+/**
+ * Appends spec compliance results to the PR/MR body.
+ * Non-fatal — all errors are swallowed internally by each platform.
+ */
+export async function appendPlatformSpecCompliance(
+	prUrl: string,
+	result: SpecComplianceResult,
+	platform: PRPlatform,
+): Promise<void> {
+	const section = formatSpecCompliance(result);
+	try {
+		if (platform === "gitlab") {
+			await appendGitLabBody(prUrl, section);
+		} else if (platform === "bitbucket") {
+			await appendBitbucketBody(prUrl, section);
+		} else {
+			await appendGitHubBody(prUrl, section);
+		}
+	} catch {
+		// Non-fatal — spec compliance append is best-effort
 	}
 }
 

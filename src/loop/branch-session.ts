@@ -2,7 +2,11 @@ import { unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { enrichContext } from "../enrichment.js";
-import { appendPlatformAttribution, appendPlatformProofOfWork } from "../git/platform.js";
+import {
+	appendPlatformAttribution,
+	appendPlatformProofOfWork,
+	appendPlatformSpecCompliance,
+} from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
@@ -25,6 +29,7 @@ import {
 	failureResult,
 	hookFailure,
 	runProofOfWork,
+	runSpecCompliance,
 	startInfra,
 	startReconciliationMonitor,
 } from "./helpers.js";
@@ -155,6 +160,28 @@ export async function runBranchSession(
 		await reporter.update("validating", "Validation passed");
 	}
 
+	// Spec Compliance: verify implementation satisfies acceptance criteria via LLM
+	const complianceResult = await runSpecCompliance(
+		config,
+		issue,
+		models,
+		workspace,
+		config.base_branch,
+		logFile,
+		workspace,
+		lifecycleEnv,
+	);
+	if (complianceResult.reconciled) {
+		return failureResult(result.providerUsed, result);
+	}
+	if (complianceResult.blocked) {
+		logger.error(
+			`Skipping PR for ${issue.id} — spec compliance failed with block_on_failure enabled.`,
+		);
+		await reporter.fail("Spec compliance failed");
+		return failureResult(result.providerUsed, result);
+	}
+
 	const manifest = readManifestFile(manifestPath);
 	try {
 		unlinkSync(manifestPath);
@@ -181,6 +208,11 @@ export async function runBranchSession(
 	// Append proof of work to PR body if validation was run
 	if (validationResults) {
 		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);
+	}
+
+	// Append spec compliance results to PR body if check was run
+	if (complianceResult.result) {
+		await appendPlatformSpecCompliance(prUrl, complianceResult.result, config.platform);
 	}
 
 	// CI Monitor: poll CI and fix failures if enabled

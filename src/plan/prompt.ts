@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 import { buildContextMdBlock } from "../prompt.js";
 import { readContext } from "../session/context-manager.js";
 import type { LisaConfig } from "../types/index.js";
-import { detectLanguage, languageName } from "./language.js";
 
 /**
  * Build a prompt that asks the AI to decompose a goal into atomic issues.
@@ -13,7 +12,6 @@ export function buildPlanningPrompt(
 	config: LisaConfig,
 	parentIssueDescription?: string,
 ): string {
-	const language = detectLanguage(goal);
 	const workspace = resolve(config.workspace);
 	const contextMd = readContext(workspace);
 	const contextBlock = buildContextMdBlock(contextMd);
@@ -33,6 +31,8 @@ export function buildPlanningPrompt(
 		: "";
 
 	return `You are a project planning agent. Your job is to decompose a high-level goal into atomic, implementable issues.
+
+Always respond in the same language the user wrote their goal in.
 
 ## Goal
 
@@ -54,10 +54,6 @@ For each issue, provide:
 - **order**: Integer (1-based) — execution order based on dependencies
 - **dependsOn**: Array of order numbers this issue depends on (empty if independent)
 ${config.repos.length > 1 ? "- **repo**: Name of the target repository from the list above (required for multi-repo)\n" : ""}
-## Language
-
-Respond in ${languageName(language)}. Generate all issue titles, descriptions, and acceptance criteria in ${languageName(language)}.
-
 ## Rules
 
 1. Each issue MUST be self-contained and completable in a single session
