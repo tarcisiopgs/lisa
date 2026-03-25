@@ -40,7 +40,8 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **7 issue trackers** — Linear, GitHub Issues, GitLab Issues, Jira, Trello, Plane, Shortcut
 - **8 AI agents** — Claude Code, Gemini CLI, GitHub Copilot CLI, Cursor Agent, Aider, Goose, OpenCode, Codex
 - **AI planning** — describe a goal, the AI brainstorms with you, decomposes it into issues with dependencies, created in your tracker
-- **Language-aware** — detects your goal's language (pt/en/es) and generates issues in the same language
+- **Language-aware** — responds in the same language you write your goal in
+- **Spec compliance** — LLM-verified acceptance criteria check before PR creation, with auto-retry
 - **Concurrent execution** — process multiple issues in parallel, each in its own worktree
 - **Multi-repo** — plans across repos, creates one PR per repo in the correct order
 - **Model fallback** — chain models; transient errors (429, quota, timeout) auto-switch to the next
@@ -101,6 +102,9 @@ lisa plan --no-brainstorm "goal" # skip brainstorming, decompose directly
 lisa plan --yes "goal"      # skip confirmations (CI/scripts)
 lisa init                   # create .lisa/config.yaml interactively
 lisa status                 # show session stats
+lisa config --show           # print current config
+lisa config --get loop.cooldown  # query a specific value
+lisa config --set loop.cooldown=5  # set nested config values
 lisa doctor                 # diagnose setup issues (config, provider, env, git)
 lisa context refresh        # regenerate project context
 lisa feedback --pr URL      # inject PR review feedback into guardrails
@@ -235,6 +239,11 @@ proof_of_work:
 validation:
   require_acceptance_criteria: true
 
+spec_compliance:
+  enabled: true
+  max_retries: 1             # retry agent to fix unmet criteria (default: 1)
+  block_on_failure: true     # skip PR when criteria aren't met (default: false)
+
 ci_monitor:
   enabled: true
   max_retries: 3             # fix attempts on CI failure
@@ -244,9 +253,33 @@ ci_monitor:
 
 progress_comments:
   enabled: true              # post real-time status on issues
+
+hooks:
+  before_run: "./scripts/setup.sh"
+  after_run: "./scripts/cleanup.sh"
+  timeout: 60000             # ms, default 60000
 ```
 
 </details>
+
+## Validation Pipeline
+
+After the agent implements an issue, Lisa runs a multi-stage validation pipeline before creating a PR:
+
+```
+Agent implements → Proof of Work (lint/test/typecheck) → Spec Compliance → PR
+```
+
+**Proof of Work** runs configured shell commands (lint, typecheck, test). If any fail, the agent is re-invoked with the error output to fix the issue.
+
+**Spec Compliance** extracts acceptance criteria from the issue description (`- [ ]` checklists) and asks the LLM to verify each one against the git diff. The result is a structured JSON with met/not-met verdicts and evidence. If criteria are unmet, the agent is re-invoked to fix them. Results are appended to the PR body as a Markdown table:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Returns 429 on rate limit | Met | Rate limit middleware returns 429 |
+| Headers include X-RateLimit | Not Met | No header injection found |
+
+Both stages support `max_retries` and `block_on_failure` — when blocking is enabled, the PR is skipped entirely on failure.
 
 ## Writing Good Issues
 
@@ -290,15 +323,23 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 | `m` | Merge PR (warns if CI not passed) |
 | `Esc` | Back to board |
 
-**Plan mode**
+**Plan chat**
 
 | Key | Action |
 |-----|--------|
-| `↵` | Send message / view detail |
+| `↵` | Send message |
+| `↑` `↓` | Scroll chat history |
+| `Esc` | Cancel |
+
+**Plan review**
+
+| Key | Action |
+|-----|--------|
+| `↵` | View issue detail |
 | `e` | Edit issue in $EDITOR |
 | `d` | Delete issue |
 | `a` | Approve and create issues |
-| `Esc` | Cancel / back |
+| `Esc` | Back |
 
 In CLI mode, the plan wizard also offers **Regenerate with feedback** — describe what to change and the AI regenerates the entire plan incorporating your feedback.
 
