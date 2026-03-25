@@ -152,6 +152,11 @@ async function handleApproval(
 	} catch (err) {
 		logger.warn(`Could not refresh kanban: ${err instanceof Error ? err.message : String(err)}`);
 	}
+
+	// Wake up the loop automatically so it starts processing the new issues
+	if (createdIds.length > 0) {
+		kanbanEmitter.emit("loop:run");
+	}
 }
 
 /**
