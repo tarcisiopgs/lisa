@@ -87,7 +87,9 @@ export async function mergePr(prUrl: string): Promise<MergeResult> {
 
 async function mergeGitHubPr(prUrl: string): Promise<MergeResult> {
 	try {
-		await execa("gh", ["pr", "merge", prUrl, "--delete-branch"], { timeout: 30_000 });
+		await execa("gh", ["pr", "merge", prUrl, "--squash", "--delete-branch"], {
+			timeout: 30_000,
+		});
 		return { success: true };
 	} catch (err) {
 		return { success: false, error: formatError(err) };
