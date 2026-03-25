@@ -1,5 +1,6 @@
 import { execa } from "execa";
 import { stripProviderAttribution } from "./pr-body.js";
+import { parseBitbucketPrUrl } from "./url-parser.js";
 
 const API_URL = "https://api.bitbucket.org/2.0";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -201,4 +202,115 @@ export async function appendPrBody(prUrl: string, content: string): Promise<void
 
 export function isBitbucketUrl(url: string): boolean {
 	return url.includes("bitbucket.org") && url.includes("pull-requests");
+}
+
+let authenticatedUserCache: string | null = null;
+
+/**
+ * Returns the account_id of the authenticated Bitbucket user. Cached for process lifetime.
+ */
+export async function getBitbucketAuthenticatedUser(): Promise<string> {
+	if (authenticatedUserCache) return authenticatedUserCache;
+
+	const res = await fetch(`${API_URL}/user`, {
+		headers: { Authorization: getAuthHeader() },
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+	if (!res.ok) throw new Error(`Bitbucket API error (${res.status})`);
+	const data = (await res.json()) as { account_id: string; username: string };
+	authenticatedUserCache = data.account_id;
+	return authenticatedUserCache;
+}
+
+const accountIdCache = new Map<string, string>();
+
+/**
+ * Resolves Bitbucket usernames to account_ids. Parallel with caching.
+ */
+async function resolveAccountIds(usernames: string[]): Promise<Map<string, string>> {
+	const result = new Map<string, string>();
+	const uncached = usernames.filter((u) => {
+		const cached = accountIdCache.get(u);
+		if (cached) {
+			result.set(u, cached);
+			return false;
+		}
+		return true;
+	});
+
+	if (uncached.length === 0) return result;
+
+	const resolutions = await Promise.allSettled(
+		uncached.map(async (username) => {
+			const res = await fetch(`${API_URL}/users/${encodeURIComponent(username)}`, {
+				headers: { Authorization: getAuthHeader() },
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			});
+			if (!res.ok) return;
+			const data = (await res.json()) as { account_id: string };
+			if (data.account_id) {
+				accountIdCache.set(username, data.account_id);
+				result.set(username, data.account_id);
+			}
+		}),
+	);
+
+	return result;
+}
+
+/**
+ * Adds reviewers to a Bitbucket PR using GET-merge-PUT (Bitbucket uses REPLACE semantics).
+ * Filters out the PR author from reviewers (Bitbucket returns 400 if author is included).
+ */
+export async function addPrReviewers(prUrl: string, reviewers: string[]): Promise<void> {
+	if (!reviewers.length) return;
+
+	const parsed = parseBitbucketPrUrl(prUrl);
+	if (!parsed) return;
+	const authHeader = getAuthHeader();
+
+	// Resolve usernames to account_ids
+	const accountIds = await resolveAccountIds(reviewers);
+
+	// GET current PR to read existing reviewers and author
+	const getRes = await fetch(
+		`${API_URL}/repositories/${parsed.workspace}/${parsed.repoSlug}/pullrequests/${parsed.id}`,
+		{
+			headers: { Authorization: authHeader },
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		},
+	);
+	if (!getRes.ok) throw new Error(`Bitbucket API error (${getRes.status})`);
+
+	const prData = (await getRes.json()) as {
+		title: string;
+		reviewers: { account_id: string }[];
+		author: { account_id: string };
+	};
+
+	// Merge arrays, deduplicate by account_id
+	const existingIds = new Set((prData.reviewers ?? []).map((r) => r.account_id));
+	for (const [, accountId] of accountIds) {
+		existingIds.add(accountId);
+	}
+
+	// Filter out the PR author
+	const authorId = prData.author?.account_id;
+	if (authorId) existingIds.delete(authorId);
+
+	const mergedReviewers = [...existingIds].map((account_id) => ({ account_id }));
+
+	// PUT with merged reviewers
+	await fetch(
+		`${API_URL}/repositories/${parsed.workspace}/${parsed.repoSlug}/pullrequests/${parsed.id}`,
+		{
+			method: "PUT",
+			headers: {
+				Authorization: authHeader,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ title: prData.title, reviewers: mergedReviewers }),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		},
+	);
 }

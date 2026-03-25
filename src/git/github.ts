@@ -1,6 +1,7 @@
 import { execa } from "execa";
 import type { PRPlatform } from "../types/index.js";
 import { PROVIDER_ATTRIBUTION_RE, stripProviderAttribution } from "./pr-body.js";
+import { parseGitHubPrUrl } from "./url-parser.js";
 
 const API_URL = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -237,4 +238,79 @@ export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
 		branch: branch.trim(),
 		defaultBranch,
 	};
+}
+
+let authenticatedUserCache: string | null = null;
+
+/**
+ * Returns the login of the authenticated GitHub user. Cached for process lifetime.
+ */
+export async function getAuthenticatedUser(method: PRPlatform = "cli"): Promise<string> {
+	if (authenticatedUserCache) return authenticatedUserCache;
+
+	if (method === "cli" || method === "token") {
+		if (method === "cli") {
+			const { stdout } = await execa("gh", ["api", "/user", "--jq", ".login"]);
+			authenticatedUserCache = stdout.trim();
+		} else {
+			const res = await fetch(`${API_URL}/user`, {
+				headers: { Authorization: `Bearer ${getToken()}`, Accept: "application/vnd.github+json" },
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			});
+			if (!res.ok) throw new Error(`GitHub API error (${res.status})`);
+			const data = (await res.json()) as { login: string };
+			authenticatedUserCache = data.login;
+		}
+	}
+
+	if (!authenticatedUserCache) throw new Error("Could not resolve authenticated GitHub user");
+	return authenticatedUserCache;
+}
+
+/**
+ * Requests reviews from the given users on a GitHub PR. Additive (appends to existing reviewers).
+ */
+export async function addReviewers(prUrl: string, reviewers: string[]): Promise<void> {
+	if (!reviewers.length) return;
+	const parsed = parseGitHubPrUrl(prUrl);
+	if (!parsed) return;
+
+	await execa(
+		"gh",
+		[
+			"api",
+			"--method",
+			"POST",
+			`/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}/requested_reviewers`,
+			"--input",
+			"-",
+		],
+		{
+			input: JSON.stringify({ reviewers }),
+		},
+	);
+}
+
+/**
+ * Adds assignees to a GitHub PR/issue. Additive (appends to existing assignees).
+ */
+export async function addAssignees(prUrl: string, assignees: string[]): Promise<void> {
+	if (!assignees.length) return;
+	const parsed = parseGitHubPrUrl(prUrl);
+	if (!parsed) return;
+
+	await execa(
+		"gh",
+		[
+			"api",
+			"--method",
+			"POST",
+			`/repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}/assignees`,
+			"--input",
+			"-",
+		],
+		{
+			input: JSON.stringify({ assignees }),
+		},
+	);
 }
