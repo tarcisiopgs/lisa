@@ -6,6 +6,7 @@ import {
 	appendPlatformAttribution,
 	appendPlatformProofOfWork,
 	appendPlatformSpecCompliance,
+	applyPrReviewersAndAssignees,
 } from "../git/platform.js";
 import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
@@ -204,6 +205,7 @@ export async function runBranchSession(
 
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
 	// Append proof of work to PR body if validation was run
 	if (validationResults) {

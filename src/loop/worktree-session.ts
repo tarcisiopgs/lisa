@@ -7,6 +7,7 @@ import {
 	appendPlatformAttribution,
 	appendPlatformProofOfWork,
 	appendPlatformSpecCompliance,
+	applyPrReviewersAndAssignees,
 } from "../git/platform.js";
 import {
 	createWorktree,
@@ -287,6 +288,7 @@ export async function runNativeWorktreeSession(
 	}
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
 	// CI Monitor: poll CI and fix failures if enabled
 	if (isCiMonitorEnabled(config.ci_monitor)) {
@@ -572,6 +574,7 @@ export async function runManualWorktreeSession(
 
 	logger.ok(`PR created by provider: ${prUrl}`);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
 	// Append proof of work to PR body if validation was run
 	if (validationResults) {
