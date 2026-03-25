@@ -837,3 +837,149 @@ describe("validateConfig", () => {
 		}
 	});
 });
+
+describe("loadConfig pr section", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeConfig(content: string) {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), content);
+	}
+
+	it("loads pr with reviewers and assignees", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers:
+    - octocat
+    - hubot
+  assignees:
+    - self
+`);
+		const config = loadConfig(tmpDir);
+		expect(config.pr).toEqual({
+			reviewers: ["octocat", "hubot"],
+			assignees: ["self"],
+		});
+	});
+
+	it("returns undefined pr when section is absent", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+`);
+		const config = loadConfig(tmpDir);
+		expect(config.pr).toBeUndefined();
+	});
+
+	it("normalizes empty arrays to undefined", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers: []
+  assignees: []
+`);
+		const config = loadConfig(tmpDir);
+		expect(config.pr).toBeUndefined();
+	});
+
+	it("filters non-string array elements", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers:
+    - octocat
+    - 123
+    - true
+  assignees:
+    - self
+`);
+		const config = loadConfig(tmpDir);
+		// Non-string elements cause the array to fail isStringArray check
+		expect(config.pr?.reviewers).toBeUndefined();
+		expect(config.pr?.assignees).toEqual(["self"]);
+	});
+
+	it("filters invalid usernames", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers:
+    - valid-user
+    - "invalid user with spaces"
+    - "-starts-with-dash"
+  assignees:
+    - self
+`);
+		const config = loadConfig(tmpDir);
+		expect(config.pr?.reviewers).toEqual(["valid-user"]);
+		expect(config.pr?.assignees).toEqual(["self"]);
+	});
+
+	it("round-trips pr config through save and load", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers:
+    - fulano
+    - ciclano
+  assignees:
+    - self
+`);
+		const config = loadConfig(tmpDir);
+		saveConfig(config, tmpDir);
+		const reloaded = loadConfig(tmpDir);
+		expect(reloaded.pr).toEqual({
+			reviewers: ["fulano", "ciclano"],
+			assignees: ["self"],
+		});
+	});
+
+	it("does not emit pr key when undefined", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+`);
+		const config = loadConfig(tmpDir);
+		saveConfig(config, tmpDir);
+		const content = readFileSync(join(tmpDir, ".lisa", "config.yaml"), "utf-8");
+		expect(content).not.toContain("pr:");
+	});
+
+	it("loads pr with only reviewers", () => {
+		writeConfig(`provider: claude
+source: linear
+platform: cli
+workflow: worktree
+pr:
+  reviewers:
+    - octocat
+`);
+		const config = loadConfig(tmpDir);
+		expect(config.pr).toEqual({
+			reviewers: ["octocat"],
+			assignees: undefined,
+		});
+	});
+});

@@ -27,6 +27,7 @@ export const status = defineCommand({
 						label: formatLabels(config.source_config),
 						scope: config.source_config.scope,
 						platform: config.platform,
+						pr: config.pr ?? null,
 						logsDir,
 						sessionCount,
 					},
@@ -51,6 +52,17 @@ export const status = defineCommand({
 		console.log(`  Pick from:   ${pc.bold(config.source_config.pick_from)}`);
 		console.log(`  In progress: ${pc.bold(config.source_config.in_progress)}`);
 		console.log(`  Done:        ${pc.bold(config.source_config.done)}`);
+		if (config.pr) {
+			const reviewers = config.pr.reviewers?.join(", ") ?? pc.dim("none");
+			const assignees = config.pr.assignees?.join(", ") ?? pc.dim("none");
+			console.log(`  Reviewers:   ${pc.bold(reviewers)}`);
+			console.log(`  Assignees:   ${pc.bold(assignees)}`);
+			if (config.platform === "bitbucket" && config.pr.assignees?.length) {
+				console.log(
+					`  ${pc.yellow("!")} Bitbucket does not support assignees — only reviewers will be added`,
+				);
+			}
+		}
 		console.log(`  Logs:        ${pc.dim(logsDir)}`);
 
 		if (sessionCount > 0) {

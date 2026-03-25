@@ -31,6 +31,8 @@ export function openUrl(url: string): void {
 interface IssueDetailProps {
 	card: KanbanCard;
 	onBack: () => void;
+	reviewers?: string[];
+	assignees?: string[];
 }
 
 function hyperlink(url: string, text: string): string {
@@ -94,7 +96,7 @@ export function statusLabel(
 	return { text: "QUEUED", color: "white" };
 }
 
-export function IssueDetail({ card, onBack }: IssueDetailProps) {
+export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailProps) {
 	const [now, setNow] = useState(Date.now());
 	const [logScrollOffset, setLogScrollOffset] = useState(0);
 	const [userScrolled, setUserScrolled] = useState(false);
@@ -147,10 +149,12 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 	const maxLineWidth = Math.max(1, terminalCols - SIDEBAR_TOTAL_WIDTH - 4);
 
 	// Header overhead: border(2) + ID row(1) + title(1) + separator(1) + log header(1) = 6
-	// Plus conditional rows: log file path(1), PR URLs (N)
+	// Plus conditional rows: log file path(1), PR URLs (N), PR metadata (0-1)
 	const prCount = card.prUrls.length > 0 ? card.prUrls.length : 0;
 	const logFileRow = card.logFile ? 1 : 0;
-	const headerOverhead = 6 + prCount + logFileRow;
+	const hasPrMeta = card.column === "done" && (reviewers?.length || assignees?.length);
+	const prMetaRow = hasPrMeta ? 1 : 0;
+	const headerOverhead = 6 + prCount + logFileRow + prMetaRow;
 	const bodyRows = Math.max(1, terminalRows - headerOverhead);
 
 	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
@@ -254,6 +258,35 @@ export function IssueDetail({ card, onBack }: IssueDetailProps) {
 						</Text>
 					</Box>
 				))}
+
+			{/* PR metadata: reviewers + assignees (only for done cards with config) */}
+			{hasPrMeta && (
+				<Box marginTop={0} flexDirection="row">
+					{reviewers?.length ? (
+						<>
+							<Text color="cyan" dimColor>
+								{"REVIEWERS: "}
+							</Text>
+							<Text color="cyan">{reviewers.join(", ")}</Text>
+						</>
+					) : null}
+					{reviewers?.length && assignees?.length ? (
+						<Text color="gray" dimColor>
+							{" │ "}
+						</Text>
+					) : null}
+					{assignees?.length ? (
+						<>
+							<Text color="green" dimColor>
+								{"ASSIGNEES: "}
+							</Text>
+							<Text color="green">
+								{assignees.map((a) => (a === "self" ? "you" : a)).join(", ")}
+							</Text>
+						</>
+					) : null}
+				</Box>
+			)}
 
 			{/* Log file path (truncated to single line) */}
 			{card.logFile && (

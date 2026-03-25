@@ -201,10 +201,17 @@ export function Card({
 				) : card.column === "done" &&
 					card.startedAt !== undefined &&
 					card.finishedAt !== undefined ? (
-					<Text color={card.merged ? "magenta" : "green"}>
-						{"✔ "}
-						{formatElapsed(card.finishedAt - card.startedAt)}
-					</Text>
+					<Box flexDirection="row" justifyContent="space-between">
+						<Text color={card.merged ? "magenta" : "green"}>
+							{"✔ "}
+							{formatElapsed(card.finishedAt - card.startedAt)}
+						</Text>
+						{card.prUrls.length > 0 && (
+							<Text color={card.merged ? "magenta" : "yellow"} dimColor>
+								{card.merged ? "PR✔" : "PR"}
+							</Text>
+						)}
+					</Box>
 				) : card.killed ? (
 					<Text color="red">KILLED</Text>
 				) : card.skipped ? (

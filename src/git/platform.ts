@@ -1,17 +1,30 @@
+import { formatError } from "../errors.js";
+import { warn } from "../output/logger.js";
 import { formatProofOfWork } from "../session/proof-of-work.js";
 import { formatSpecCompliance } from "../session/spec-compliance.js";
-import type { PRPlatform, SpecComplianceResult, ValidationResult } from "../types/index.js";
+import type {
+	PRPlatform,
+	PrConfig,
+	SpecComplianceResult,
+	ValidationResult,
+} from "../types/index.js";
 import {
+	addPrReviewers as addBitbucketReviewers,
 	appendPrAttribution as appendBitbucketAttribution,
 	appendPrBody as appendBitbucketBody,
 } from "./bitbucket.js";
 import {
+	addAssignees as addGitHubAssignees,
+	addReviewers as addGitHubReviewers,
 	appendPrAttribution as appendGitHubAttribution,
 	appendPrBody as appendGitHubBody,
+	getAuthenticatedUser as getGitHubAuthenticatedUser,
 } from "./github.js";
 import {
+	addMrReviewersAndAssignees,
 	appendMrAttribution as appendGitLabAttribution,
 	appendMrBody as appendGitLabBody,
+	getGitLabAuthenticatedUser,
 } from "./gitlab.js";
 
 /**
@@ -128,4 +141,80 @@ export function buildPrCreateInstruction(
 	return `**Create PR**: Create a pull request using the GitHub CLI:
    \`gh pr create --title "<conventional-commit-title>" --body "<markdown-summary>"${base}\`
    Capture the PR URL from the output.`;
+}
+
+/**
+ * Resolves the authenticated user for the given platform.
+ * Returns the username/login, or null if resolution fails.
+ */
+async function resolveAuthenticatedUser(platform: PRPlatform): Promise<string | null> {
+	try {
+		if (platform === "gitlab") {
+			return await getGitLabAuthenticatedUser();
+		}
+		if (platform === "bitbucket") {
+			// Bitbucket doesn't support assignees, but we still resolve for reviewer filtering
+			return null;
+		}
+		// "cli" or "token" — GitHub
+		return await getGitHubAuthenticatedUser(platform);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Applies PR reviewers and assignees after PR creation. Non-fatal.
+ * Resolves `self` keyword, filters `self` from reviewers, dispatches to platform APIs.
+ */
+export async function applyPrReviewersAndAssignees(
+	prUrl: string,
+	prConfig: PrConfig | undefined,
+	platform: PRPlatform,
+): Promise<void> {
+	if (!prConfig) return;
+
+	const rawReviewers = prConfig.reviewers ?? [];
+	const rawAssignees = prConfig.assignees ?? [];
+	if (!rawReviewers.length && !rawAssignees.length) return;
+
+	try {
+		// Resolve `self` once for both arrays
+		const hasSelf = rawReviewers.includes("self") || rawAssignees.includes("self");
+		let selfUsername: string | null = null;
+		if (hasSelf) {
+			selfUsername = await resolveAuthenticatedUser(platform);
+		}
+
+		// Filter `self` from reviewers (cannot self-review) and resolve in assignees
+		const reviewers = rawReviewers.filter((r) => r !== "self").filter((r) => r !== selfUsername); // Also filter resolved self username from reviewers
+
+		const assignees = rawAssignees
+			.map((a) => {
+				if (a === "self") return selfUsername;
+				return a;
+			})
+			.filter((a): a is string => a !== null);
+
+		if (selfUsername && rawReviewers.includes("self")) {
+			warn("Filtered 'self' from reviewers — cannot request review from yourself");
+		}
+
+		// Dispatch to platform-specific implementations
+		if (platform === "gitlab") {
+			// GitLab uses a combined PUT for both reviewers and assignees
+			await addMrReviewersAndAssignees(prUrl, reviewers, assignees);
+		} else if (platform === "bitbucket") {
+			// Bitbucket: only reviewers, no assignees
+			if (reviewers.length) await addBitbucketReviewers(prUrl, reviewers);
+		} else {
+			// GitHub: parallel reviewer + assignee calls (different endpoints)
+			const tasks: Promise<void>[] = [];
+			if (reviewers.length) tasks.push(addGitHubReviewers(prUrl, reviewers));
+			if (assignees.length) tasks.push(addGitHubAssignees(prUrl, assignees));
+			await Promise.allSettled(tasks);
+		}
+	} catch (err) {
+		warn(`Failed to add reviewers/assignees: ${formatError(err)}`);
+	}
 }

@@ -2,7 +2,7 @@ import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { analyzeProject } from "../context.js";
 import { formatError } from "../errors.js";
-import { appendPlatformAttribution } from "../git/platform.js";
+import { appendPlatformAttribution, applyPrReviewersAndAssignees } from "../git/platform.js";
 import { createWorktree, generateBranchName, getDiffStat } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
@@ -407,6 +407,7 @@ export async function runMultiRepoStep(
 	await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 	await cleanupWorktree(repoPath, worktreePath);
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
+	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
 	logger.ok(`Step ${stepNum} complete: ${repoPath} — PR: ${prUrl}`);
 	return {

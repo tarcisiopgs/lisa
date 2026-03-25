@@ -254,6 +254,7 @@ Key config fields:
 - `hooks`: lifecycle hooks (`before_run`, `after_run`, `after_create`, `before_remove`)
 - `proof_of_work`: validation commands run after provider completes (lint, typecheck, test)
 - `reconciliation`: detect and clean up stale active runs
+- `pr`: optional `{ reviewers?: string[], assignees?: string[] }` — auto-add reviewers/assignees to PRs. Supports `"self"` keyword in assignees (resolved to authenticated user). Applied post-creation via platform API.
 
 ### CLI flags
 

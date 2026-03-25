@@ -471,6 +471,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 				merging={merging}
 				updateInfo={updateInfo}
 				workComplete={workComplete}
+				reviewers={config.pr?.reviewers}
+				assignees={config.pr?.assignees}
 			/>
 			{activeView === "plan-chat" ? (
 				<PlanChat
@@ -538,6 +540,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 						setActiveView("board");
 						setSelectedCardId(null);
 					}}
+					reviewers={config.pr?.reviewers}
+					assignees={config.pr?.assignees}
 				/>
 			)}
 		</Box>
