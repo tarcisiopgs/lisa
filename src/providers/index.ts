@@ -1,3 +1,4 @@
+import { GUARDRAILS_PLACEHOLDER } from "../prompt.js";
 import {
 	appendEntry,
 	buildGuardrailsSection,
@@ -138,7 +139,14 @@ export async function runWithFallback(
 		}
 
 		const guardrailsSection = opts.guardrailsDir ? buildGuardrailsSection(opts.guardrailsDir) : "";
-		const fullPrompt = guardrailsSection ? `${prompt}${guardrailsSection}` : prompt;
+		// Inject guardrails at the designated position (between issue and instructions)
+		// rather than appending at the end. This ensures the model reads past-failure
+		// context before entering procedural execution mode (PRISM research).
+		const fullPrompt = prompt.includes(GUARDRAILS_PLACEHOLDER)
+			? prompt.replace(GUARDRAILS_PLACEHOLDER, guardrailsSection)
+			: guardrailsSection
+				? `${prompt}${guardrailsSection}`
+				: prompt;
 
 		const result = await provider.run(fullPrompt, { ...opts, model: spec.model });
 
