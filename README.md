@@ -28,7 +28,7 @@ lisa         # start the agent loop
 ## How It Works
 
 ```
-  Plan → Create issues → Fetch → Implement → Push → Open PR → Update board → Next
+  Plan → Create issues → Fetch → Implement → Push → Open PR → CI Monitor → Review Monitor → Update board → Next
 ```
 
 Lisa starts and shows a Kanban board. If the queue is empty, press `n` to plan — describe a goal and the AI brainstorms with you (asking clarifying questions), presents its understanding for your confirmation, then decomposes the goal into atomic issues created directly in your tracker. You can review, edit, reorder, delete, or regenerate the plan with feedback before approving. Press `r` to start processing. Lisa picks the highest-priority labeled issue, moves it to "In Progress", sends a structured prompt to the AI agent, and monitors execution. The agent works in an isolated git worktree, implements the change, runs tests, and commits. Lisa pushes, opens a PR, moves the ticket to "In Review", and picks up the next one.
@@ -47,11 +47,16 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **Model fallback** — chain models; transient errors (429, quota, timeout) auto-switch to the next
 - **Real-time TUI** — Kanban board with live provider output, plan mode, merge PRs with `m`
 - **CI monitoring** — polls CI after PR creation, re-invokes the agent to fix failures automatically
+- **Review monitoring** — polls PR reviews after CI, auto-addresses reviewer feedback (GitHub)
+- **Reaction engine** — configurable actions for CI failures, review changes, stuck agents
+- **Session state tracking** — real-time visibility into agent pipeline phase (implementing → validating → CI → review)
+- **Smart activity detection** — reads agent session logs to prevent false stuck kills during analysis phases
 - **Progress comments** — posts real-time status updates on issues as Lisa works through stages
 - **Context enrichment** — greps for issue-related files and surfaces them in the agent prompt
 - **PR reviewers & assignees** — auto-request reviews and assign PRs via config; `self` keyword resolves to the authenticated user
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
+- **Lineage context** — plan-decomposed issues get sibling task awareness, preventing duplicate work in concurrent mode
 - **Project context** — auto-generates `.lisa/context.md` with your stack, conventions, and constraints
 
 ## Providers
@@ -109,6 +114,7 @@ lisa config --set loop.cooldown=5  # set nested config values
 lisa doctor                 # diagnose setup issues (config, provider, env, git)
 lisa context refresh        # regenerate project context
 lisa feedback --pr URL      # inject PR review feedback into guardrails
+lisa sessions               # list active session states (supports --json)
 ```
 
 Append `--json` to any command for machine-readable output. Use `--verbose` / `--quiet` to control log verbosity.
@@ -252,6 +258,31 @@ ci_monitor:
   poll_timeout: 600          # max seconds to wait for CI
   block_on_failure: false    # revert issue if CI never passes
 
+# Post-PR review monitoring (GitHub only)
+review_monitor:
+  enabled: true
+  max_retries: 2             # fix attempts on review changes (default: 2)
+  poll_interval: 60          # seconds between review checks (default: 60)
+  poll_timeout: 3600         # max seconds to wait for review (default: 3600)
+
+# Configurable reactions (override defaults)
+reactions:
+  ci_failed:
+    action: reinvoke         # reinvoke | notify | skip
+    max_retries: 3
+    escalate_after: 30m
+  changes_requested:
+    action: reinvoke
+    max_retries: 2
+    escalate_after: 1h
+  approved:
+    action: notify
+  agent_stuck:
+    action: notify
+  validation_failed:
+    action: reinvoke
+    max_retries: 2
+
 progress_comments:
   enabled: true              # post real-time status on issues
 
@@ -275,7 +306,7 @@ hooks:
 After the agent implements an issue, Lisa runs a multi-stage validation pipeline before creating a PR:
 
 ```
-Agent implements → Proof of Work (lint/test/typecheck) → Spec Compliance → PR
+Agent implements → Proof of Work (lint/test/typecheck) → Spec Compliance → PR → CI Monitor → Review Monitor
 ```
 
 **Proof of Work** runs configured shell commands (lint, typecheck, test). If any fail, the agent is re-invoked with the error output to fix the issue.
@@ -318,9 +349,10 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
 | `←` `→` | Switch columns | `k` | Kill current issue |
-| `↑` `↓` | Navigate cards | `n` | Open plan mode |
-| `↵` | Open detail view | `r` | Run (from idle) |
-| `p` | Pause / resume | `q` | Quit |
+| `↑` `↓` | Navigate cards | `s` | Skip current issue |
+| `↵` | Open detail view | `n` | Open plan mode |
+| `p` | Pause / resume | `r` | Run (from idle) |
+| `m` | Merge PR (opens detail + triggers merge) | `q` | Quit |
 
 **Detail view**
 
