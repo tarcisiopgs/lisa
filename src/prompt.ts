@@ -78,6 +78,8 @@ export interface BuildPromptOptions {
 	isLastStep?: boolean;
 	/** Context enrichment: relevant files discovered by grepping the codebase */
 	relevantFiles?: string | null;
+	/** Lineage context for plan-decomposed issues */
+	lineageBlock?: string | null;
 }
 
 export function buildPrompt(opts: BuildPromptOptions): string {
@@ -96,6 +98,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		previousResults = [],
 		isLastStep = false,
 		relevantFiles,
+		lineageBlock,
 	} = opts;
 
 	// Resolve manifest path
@@ -316,8 +319,9 @@ ${branchRenameInstruction}
 	// Heavy instruction blocks activate the model's "instruction-following mode" which
 	// competes with factual recall. Front-loading context lets the model build a mental
 	// model of the codebase before entering execution mode.
+	const lineageSection = lineageBlock ?? "";
 	return `${preamble}${taskHint}
-${workContext}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${relevantFilesBlock ? `\n${relevantFilesBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
+${workContext}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${relevantFilesBlock ? `\n${relevantFilesBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}${lineageSection ? `\n${lineageSection}\n` : ""}
 ## Issue
 
 - **ID:** ${issue.id}
@@ -352,6 +356,7 @@ export function buildImplementPrompt(
 	manifestPath?: string,
 	repoContextMd?: string | null,
 	relevantFiles?: string | null,
+	lineageBlock?: string | null,
 ): string {
 	const workspace = resolve(config.workspace);
 	const resolvedManifestPath = manifestPath ?? getManifestPath(workspace);
@@ -369,6 +374,7 @@ export function buildImplementPrompt(
 			platform: config.platform,
 			repoContextMd,
 			relevantFiles,
+			lineageBlock,
 		});
 	}
 
@@ -385,6 +391,7 @@ export function buildImplementPrompt(
 		repoContextMd,
 		config,
 		relevantFiles,
+		lineageBlock,
 	});
 }
 
