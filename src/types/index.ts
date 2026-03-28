@@ -130,6 +130,100 @@ export interface CiMonitorConfig {
 	block_on_failure?: boolean; // default: false
 }
 
+export type SessionState =
+	| "spawning"
+	| "implementing"
+	| "validating"
+	| "pr_created"
+	| "ci_monitoring"
+	| "ci_failed"
+	| "review_pending"
+	| "changes_requested"
+	| "approved"
+	| "merged"
+	| "done"
+	| "failed"
+	| "killed"
+	| "skipped";
+
+export interface SessionStateTransition {
+	from: SessionState;
+	to: SessionState;
+	at: string; // ISO timestamp
+}
+
+export interface SessionRecord {
+	issueId: string;
+	state: SessionState;
+	branch?: string;
+	worktreePath?: string;
+	prUrl?: string;
+	createdAt: string;
+	updatedAt: string;
+	attempts: {
+		ci: number;
+		review: number;
+		validation: number;
+	};
+	history: SessionStateTransition[];
+	reviewFingerprint?: string;
+}
+
+export type ReactionAction = "reinvoke" | "notify" | "skip";
+
+export interface ReactionConfig {
+	action: ReactionAction;
+	max_retries?: number;
+	escalate_after?: string; // duration like "30m"
+}
+
+export type ReactionEvent =
+	| "ci_failed"
+	| "changes_requested"
+	| "approved"
+	| "agent_stuck"
+	| "validation_failed";
+
+export type ReactionsConfig = Partial<Record<ReactionEvent, ReactionConfig>>;
+
+export interface ReviewMonitorConfig {
+	enabled?: boolean;
+	max_retries?: number; // default: 2
+	poll_interval?: number; // seconds, default: 60
+	poll_timeout?: number; // seconds, default: 3600
+	block_on_failure?: boolean;
+}
+
+export interface ReviewComment {
+	id: string;
+	author: string;
+	body: string;
+	path?: string;
+	line?: number;
+	url: string;
+}
+
+export type ActivityState =
+	| "active"
+	| "ready"
+	| "idle"
+	| "waiting_input"
+	| "blocked"
+	| "exited"
+	| "unknown";
+
+export interface LineageIssue {
+	id: string;
+	title: string;
+	order: number;
+}
+
+export interface LineageContext {
+	planId: string;
+	goal: string;
+	issues: LineageIssue[];
+}
+
 export interface ProgressConfig {
 	enabled?: boolean;
 }
@@ -158,6 +252,8 @@ export interface LisaConfig {
 	proof_of_work?: ProofOfWorkConfig;
 	reconciliation?: ReconciliationConfig;
 	ci_monitor?: CiMonitorConfig;
+	review_monitor?: ReviewMonitorConfig;
+	reactions?: ReactionsConfig;
 	spec_compliance?: SpecComplianceConfig;
 	progress_comments?: ProgressConfig;
 	pr?: PrConfig;

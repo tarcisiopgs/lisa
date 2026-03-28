@@ -209,6 +209,8 @@ export function Sidebar({
 			{activeView === "board" && (
 				<Box marginTop={1} flexDirection="column">
 					{hasInProgress && <Text dimColor>{"[k]  kill"}</Text>}
+					{hasInProgress && <Text dimColor>{"[s]  skip"}</Text>}
+					<Text dimColor>{"[p]  pause"}</Text>
 					<Text dimColor>{"[n]  plan"}</Text>
 					<Text dimColor>{"[q]  quit"}</Text>
 				</Box>

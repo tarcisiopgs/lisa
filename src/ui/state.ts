@@ -21,6 +21,7 @@ export interface KanbanCard {
 	pauseAccumulated?: number;
 	merged?: boolean;
 	queueOrder?: number;
+	substatus?: string;
 }
 
 const MERGE_POLL_INTERVAL_MS = 5_000;
@@ -141,6 +142,7 @@ export function useKanbanState(
 								prUrls: [],
 								pausedAt: undefined,
 								pauseAccumulated: 0,
+								substatus: undefined,
 							}
 						: c,
 				),
@@ -235,6 +237,10 @@ export function useKanbanState(
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, logFile } : c)));
 		};
 
+		const onSubstatus = (issueId: string, substatus: string) => {
+			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, substatus } : c)));
+		};
+
 		const MAX_OUTPUT_SIZE = 200_000; // ~200 KB cap per issue
 		const outputBuffer = new Map<string, string>();
 		let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -289,6 +295,7 @@ export function useKanbanState(
 		kanbanEmitter.on("provider:paused", onProviderPaused);
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:log-file", onLogFile);
+		kanbanEmitter.on("issue:substatus", onSubstatus);
 		kanbanEmitter.on("issue:output", onOutput);
 
 		const onModelChanged = (model: string) => setModelInUse(model);
@@ -338,6 +345,7 @@ export function useKanbanState(
 			kanbanEmitter.off("provider:paused", onProviderPaused);
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:log-file", onLogFile);
+			kanbanEmitter.off("issue:substatus", onSubstatus);
 			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);

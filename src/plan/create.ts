@@ -1,6 +1,7 @@
 import * as logger from "../output/logger.js";
 import { normalizeLabels } from "../sources/base.js";
-import type { PlanResult, Source, SourceConfig } from "../types/index.js";
+import type { LineageContext, PlanResult, Source, SourceConfig } from "../types/index.js";
+import { saveLineage } from "./lineage.js";
 
 /**
  * Ensure the issue description contains acceptance criteria as a `- [ ]` checklist.
@@ -24,6 +25,7 @@ export async function createPlanIssues(
 	source: Source,
 	config: SourceConfig,
 	plan: PlanResult,
+	workspace?: string,
 ): Promise<string[]> {
 	if (!source.createIssue) {
 		throw new Error(`Source "${source.name}" does not support createIssue`);
@@ -86,6 +88,23 @@ export async function createPlanIssues(
 			logger.warn(
 				`Failed to create issue "${issue.title}": ${err instanceof Error ? err.message : String(err)}`,
 			);
+		}
+	}
+
+	if (createdIds.length > 1 && workspace) {
+		const lineage: LineageContext = {
+			planId: plan.createdAt,
+			goal: plan.goal,
+			issues: sorted.map((issue, idx) => ({
+				id: createdIds[idx] ?? `unknown-${idx}`,
+				title: issue.title,
+				order: issue.order,
+			})),
+		};
+		try {
+			saveLineage(workspace, lineage);
+		} catch {
+			// Non-fatal
 		}
 	}
 

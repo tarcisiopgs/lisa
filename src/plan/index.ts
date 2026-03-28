@@ -133,7 +133,7 @@ async function reviewAndCreate(
 	}
 
 	logger.log("Creating issues in source...");
-	const createdIds = await createPlanIssues(source, config.source_config, plan);
+	const createdIds = await createPlanIssues(source, config.source_config, plan, config.workspace);
 
 	plan.status = "created";
 	plan.createdIssueIds = createdIds;

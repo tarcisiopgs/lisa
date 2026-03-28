@@ -619,6 +619,17 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		clack.log.info("Added .worktrees/ to .gitignore");
 	}
 
+	// Review monitor — only for GitHub platforms
+	let reviewMonitorEnabled = false;
+	if (platform === "cli" || platform === "token") {
+		const enableReviewMonitor = await clack.confirm({
+			message: "Enable post-PR review monitoring? (auto-addresses reviewer feedback)",
+			initialValue: initial?.review_monitor?.enabled ?? false,
+		});
+		if (clack.isCancel(enableReviewMonitor)) return process.exit(0);
+		reviewMonitorEnabled = enableReviewMonitor as boolean;
+	}
+
 	const cfg: LisaConfig = {
 		provider: providerName,
 		provider_options: {
@@ -644,6 +655,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		base_branch: baseBranch,
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
+		...(reviewMonitorEnabled ? { review_monitor: { enabled: true } } : {}),
 	};
 
 	saveConfig(cfg);

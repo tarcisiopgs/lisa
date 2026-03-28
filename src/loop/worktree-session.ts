@@ -20,6 +20,7 @@ import {
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { getManifestPath } from "../paths.js";
+import { buildLineagePromptBlock, loadLineageForIssue } from "../plan/lineage.js";
 import {
 	buildContinuationPrompt,
 	buildImplementPrompt,
@@ -33,6 +34,8 @@ import { readContext } from "../session/context-manager.js";
 import { buildHookEnv, executeHook } from "../session/hooks.js";
 import { stopResources } from "../session/lifecycle.js";
 import { ProgressReporter } from "../session/progress.js";
+import { isReviewMonitorEnabled, monitorReview } from "../session/review-monitor.js";
+import { createSessionRecord, removeSessionRecord, updateSessionState } from "../session/state.js";
 import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
@@ -338,6 +341,7 @@ export async function runManualWorktreeSession(
 	slotIndex?: number,
 ): Promise<SessionResult> {
 	const branchName = generateBranchName(issue.id, issue.title);
+	const workspace = resolve(config.workspace);
 
 	// Use dependency branch as base when available (PR stacking)
 	const baseBranch = issue.dependency?.branch ?? defaultBranch;
@@ -356,12 +360,14 @@ export async function runManualWorktreeSession(
 
 	stopSpinner();
 	logger.ok(`Worktree created at ${worktreePath}`);
+	createSessionRecord(workspace, issue.id, { branch: branchName, worktreePath });
 
 	const hookEnv = buildHookEnv(issue.id, issue.title, branchName, worktreePath);
 
 	// Hook: after_create (critical — abort on failure)
 	if (!(await executeHook("after_create", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return hookFailure(defaultProvider(models), "after_create hook failed");
 	}
 
@@ -378,13 +384,13 @@ export async function runManualWorktreeSession(
 	// Detect infrastructure
 	const lifecycleEnv = await startInfra(issue.id, worktreePath, config);
 
-	const workspace = resolve(config.workspace);
 	// Manifest written within the worktree so all providers (Gemini, OpenCode, etc.) can access it
 	const manifestPath = getManifestPath(worktreePath, issue.id);
 
 	// Hook: before_run (critical — abort on failure)
 	if (!(await executeHook("before_run", config.hooks, worktreePath, hookEnv))) {
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return hookFailure(defaultProvider(models), "before_run hook failed");
 	}
 
@@ -396,6 +402,9 @@ export async function runManualWorktreeSession(
 	);
 	await reporter.start();
 
+	const lineage = loadLineageForIssue(workspace, issue.id);
+	const lineageBlock = lineage ? buildLineagePromptBlock(lineage, issue.id) : null;
+
 	const prompt = buildImplementPrompt(
 		issue,
 		config,
@@ -406,6 +415,7 @@ export async function runManualWorktreeSession(
 		manifestPath,
 		repoContextMd,
 		relevantFiles,
+		lineageBlock,
 	);
 	logger.initLogFile(logFile);
 	kanbanEmitter.emit("issue:log-file", issue.id, logFile);
@@ -416,6 +426,9 @@ export async function runManualWorktreeSession(
 
 	// Start reconciliation monitor
 	const reconciliation = startReconciliationMonitor(source, issue.id, config);
+
+	updateSessionState(workspace, issue.id, "implementing");
+	kanbanEmitter.emit("issue:substatus", issue.id, "implementing");
 
 	const result = await runWithFallback(
 		models,
@@ -435,6 +448,7 @@ export async function runManualWorktreeSession(
 	const reconciled = checkReconciliation(issue.id, result);
 	if (reconciled) {
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return reconciled;
 	}
 
@@ -446,6 +460,7 @@ export async function runManualWorktreeSession(
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 
@@ -455,6 +470,7 @@ export async function runManualWorktreeSession(
 		// Hook: before_remove (non-critical)
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return emptyCommitFailure(result);
 	}
 
@@ -471,6 +487,7 @@ export async function runManualWorktreeSession(
 	);
 	if (powResult.reconciled) {
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 	if (powResult.blocked) {
@@ -478,12 +495,15 @@ export async function runManualWorktreeSession(
 		await reporter.fail("Validation failed");
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 	const validationResults = powResult.results;
 
 	if (validationResults) {
 		await reporter.update("validating", "Validation passed");
+		updateSessionState(workspace, issue.id, "validating");
+		kanbanEmitter.emit("issue:substatus", issue.id, "validating");
 	}
 
 	// Spec Compliance: verify implementation satisfies acceptance criteria via LLM
@@ -499,6 +519,7 @@ export async function runManualWorktreeSession(
 	);
 	if (complianceResult.reconciled) {
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 	if (complianceResult.blocked) {
@@ -508,6 +529,7 @@ export async function runManualWorktreeSession(
 		await reporter.fail("Spec compliance failed");
 		await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 		await cleanupWorktree(repoPath, worktreePath);
+		removeSessionRecord(workspace, issue.id);
 		return failureResult(result.providerUsed, result);
 	}
 
@@ -562,6 +584,7 @@ export async function runManualWorktreeSession(
 				// Hook: before_remove (non-critical)
 				await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 				await cleanupWorktree(repoPath, worktreePath);
+				removeSessionRecord(workspace, issue.id);
 				return {
 					success: false,
 					providerUsed: result.providerUsed,
@@ -573,6 +596,8 @@ export async function runManualWorktreeSession(
 	}
 
 	logger.ok(`PR created by provider: ${prUrl}`);
+	updateSessionState(workspace, issue.id, "pr_created", { prUrl });
+	kanbanEmitter.emit("issue:substatus", issue.id, "PR created");
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
@@ -588,6 +613,8 @@ export async function runManualWorktreeSession(
 
 	// CI Monitor: poll CI and fix failures if enabled
 	if (isCiMonitorEnabled(config.ci_monitor)) {
+		updateSessionState(workspace, issue.id, "ci_monitoring");
+		kanbanEmitter.emit("issue:substatus", issue.id, "CI");
 		const manifestBranch = manifest?.branch ?? branchName;
 		const ciResult = await monitorCi(
 			manifestBranch,
@@ -605,6 +632,36 @@ export async function runManualWorktreeSession(
 			logger.error(`CI failed for ${issue.id}. Blocking completion (block_on_failure=true).`);
 			await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
 			await cleanupWorktree(repoPath, worktreePath);
+			removeSessionRecord(workspace, issue.id);
+			return failureResult(result.providerUsed, result);
+		}
+	}
+
+	// Review Monitor: poll for review feedback and address changes if enabled
+	if (isReviewMonitorEnabled(config.review_monitor) && prUrl) {
+		const manifestBranch = manifest?.branch ?? branchName;
+		const reviewResult = await monitorReview(
+			prUrl,
+			manifestBranch,
+			config,
+			issue,
+			models,
+			worktreePath,
+			logFile,
+			workspace,
+			lifecycleEnv,
+			(extra) =>
+				buildRunOptions(config, issue, worktreePath, logFile, workspace, lifecycleEnv, extra),
+		);
+
+		if (
+			reviewResult.finalState === "changes_requested" &&
+			config.review_monitor?.block_on_failure
+		) {
+			logger.error(`Review not addressed for ${issue.id}. Blocking completion.`);
+			await executeHook("before_remove", config.hooks, worktreePath, hookEnv);
+			await cleanupWorktree(repoPath, worktreePath);
+			removeSessionRecord(workspace, issue.id);
 			return failureResult(result.providerUsed, result);
 		}
 	}
@@ -614,6 +671,9 @@ export async function runManualWorktreeSession(
 	await cleanupWorktree(repoPath, worktreePath);
 
 	await reporter.finish([prUrl]);
+
+	updateSessionState(workspace, issue.id, "done");
+	removeSessionRecord(workspace, issue.id);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {

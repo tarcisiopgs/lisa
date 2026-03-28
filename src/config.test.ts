@@ -983,3 +983,101 @@ pr:
 		});
 	});
 });
+
+describe("review_monitor config", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("loads review_monitor enabled and max_retries from YAML", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+review_monitor:
+  enabled: true
+  max_retries: 3
+`,
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.review_monitor?.enabled).toBe(true);
+		expect(config.review_monitor?.max_retries).toBe(3);
+	});
+
+	it("review_monitor defaults to undefined when not present", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
+		const config = loadConfig(tmpDir);
+		expect(config.review_monitor).toBeUndefined();
+	});
+
+	it("review_monitor.enabled defaults to false when omitted", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+review_monitor:
+  max_retries: 5
+`,
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.review_monitor?.enabled).toBe(false);
+		expect(config.review_monitor?.max_retries).toBe(5);
+	});
+});
+
+describe("reactions config", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "lisa-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("loads reactions with ci_failed, changes_requested, and approved from YAML", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.yaml"),
+			`provider: claude
+reactions:
+  ci_failed:
+    action: reinvoke
+    max_retries: 3
+  changes_requested:
+    action: reinvoke
+    max_retries: 2
+    escalate_after: "1h"
+  approved:
+    action: notify
+`,
+		);
+		const config = loadConfig(tmpDir);
+		expect(config.reactions?.ci_failed?.action).toBe("reinvoke");
+		expect(config.reactions?.ci_failed?.max_retries).toBe(3);
+		expect(config.reactions?.changes_requested?.action).toBe("reinvoke");
+		expect(config.reactions?.changes_requested?.max_retries).toBe(2);
+		expect(config.reactions?.changes_requested?.escalate_after).toBe("1h");
+		expect(config.reactions?.approved?.action).toBe("notify");
+	});
+
+	it("reactions defaults to undefined when not present", () => {
+		const configDir = join(tmpDir, ".lisa");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "config.yaml"), "provider: claude\n");
+		const config = loadConfig(tmpDir);
+		expect(config.reactions).toBeUndefined();
+	});
+});

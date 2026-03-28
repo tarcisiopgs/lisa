@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { killWithEscalation } from "../providers/timeout.js";
 import type { OverseerConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
+import { detectClaudeActivity } from "./activity.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -174,6 +175,104 @@ export function startOverseer(
 			if (snapshot !== lastSnapshot) {
 				// Progress detected — reset idle timer
 				lastSnapshot = snapshot;
+				lastChangeTime = Date.now();
+				return;
+			}
+
+			// No change since last snapshot — check if stuck threshold exceeded
+			const idleMs = Date.now() - lastChangeTime;
+			if (idleMs >= config.stuck_threshold * 1000) {
+				killed = true;
+				if (timer) {
+					clearInterval(timer);
+					timer = null;
+				}
+				killWithEscalation(proc);
+			}
+		} catch {
+			// Ignore monitoring errors — do not interrupt the provider
+		}
+	};
+
+	timer = setInterval(check, config.check_interval * 1000);
+	// Prevent the timer from keeping the process alive if stop() is never called
+	if (timer && typeof timer === "object" && "unref" in timer) {
+		timer.unref();
+	}
+
+	return {
+		stop() {
+			if (timer) {
+				clearInterval(timer);
+				timer = null;
+			}
+			kanbanEmitter.off("loop:pause-provider", onPauseProvider);
+			kanbanEmitter.off("loop:resume-provider", onResumeProvider);
+		},
+		wasKilled() {
+			return killed;
+		},
+	};
+}
+
+export function startEnhancedOverseer(
+	proc: ChildProcess,
+	cwd: string,
+	config: OverseerConfig,
+	getSnapshot: (cwd: string) => Promise<string> = getGitSnapshot,
+): OverseerHandle {
+	if (!config.enabled) {
+		return {
+			stop() {},
+			wasKilled() {
+				return false;
+			},
+		};
+	}
+
+	let killed = false;
+	let paused = false;
+	let lastSnapshot: string | undefined;
+	let lastChangeTime = Date.now();
+	let timer: ReturnType<typeof setInterval> | null = null;
+
+	const onPauseProvider = () => {
+		paused = true;
+	};
+	const onResumeProvider = () => {
+		paused = false;
+		// Reset idle timer so paused time is not counted as stuck
+		lastChangeTime = Date.now();
+	};
+
+	kanbanEmitter.on("loop:pause-provider", onPauseProvider);
+	kanbanEmitter.on("loop:resume-provider", onResumeProvider);
+
+	const check = async () => {
+		if (killed || paused) return;
+
+		try {
+			const snapshot = await getSnapshot(cwd);
+
+			if (lastSnapshot === undefined) {
+				// First check — establish baseline and start idle timer
+				lastSnapshot = snapshot;
+				lastChangeTime = Date.now();
+				return;
+			}
+
+			if (snapshot !== lastSnapshot) {
+				// Progress detected — reset idle timer
+				lastSnapshot = snapshot;
+				lastChangeTime = Date.now();
+				return;
+			}
+
+			// Git status unchanged — check JSONL activity as secondary signal
+			const activity = detectClaudeActivity(cwd);
+			if (activity === "active") {
+				// Agent is actively working (reading files, running tools)
+				// Reset timer — it hasn't produced git changes yet but is not stuck
 				lastChangeTime = Date.now();
 				return;
 			}

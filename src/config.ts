@@ -13,7 +13,9 @@ import type {
 	ProgressConfig,
 	ProofOfWorkConfig,
 	ProviderName,
+	ReactionsConfig,
 	ReconciliationConfig,
+	ReviewMonitorConfig,
 	SourceConfig,
 	SourceName,
 	SpecComplianceConfig,
@@ -262,6 +264,8 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 		| undefined;
 	const rawReconciliation = parsed.reconciliation as Partial<ReconciliationConfig> | undefined;
 	const rawCiMonitor = parsed.ci_monitor as Partial<CiMonitorConfig> | undefined;
+	const rawReviewMonitor = parsed.review_monitor as Partial<ReviewMonitorConfig> | undefined;
+	const rawReactions = parsed.reactions as ReactionsConfig | undefined;
 	const rawSpecCompliance = parsed.spec_compliance as Partial<SpecComplianceConfig> | undefined;
 	const rawProgress = parsed.progress_comments as Partial<ProgressConfig> | undefined;
 	const rawPr = parsed.pr as Partial<PrConfig> | undefined;
@@ -317,6 +321,16 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 					block_on_failure: rawCiMonitor.block_on_failure,
 				}
 			: undefined,
+		review_monitor: rawReviewMonitor
+			? {
+					enabled: rawReviewMonitor.enabled ?? false,
+					max_retries: rawReviewMonitor.max_retries,
+					poll_interval: rawReviewMonitor.poll_interval,
+					poll_timeout: rawReviewMonitor.poll_timeout,
+					block_on_failure: rawReviewMonitor.block_on_failure,
+				}
+			: undefined,
+		reactions: rawReactions ?? undefined,
 		spec_compliance: rawSpecCompliance
 			? {
 					enabled: rawSpecCompliance.enabled ?? false,
