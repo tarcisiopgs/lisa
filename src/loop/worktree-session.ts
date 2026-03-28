@@ -428,6 +428,7 @@ export async function runManualWorktreeSession(
 	const reconciliation = startReconciliationMonitor(source, issue.id, config);
 
 	updateSessionState(workspace, issue.id, "implementing");
+	kanbanEmitter.emit("issue:substatus", issue.id, "implementing");
 
 	const result = await runWithFallback(
 		models,
@@ -502,6 +503,7 @@ export async function runManualWorktreeSession(
 	if (validationResults) {
 		await reporter.update("validating", "Validation passed");
 		updateSessionState(workspace, issue.id, "validating");
+		kanbanEmitter.emit("issue:substatus", issue.id, "validating");
 	}
 
 	// Spec Compliance: verify implementation satisfies acceptance criteria via LLM
@@ -595,6 +597,7 @@ export async function runManualWorktreeSession(
 
 	logger.ok(`PR created by provider: ${prUrl}`);
 	updateSessionState(workspace, issue.id, "pr_created", { prUrl });
+	kanbanEmitter.emit("issue:substatus", issue.id, "PR created");
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
@@ -611,6 +614,7 @@ export async function runManualWorktreeSession(
 	// CI Monitor: poll CI and fix failures if enabled
 	if (isCiMonitorEnabled(config.ci_monitor)) {
 		updateSessionState(workspace, issue.id, "ci_monitoring");
+		kanbanEmitter.emit("issue:substatus", issue.id, "CI");
 		const manifestBranch = manifest?.branch ?? branchName;
 		const ciResult = await monitorCi(
 			manifestBranch,

@@ -195,6 +195,7 @@ export function Card({
 							</Text>
 						)}
 						<Text color={isPausedInProgress ? "gray" : "yellow"} dimColor={isPausedInProgress}>
+							{card.substatus ? ` ${card.substatus}` : ""}
 							{elapsedMs !== null ? ` ${formatElapsed(elapsedMs)}` : ""}
 						</Text>
 					</Box>

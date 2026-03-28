@@ -19,6 +19,7 @@ interface PersistedCard {
 	killed?: boolean;
 	merged?: boolean;
 	logFile?: string;
+	substatus?: string;
 	outputLogTail: string[];
 }
 
@@ -159,6 +160,11 @@ class KanbanPersistence {
 
 		on("issue:killed", (issueId: string) => {
 			this.updateCard(issueId, { column: "backlog", startedAt: undefined, killed: true });
+			this.scheduleFlush();
+		});
+
+		on("issue:substatus", (issueId: string, substatus: string) => {
+			this.updateCard(issueId, { substatus });
 			this.scheduleFlush();
 		});
 

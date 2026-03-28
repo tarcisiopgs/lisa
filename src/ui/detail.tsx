@@ -210,6 +210,12 @@ export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailP
 					<Text color={status.color} bold>
 						{status.text}
 					</Text>
+					{card.substatus && card.column === "in_progress" && (
+						<Text color="yellow" dimColor>
+							{" "}
+							· {card.substatus}
+						</Text>
+					)}
 				</Box>
 				<Box flexDirection="row">
 					{isRunning && elapsedDisplay && (
