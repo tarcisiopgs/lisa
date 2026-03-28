@@ -722,8 +722,8 @@ describe("project context injection", () => {
 		const descIndex = prompt.indexOf("Implement the feature X as described.");
 		const ctxIndex = prompt.indexOf("## Project Context");
 		const instrIndex = prompt.indexOf("## Instructions");
-		expect(descIndex).toBeLessThan(ctxIndex);
-		expect(ctxIndex).toBeLessThan(instrIndex);
+		expect(ctxIndex).toBeLessThan(descIndex);
+		expect(descIndex).toBeLessThan(instrIndex);
 	});
 });
 
@@ -876,8 +876,8 @@ describe("dependency context in prompts", () => {
 		const descIndex = prompt.indexOf("Implement the feature X as described.");
 		const depIndex = prompt.indexOf("## Dependency Context");
 		const instrIndex = prompt.indexOf("## Instructions");
-		expect(descIndex).toBeLessThan(depIndex);
-		expect(depIndex).toBeLessThan(instrIndex);
+		expect(depIndex).toBeLessThan(descIndex);
+		expect(descIndex).toBeLessThan(instrIndex);
 	});
 });
 

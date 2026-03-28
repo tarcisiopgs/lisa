@@ -5,6 +5,13 @@ import { buildPrCreateInstruction } from "./git/platform.js";
 import { getManifestPath, getPlanPath } from "./paths.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
+/**
+ * Sentinel inserted between the issue description and procedural instructions.
+ * The provider layer replaces this with the actual guardrails content (if any)
+ * so that past-failure context is read before the model enters execution mode.
+ */
+export const GUARDRAILS_PLACEHOLDER = "{{GUARDRAILS}}";
+
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
 
@@ -301,9 +308,16 @@ ${branchRenameInstruction}
 		rulesSection = buildRulesSection(projectContext?.environment);
 	}
 
+	const taskHint = buildTaskTypeHint(issue.title);
+
 	// --- Assemble ---
-	return `${preamble}
-${workContext}
+	// Prompt ordering rationale (based on PRISM research — arxiv.org/html/2603.18507v1):
+	// Factual context (project, files, conventions) comes BEFORE procedural instructions.
+	// Heavy instruction blocks activate the model's "instruction-following mode" which
+	// competes with factual recall. Front-loading context lets the model build a mental
+	// model of the codebase before entering execution mode.
+	return `${preamble}${taskHint}
+${workContext}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${relevantFilesBlock ? `\n${relevantFilesBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}
 ## Issue
 
 - **ID:** ${issue.id}
@@ -313,7 +327,7 @@ ${workContext}
 ### Description
 
 ${issue.description}
-${specWarningBlock}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${relevantFilesBlock ? `\n${relevantFilesBlock}\n` : ""}${depBlock ? `\n${depBlock}\n` : ""}${scopeSection}
+${specWarningBlock}${scopeSection}${GUARDRAILS_PLACEHOLDER}
 ${instructions}
 
 ${rulesSection}
@@ -530,6 +544,36 @@ If an update is needed, modify only the affected sections. Keep the existing sty
 export function buildContextMdBlock(content: string | null | undefined): string {
 	if (!content?.trim()) return "";
 	return `\n## Project Conventions\n\n${content.trim()}\n`;
+}
+
+/**
+ * Derive a lightweight attention hint from the issue title prefix.
+ *
+ * Research (PRISM — arxiv.org/html/2603.18507v1) shows that full expert
+ * personas hurt factual recall while helping alignment tasks. Instead of
+ * injecting a heavy persona, we add a short task-type-aware hint that steers
+ * the model's attention without activating deep "instruction-following mode".
+ */
+export function buildTaskTypeHint(title: string): string {
+	const lower = title.toLowerCase();
+
+	if (/^\[?fix[\]:\s]|^bug[\s:-]|^hotfix[\s:-]/i.test(lower)) {
+		return "\nPay special attention to understanding the existing code before making changes. Read related files thoroughly and verify the root cause before applying a fix.";
+	}
+
+	if (/^\[?refactor[\]:\s]/i.test(lower)) {
+		return "\nPreserve all existing behavior. Run tests frequently during the refactor to catch regressions early.";
+	}
+
+	if (/^\[?test[\]:\s]|^add tests|^write tests/i.test(lower)) {
+		return "\nFocus on meaningful test coverage. Read the source code to understand edge cases before writing tests.";
+	}
+
+	if (/^\[?docs?[\]:\s]|^documentation/i.test(lower)) {
+		return "\nRead the current code to ensure documentation accurately reflects the actual behavior.";
+	}
+
+	return "";
 }
 
 export function buildDependencyContext(dep: DependencyContext): string {
