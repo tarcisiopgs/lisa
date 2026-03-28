@@ -60,8 +60,17 @@ export async function isCommandAvailable(
 		availabilityCache.set(key, true);
 		return true;
 	} catch {
-		availabilityCache.set(key, false);
-		return false;
+		// Fallback: some binaries (e.g. opencode installed at ~/.opencode/bin) are
+		// reachable through a shell but not via direct execvp() — for instance when
+		// PATH is extended by shell profile files that non-shell execution skips.
+		try {
+			await execFileAsync(command, args, { stdio: "ignore", shell: true } as never);
+			availabilityCache.set(key, true);
+			return true;
+		} catch {
+			availabilityCache.set(key, false);
+			return false;
+		}
 	}
 }
 
