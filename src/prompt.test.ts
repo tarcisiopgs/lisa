@@ -187,8 +187,7 @@ describe("buildImplementPrompt", () => {
 		it("does not include test instructions when no test runner is provided", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "worktree" }));
 
-			expect(prompt).not.toContain("MANDATORY — Unit Tests");
-			expect(prompt).not.toContain("*.test.ts");
+			expect(prompt).not.toContain("MANDATORY — Test-Driven Development (TDD)");
 		});
 
 		it("includes test instructions when vitest is detected", () => {
@@ -198,9 +197,10 @@ describe("buildImplementPrompt", () => {
 				"vitest",
 			);
 
-			expect(prompt).toContain("MANDATORY — Unit Tests");
+			expect(prompt).toContain("MANDATORY — Test-Driven Development (TDD)");
 			expect(prompt).toContain("vitest");
-			expect(prompt).toContain("*.test.ts");
+			expect(prompt).toContain("RED");
+			expect(prompt).toContain("GREEN");
 			expect(prompt).toContain("npm run test");
 		});
 
@@ -211,7 +211,7 @@ describe("buildImplementPrompt", () => {
 				"jest",
 			);
 
-			expect(prompt).toContain("MANDATORY — Unit Tests");
+			expect(prompt).toContain("MANDATORY — Test-Driven Development (TDD)");
 			expect(prompt).toContain("jest");
 		});
 
@@ -304,7 +304,7 @@ describe("buildImplementPrompt", () => {
 		it("does not include test instructions when no test runner", () => {
 			const prompt = buildImplementPrompt(makeIssue(), makeConfig({ workflow: "branch" }));
 
-			expect(prompt).not.toContain("MANDATORY — Unit Tests");
+			expect(prompt).not.toContain("MANDATORY — Test-Driven Development (TDD)");
 		});
 
 		it("includes test instructions when test runner is provided", () => {
@@ -314,7 +314,7 @@ describe("buildImplementPrompt", () => {
 				"vitest",
 			);
 
-			expect(prompt).toContain("MANDATORY — Unit Tests");
+			expect(prompt).toContain("MANDATORY — Test-Driven Development (TDD)");
 			expect(prompt).toContain("vitest");
 		});
 
@@ -420,13 +420,13 @@ describe("buildNativeWorktreePrompt", () => {
 
 	it("includes test instructions when provided", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue(), undefined, "vitest");
-		expect(prompt).toContain("MANDATORY — Unit Tests");
+		expect(prompt).toContain("MANDATORY — Test-Driven Development (TDD)");
 		expect(prompt).toContain("vitest");
 	});
 
 	it("excludes test instructions when no runner", () => {
 		const prompt = buildNativeWorktreePrompt(makeIssue());
-		expect(prompt).not.toContain("MANDATORY — Unit Tests");
+		expect(prompt).not.toContain("MANDATORY — Test-Driven Development (TDD)");
 	});
 
 	it("includes README validation instructions when repoPath has README", () => {
@@ -558,7 +558,7 @@ describe("buildScopedImplementPrompt", () => {
 
 	it("includes test instructions when provided", () => {
 		const prompt = buildScopedImplementPrompt(makeIssue(), step, [], "vitest");
-		expect(prompt).toContain("MANDATORY — Unit Tests");
+		expect(prompt).toContain("MANDATORY — Test-Driven Development (TDD)");
 		expect(prompt).toContain("vitest");
 	});
 });

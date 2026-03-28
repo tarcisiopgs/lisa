@@ -115,6 +115,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 	const depBlock = issue.dependency ? buildDependencyContext(issue.dependency) : "";
 	const specWarningBlock = buildSpecWarningBlock(issue.specWarning);
 	const contextMdBlock = buildContextMdBlock(repoContextMd ?? null);
+	const dodBlock = buildDefinitionOfDone(issue.description ?? "");
 	const relevantFilesBlock = relevantFiles ?? "";
 	const prBase = issue.dependency ? issue.dependency.branch : baseBranch;
 	const prCreateBlock = buildPrCreateInstruction(platform, prBase);
@@ -188,10 +189,7 @@ ${repoEntries}
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
 ${testBlock}${hookBlock}
-4. **Validate**: Run the project's linter/typecheck/tests if available:
-   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
-   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
-   - Fix any errors before proceeding.
+4. ${buildValidateStep(testRunner ?? null, pm)}
 ${readmeBlock}
 **CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
 
@@ -226,10 +224,7 @@ ${readmeBlock}
    - Follow the implementation instructions exactly
    - Verify each acceptance criteria relevant to your scope
 ${testBlock}${hookBlock}
-2. **Validate**: Run the project's linter/typecheck/tests if available:
-   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
-   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
-   - Fix any errors before proceeding.
+2. ${buildValidateStep(testRunner ?? null, pm)}
 ${readmeBlock}
 **CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
 
@@ -266,10 +261,7 @@ ${trackerStep}
    - Verify each acceptance criteria (if present)
    - Respect any stack or technical constraints (if present)
 ${testBlock}${hookBlock}
-2. **Validate**: Run the project's linter/typecheck/tests if available:
-   - Check \`package.json\` (or equivalent) for lint, typecheck, check, or test scripts.
-   - Run whichever validation scripts exist (e.g., \`npm run lint\`, \`npm run typecheck\`).
-   - Fix any errors before proceeding.
+2. ${buildValidateStep(testRunner ?? null, pm)}
 ${readmeBlock}
 **CRITICAL — Do NOT stop here. The following steps (commit, push, PR, manifest) are MANDATORY. Skipping them means the task has FAILED.**
 
@@ -331,7 +323,7 @@ ${workContext}${contextBlock ? `\n${contextBlock}\n` : ""}${contextMdBlock}${rel
 ### Description
 
 ${issue.description}
-${specWarningBlock}${scopeSection}${GUARDRAILS_PLACEHOLDER}
+${specWarningBlock}${dodBlock}${scopeSection}${GUARDRAILS_PLACEHOLDER}
 ${instructions}
 
 ${rulesSection}
@@ -465,13 +457,27 @@ function buildTestInstructions(testRunner: TestRunner, pm: PackageManager = "npm
 	const testCmd = pm === "bun" ? "bun run test" : `${pm} run test`;
 
 	return `
-**MANDATORY — Unit Tests:**
-This project uses **${testRunner}** as its test runner.
-- You MUST write unit tests (\`*.test.ts\`) for every new file or module you create.
-- Tests should cover the main functionality, edge cases, and error scenarios.
-- Run \`${testCmd}\` and ensure ALL tests pass before committing.
-- Do NOT skip writing tests — the PR will be blocked if tests are missing or failing.
+**MANDATORY — Test-Driven Development (TDD):**
+This project uses **${testRunner}**. Follow the RED → GREEN → REFACTOR cycle strictly:
+1. **RED**: Write the failing tests first — before writing any implementation code.
+   Run \`${testCmd}\` and confirm the new tests fail. If they pass immediately, the tests are wrong.
+2. **GREEN**: Write the minimum implementation to make the tests pass.
+   Run \`${testCmd}\` — all tests must pass before continuing.
+3. **REFACTOR**: Clean up the code without breaking tests. Run \`${testCmd}\` one final time to confirm.
+- Cover the main functionality, edge cases, and error scenarios.
+- Do NOT write implementation before tests. The PR will be blocked if tests are missing or written after the fact.
 `;
+}
+
+export function buildDefinitionOfDone(description: string): string {
+	const criteria = description
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => /^- \[ \]/.test(l));
+
+	if (criteria.length === 0) return "";
+
+	return `\n## Definition of Done\n\nVerify each item before finishing:\n\n${criteria.join("\n")}\n`;
 }
 
 function buildSpecWarningBlock(warning?: string): string {
@@ -512,6 +518,16 @@ function buildEnvironmentDependencyRule(env?: ProjectEnvironment): string {
 		return "- **Environment**: This is a server-side (Node.js) project. Do NOT install browser/DOM packages. Use only Node.js-compatible packages.\n";
 	}
 	return "";
+}
+
+function buildValidateStep(testRunner: TestRunner, pm: PackageManager = "npm"): string {
+	const testCmd = pm === "bun" ? "bun run test" : `${pm} run test`;
+	const testLine = testRunner
+		? `   - Run \`${testCmd}\` — ALL tests must pass (final gate after the TDD cycle).\n`
+		: "";
+	return `**Validate**: Confirm all quality gates before committing:
+${testLine}   - Run lint/typecheck scripts if available (e.g., \`npm run lint\`, \`npm run typecheck\`).
+   - Fix every error. Do NOT commit with failing tests or lint errors.`;
 }
 
 function buildPreCommitHookInstructions(): string {
