@@ -80,7 +80,8 @@ src/
 │   ├── parser.ts         # Parse AI JSON response into PlannedIssue[]
 │   ├── wizard.ts         # Interactive review wizard (clack + $EDITOR)
 │   ├── create.ts         # Batch issue creation in source with dependency linking
-│   └── persistence.ts    # Save/load plan to .lisa/plans/{timestamp}.json
+│   ├── persistence.ts    # Save/load plan to .lisa/plans/{timestamp}.json
+│   └── lineage.ts            # Lineage tracking for plan-decomposed issues
 ├── loop/                 # Main agent loop orchestration
 │   ├── index.ts          # Loop entry point, orchestration
 │   ├── sequential.ts     # Sequential issue processing
@@ -116,7 +117,11 @@ src/
 │   ├── discovery.ts      # Docker Compose auto-discovery + infrastructure setup
 │   ├── context-manager.ts # Context file lifecycle management
 │   ├── kanban-persistence.ts # TUI state persistence across restarts
-│   └── pr-cache.ts       # PR URL caching across multi-repo sessions
+│   ├── pr-cache.ts       # PR URL caching across multi-repo sessions
+│   ├── state.ts              # Session state persistence (.lisa/sessions/)
+│   ├── reactions.ts          # Configurable reaction engine for session events
+│   ├── review-monitor.ts     # Post-PR review monitoring and feedback loop
+│   └── activity.ts           # JSONL-based Claude Code activity detection
 ├── output/               # Logging and terminal output
 │   ├── logger.ts         # Logging (stderr + file, supports default/tui/quiet/verbose)
 │   ├── line-color.ts     # Provider output line colorization for TUI
@@ -198,6 +203,26 @@ If `git push` fails due to pre-push hooks (husky, lint, typecheck), Lisa re-invo
 
 `detectFeatureBranches()` uses 3-pass detection (issue ID in branch name → branch differs from base → git history search) to find all repos touched, creating one PR per repo.
 
+### Session State (`session/state.ts`)
+
+Tracks session lifecycle in `.lisa/sessions/{issue-id}.json`. States: `spawning → implementing → validating → pr_created → ci_monitoring → review_pending → changes_requested → approved → done`. Records are created at session start and removed on completion/failure.
+
+### Review Monitor (`session/review-monitor.ts`)
+
+When enabled, polls GitHub PR review status after CI passes. On `changes_requested`, extracts inline review comments, builds a recovery prompt, and re-invokes the agent to address feedback. Configurable `max_retries`, `poll_interval`, and `escalate_after` via the reaction engine.
+
+### Reaction Engine (`session/reactions.ts`)
+
+Configurable actions dispatched on session events. Default reactions: CI failures trigger agent re-invocation (3 retries), review changes trigger re-invocation (2 retries, 1h escalation), approval triggers notification. Users can override via `reactions` config.
+
+### Activity Detection (`session/activity.ts`)
+
+Reads Claude Code's JSONL session files (`~/.claude/projects/<encoded-path>/*.jsonl`) to detect agent activity state. Complements the git-status-based overseer — prevents false stuck kills when the agent is actively reading/analyzing code but hasn't produced git changes yet.
+
+### Lineage Context (`plan/lineage.ts`)
+
+When `lisa plan` creates multiple issues, lineage context is saved to `.lisa/lineage/{planId}.json`. During execution, each issue's prompt is enriched with its position in the plan hierarchy and sibling task descriptions, preventing duplicate work in concurrent mode.
+
 ## Provider Execution Pattern
 
 All providers use `child_process.spawn` with `sh -c` — NOT execa (stdout pipe issues in v9). Prompts are written to a temp file and passed via `$(cat 'file')` to avoid argument length limits. Critical settings: `stdin: 'ignore'` (open stdin blocks Claude Code) and unset `CLAUDECODE` env var (allows nested execution).
@@ -255,6 +280,8 @@ Key config fields:
 - `proof_of_work`: validation commands run after provider completes (lint, typecheck, test)
 - `reconciliation`: detect and clean up stale active runs
 - `pr`: optional `{ reviewers?: string[], assignees?: string[] }` — auto-add reviewers/assignees to PRs. Supports `"self"` keyword in assignees (resolved to authenticated user). Applied post-creation via platform API.
+- `review_monitor`: optional post-PR review monitoring (`enabled`, `max_retries`, `poll_interval`, `poll_timeout`, `block_on_failure`)
+- `reactions`: optional configurable reactions per event (`ci_failed`, `changes_requested`, `approved`, `agent_stuck`, `validation_failed`). Each reaction has `action` (`reinvoke`/`notify`/`skip`), `max_retries`, `escalate_after`.
 
 ### CLI flags
 
