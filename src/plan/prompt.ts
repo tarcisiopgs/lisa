@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { buildContextMdBlock } from "../prompt.js";
+import { buildContextMdBlock } from "../prompt/index.js";
 import { readContext } from "../session/context-manager.js";
 import type { LisaConfig } from "../types/index.js";
 

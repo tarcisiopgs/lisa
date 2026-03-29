@@ -14,7 +14,7 @@ import {
 	detectPackageManager,
 	detectTestRunner,
 	type PreviousStepResult,
-} from "../prompt.js";
+} from "../prompt/index.js";
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import { discoverInfra } from "../session/discovery.js";

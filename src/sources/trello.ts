@@ -1,3 +1,4 @@
+import { SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
@@ -7,7 +8,8 @@ const API_URL = "https://api.trello.com/1";
 function getAuthHeaders(): Record<string, string> {
 	const key = process.env.TRELLO_API_KEY;
 	const token = process.env.TRELLO_TOKEN;
-	if (!key || !token) throw new Error("TRELLO_API_KEY and TRELLO_TOKEN must be set");
+	if (!key || !token)
+		throw new SourceError("TRELLO_API_KEY and TRELLO_TOKEN must be set", "trello");
 	return {
 		Authorization: `OAuth oauth_consumer_key="${key}", oauth_token="${token}"`,
 	};
@@ -23,7 +25,7 @@ async function trelloFetch<T>(method: string, path: string, params = ""): Promis
 	});
 	if (!res.ok) {
 		const text = await res.text();
-		throw new Error(`Trello API error (${res.status}): ${text}`);
+		throw new SourceError(`Trello API error (${res.status}): ${text}`, "trello", res.status);
 	}
 	if (method === "DELETE") return undefined as T;
 	return (await res.json()) as T;

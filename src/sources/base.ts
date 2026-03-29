@@ -1,3 +1,5 @@
+import type { ZodType } from "zod";
+import { SourceError } from "../errors.js";
 import { warn } from "../output/logger.js";
 import type { SourceConfig } from "../types/index.js";
 
@@ -39,7 +41,11 @@ export function createApiClient(
 		if (error instanceof Error) {
 			if (error.name === "AbortError") return true;
 			if (error instanceof TypeError) return true;
-			// Check for server errors encoded in our error message format
+			// Check for server errors via SourceError status code
+			if (error instanceof SourceError && error.statusCode) {
+				return error.statusCode >= 500;
+			}
+			// Fallback: check for server errors encoded in error message format
 			const match = error.message.match(/API error \((\d+)\)/);
 			if (match?.[1]) {
 				const status = Number.parseInt(match[1], 10);
@@ -73,7 +79,12 @@ export function createApiClient(
 		throw lastError;
 	}
 
-	async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+	async function request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+		schema?: ZodType<T>,
+	): Promise<T> {
 		return retryableRequest(async () => {
 			const url = `${baseUrl}${path}`;
 			const headers: Record<string, string> = {
@@ -90,19 +101,32 @@ export function createApiClient(
 
 			if (!res.ok) {
 				const text = await res.text();
-				throw new Error(`${name} API error (${res.status}): ${text}`);
+				throw new SourceError(`${name} API error (${res.status}): ${text}`, name, res.status);
 			}
 
 			if (method === "DELETE" || res.status === 204) return undefined as T;
-			return (await res.json()) as T;
+			const data = await res.json();
+			if (schema) {
+				const result = schema.safeParse(data);
+				if (!result.success) {
+					throw new Error(
+						`${name} API response validation failed for ${method} ${path}: ${result.error.message}`,
+					);
+				}
+				return result.data;
+			}
+			return data as T;
 		});
 	}
 
 	return {
-		get: <T>(path: string) => request<T>("GET", path),
-		post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
-		put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
-		patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
+		get: <T>(path: string, schema?: ZodType<T>) => request<T>("GET", path, undefined, schema),
+		post: <T>(path: string, body?: unknown, schema?: ZodType<T>) =>
+			request<T>("POST", path, body, schema),
+		put: <T>(path: string, body?: unknown, schema?: ZodType<T>) =>
+			request<T>("PUT", path, body, schema),
+		patch: <T>(path: string, body?: unknown, schema?: ZodType<T>) =>
+			request<T>("PATCH", path, body, schema),
 		delete: (path: string) => request<void>("DELETE", path),
 		/** Raw request for non-JSON bodies (e.g. Trello form-encoded). */
 		raw: async <T>(method: string, path: string, init?: RequestInit): Promise<T> => {
@@ -117,7 +141,7 @@ export function createApiClient(
 				});
 				if (!res.ok) {
 					const text = await res.text();
-					throw new Error(`${name} API error (${res.status}): ${text}`);
+					throw new SourceError(`${name} API error (${res.status}): ${text}`, name, res.status);
 				}
 				if (method === "DELETE" || res.status === 204) return undefined as T;
 				return (await res.json()) as T;

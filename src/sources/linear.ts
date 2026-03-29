@@ -1,3 +1,4 @@
+import { SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
@@ -6,7 +7,7 @@ const API_URL = "https://api.linear.app/graphql";
 
 function getApiKey(): string {
 	const key = process.env.LINEAR_API_KEY;
-	if (!key) throw new Error("LINEAR_API_KEY is not set");
+	if (!key) throw new SourceError("LINEAR_API_KEY is not set", "linear");
 	return key;
 }
 
@@ -23,12 +24,15 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 
 	if (!res.ok) {
 		const text = await res.text();
-		throw new Error(`Linear API error (${res.status}): ${text}`);
+		throw new SourceError(`Linear API error (${res.status}): ${text}`, "linear", res.status);
 	}
 
 	const json = (await res.json()) as { data: T; errors?: { message: string }[] };
 	if (json.errors?.length) {
-		throw new Error(`Linear GraphQL error: ${json.errors.map((e) => e.message).join(", ")}`);
+		throw new SourceError(
+			`Linear GraphQL error: ${json.errors.map((e) => e.message).join(", ")}`,
+			"linear",
+		);
 	}
 	return json.data;
 }

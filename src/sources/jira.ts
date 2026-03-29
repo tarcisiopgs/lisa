@@ -1,6 +1,16 @@
+import { SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
+import {
+	JiraCreateIssueResponseSchema,
+	JiraIssueSchema,
+	JiraIssueTypeStatusesListSchema,
+	JiraLabelSearchSchema,
+	JiraProjectSearchSchema,
+	JiraSearchResultSchema,
+	JiraTransitionsResultSchema,
+} from "./schemas.js";
 
 const PRIORITY_RANK: Record<string, number> = {
 	highest: 1,
@@ -12,14 +22,14 @@ const PRIORITY_RANK: Record<string, number> = {
 
 function getBaseUrl(): string {
 	const url = process.env.JIRA_BASE_URL;
-	if (!url) throw new Error("JIRA_BASE_URL is not set");
+	if (!url) throw new SourceError("JIRA_BASE_URL is not set", "jira");
 	return url.replace(/\/$/, "");
 }
 
 function getAuthHeaders(): Record<string, string> {
 	const email = process.env.JIRA_EMAIL;
 	const token = process.env.JIRA_API_TOKEN;
-	if (!email || !token) throw new Error("JIRA_EMAIL and JIRA_API_TOKEN must be set");
+	if (!email || !token) throw new SourceError("JIRA_EMAIL and JIRA_API_TOKEN must be set", "jira");
 	const credentials = Buffer.from(`${email}:${token}`).toString("base64");
 	return {
 		Authorization: `Basic ${credentials}`,
@@ -34,12 +44,12 @@ function api() {
 	return _api;
 }
 
-function jiraGet<T>(path: string): Promise<T> {
-	return api().get<T>(path);
+function jiraGet<T>(path: string, schema?: import("zod").ZodType<T>): Promise<T> {
+	return api().get<T>(path, schema);
 }
 
-function jiraPost<T>(path: string, body?: unknown): Promise<T> {
-	return api().post<T>(path, body);
+function jiraPost<T>(path: string, body?: unknown, schema?: import("zod").ZodType<T>): Promise<T> {
+	return api().post<T>(path, body, schema);
 }
 
 function jiraPut<T>(path: string, body?: unknown): Promise<T> {
@@ -140,8 +150,9 @@ function escapeJql(value: string): string {
 /** Resolve a status name to its numeric ID via the project statuses endpoint. */
 async function resolveStatusId(scope: string, statusName: string): Promise<string | null> {
 	try {
-		const data = await jiraGet<JiraIssueTypeStatuses[]>(
+		const data = await jiraGet(
 			`/project/${encodeURIComponent(scope)}/statuses`,
+			JiraIssueTypeStatusesListSchema,
 		);
 		for (const issueType of data) {
 			const match = issueType.statuses.find(
@@ -179,12 +190,16 @@ export class JiraSource implements Source {
 		const pageSize = 50;
 
 		while (true) {
-			const data = await jiraPost<JiraSearchResult>("/search/jql", {
-				jql,
-				fields: fields.split(","),
-				maxResults: pageSize,
-				startAt,
-			});
+			const data = await jiraPost(
+				"/search/jql",
+				{
+					jql,
+					fields: fields.split(","),
+					maxResults: pageSize,
+					startAt,
+				},
+				JiraSearchResultSchema,
+			);
 			const batch = data.issues ?? [];
 			issues.push(...batch);
 			if (batch.length < pageSize || issues.length >= data.total) break;
@@ -246,8 +261,9 @@ export class JiraSource implements Source {
 	async fetchIssueById(id: string): Promise<Issue | null> {
 		const key = parseJiraIdentifier(id);
 		try {
-			const issue = await jiraGet<JiraIssue>(
+			const issue = await jiraGet(
 				`/issue/${key}?fields=summary,description,priority,status,labels`,
+				JiraIssueSchema,
 			);
 			const baseUrl = getBaseUrl();
 			return {
@@ -264,7 +280,7 @@ export class JiraSource implements Source {
 
 	async updateStatus(issueId: string, statusName: string): Promise<void> {
 		const key = parseJiraIdentifier(issueId);
-		const data = await jiraGet<JiraTransitionsResult>(`/issue/${key}/transitions`);
+		const data = await jiraGet(`/issue/${key}/transitions`, JiraTransitionsResultSchema);
 
 		// Match by target status name first (what the user sees), then by transition name
 		const lowerName = statusName.toLowerCase();
@@ -317,12 +333,16 @@ export class JiraSource implements Source {
 		const pageSize = 100;
 
 		while (true) {
-			const data = await jiraPost<JiraSearchResult>("/search/jql", {
-				jql,
-				fields: fields.split(","),
-				maxResults: pageSize,
-				startAt,
-			});
+			const data = await jiraPost(
+				"/search/jql",
+				{
+					jql,
+					fields: fields.split(","),
+					maxResults: pageSize,
+					startAt,
+				},
+				JiraSearchResultSchema,
+			);
 			const batch = data.issues ?? [];
 			allIssues.push(...batch);
 			if (batch.length < pageSize || allIssues.length >= data.total) break;
@@ -344,10 +364,10 @@ export class JiraSource implements Source {
 		const pageSize = 50;
 
 		while (true) {
-			const data = await jiraGet<{
-				values: { key: string; name: string }[];
-				total: number;
-			}>(`/project/search?maxResults=${pageSize}&startAt=${startAt}`);
+			const data = await jiraGet(
+				`/project/search?maxResults=${pageSize}&startAt=${startAt}`,
+				JiraProjectSearchSchema,
+			);
 			const batch = data.values ?? [];
 			results.push(...batch);
 			if (batch.length < pageSize || results.length >= data.total) break;
@@ -366,8 +386,9 @@ export class JiraSource implements Source {
 		const pageSize = 100;
 
 		while (true) {
-			const data = await jiraGet<{ values: string[]; total: number }>(
+			const data = await jiraGet(
 				`/label?maxResults=${pageSize}&startAt=${startAt}`,
+				JiraLabelSearchSchema,
 			);
 			const batch = data.values ?? [];
 			results.push(...batch);
@@ -382,8 +403,9 @@ export class JiraSource implements Source {
 	}
 
 	async listStatuses(scope: string): Promise<{ value: string; label: string }[]> {
-		const data = await jiraGet<{ statuses: { name: string }[] }[]>(
+		const data = await jiraGet(
 			`/project/${encodeURIComponent(scope)}/statuses`,
+			JiraIssueTypeStatusesListSchema,
 		);
 		const seen = new Set<string>();
 		const results: { value: string; label: string }[] = [];
@@ -400,7 +422,7 @@ export class JiraSource implements Source {
 
 	async removeLabel(issueId: string, labelName: string): Promise<void> {
 		const key = parseJiraIdentifier(issueId);
-		const issue = await jiraGet<JiraIssue>(`/issue/${key}?fields=labels`);
+		const issue = await jiraGet(`/issue/${key}?fields=labels`, JiraIssueSchema);
 
 		const currentLabels = issue.fields.labels ?? [];
 		const filtered = currentLabels.filter((l) => l.toLowerCase() !== labelName.toLowerCase());
@@ -432,7 +454,7 @@ export class JiraSource implements Source {
 
 		if (opts.parentId) fields.parent = { key: opts.parentId };
 
-		const result = await jiraPost<{ key: string }>("/issue", { fields });
+		const result = await jiraPost("/issue", { fields }, JiraCreateIssueResponseSchema);
 
 		// Transition to the desired status if specified
 		if (opts.status) {

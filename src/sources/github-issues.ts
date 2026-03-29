@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
@@ -16,7 +17,10 @@ async function getToken(): Promise<string> {
 	} catch {
 		// gh CLI not available or not authenticated
 	}
-	throw new Error("GitHub authentication required: set GITHUB_TOKEN or run `gh auth login`");
+	throw new SourceError(
+		"GitHub authentication required: set GITHUB_TOKEN or run `gh auth login`",
+		"github-issues",
+	);
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import * as clack from "@clack/prompts";
 import { resolveModels } from "../loop/models.js";
 import * as logger from "../output/logger.js";
-import { buildContextMdBlock } from "../prompt.js";
+import { buildContextMdBlock } from "../prompt/index.js";
 import { runWithFallback } from "../providers/index.js";
 import { readContext } from "../session/context-manager.js";
 import type { ChatMessage, LisaConfig } from "../types/index.js";

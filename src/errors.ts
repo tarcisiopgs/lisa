@@ -10,3 +10,57 @@ export function formatError(err: unknown): string {
 	}
 	return String(err);
 }
+
+/** Base class for all Lisa domain errors. */
+export class LisaError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "LisaError";
+	}
+}
+
+/** Provider execution errors (agent failed, crashed, timed out). */
+export class ProviderError extends LisaError {
+	constructor(
+		message: string,
+		public readonly provider: string,
+		public readonly model?: string,
+		options?: ErrorOptions,
+	) {
+		super(message, options);
+		this.name = "ProviderError";
+	}
+}
+
+/** Source/API errors (Linear, GitHub, Jira, etc.). */
+export class SourceError extends LisaError {
+	constructor(
+		message: string,
+		public readonly source: string,
+		public readonly statusCode?: number,
+		options?: ErrorOptions,
+	) {
+		super(message, options);
+		this.name = "SourceError";
+	}
+}
+
+/** Timeout errors (session timeout, stuck provider, output stall). */
+export class TimeoutError extends LisaError {
+	constructor(
+		message: string,
+		public readonly timeoutMs: number,
+		options?: ErrorOptions,
+	) {
+		super(message, options);
+		this.name = "TimeoutError";
+	}
+}
+
+/** Validation errors (spec compliance, proof of work, plan validation). */
+export class ValidationError extends LisaError {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "ValidationError";
+	}
+}

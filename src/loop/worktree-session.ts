@@ -27,7 +27,7 @@ import {
 	buildNativeWorktreePrompt,
 	detectPackageManager,
 	detectTestRunner,
-} from "../prompt.js";
+} from "../prompt/index.js";
 import { createProvider, runWithFallback } from "../providers/index.js";
 import { isCiMonitorEnabled, monitorCi } from "../session/ci-monitor.js";
 import { readContext } from "../session/context-manager.js";
