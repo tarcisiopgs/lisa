@@ -143,9 +143,18 @@ export class GitHubIssuesSource implements Source {
 		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
 		const filterLabels = isOrphanDetection ? [config.pick_from] : normalizeLabels(config);
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
-		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
+		const issues: GitHubIssue[] = [];
+		let page = 1;
+
+		while (true) {
+			const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100&page=${page}`;
+			const batch = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
+			issues.push(...batch);
+			if (batch.length < 100) break;
+			page++;
+		}
+
 		if (issues.length === 0) return null;
 
 		// Check blocking relations parsed from issue body
@@ -320,10 +329,19 @@ export class GitHubIssuesSource implements Source {
 		const { owner, repo } = parseOwnerRepo(config.scope);
 		const labels = normalizeLabels(config);
 		const label = labels.map((l) => encodeURIComponent(l)).join(",");
-		const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100`;
 
-		const issues = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
-		return issues.map((issue) => ({
+		const allIssues: GitHubIssue[] = [];
+		let page = 1;
+
+		while (true) {
+			const path = `/repos/${owner}/${repo}/issues?labels=${label}&state=open&sort=created&direction=asc&per_page=100&page=${page}`;
+			const batch = (await api().get<GitHubIssue[]>(path)).filter((i) => !i.pull_request);
+			allIssues.push(...batch);
+			if (batch.length < 100) break;
+			page++;
+		}
+
+		return allIssues.map((issue) => ({
 			id: makeIssueId(owner, repo, issue.number),
 			title: issue.title,
 			description: issue.body ?? "",

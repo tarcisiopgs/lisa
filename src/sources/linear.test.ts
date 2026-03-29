@@ -10,6 +10,8 @@ function mockFetch(response: unknown, ok = true) {
 	});
 }
 
+const noNextPage = { hasNextPage: false, endCursor: null };
+
 const config = {
 	scope: "Engineering",
 	project: "Backend",
@@ -54,6 +56,7 @@ describe("LinearSource.fetchNextIssue multi-label", () => {
 							inverseRelations: { nodes: [] },
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -91,6 +94,7 @@ describe("LinearSource.fetchNextIssue multi-label", () => {
 							inverseRelations: { nodes: [] },
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -146,6 +150,7 @@ describe("LinearSource.fetchNextIssue completedBlockerIds", () => {
 							},
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -176,6 +181,7 @@ describe("LinearSource.fetchNextIssue completedBlockerIds", () => {
 							inverseRelations: { nodes: [] },
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -215,6 +221,7 @@ describe("LinearSource.fetchNextIssue completedBlockerIds", () => {
 							},
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -260,6 +267,7 @@ describe("LinearSource.fetchNextIssue completedBlockerIds", () => {
 							},
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -301,6 +309,7 @@ describe("LinearSource.listIssues", () => {
 							url: "https://linear.app/issue/ENG-2",
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -316,7 +325,7 @@ describe("LinearSource.listIssues", () => {
 	});
 
 	it("returns empty array when no matching issues", async () => {
-		const response = { data: { issues: { nodes: [] } } };
+		const response = { data: { issues: { nodes: [], pageInfo: noNextPage } } };
 		vi.stubGlobal("fetch", mockFetch(response));
 
 		const source = new LinearSource();
@@ -345,6 +354,7 @@ describe("LinearSource.listIssues", () => {
 							labels: { nodes: [{ name: "ready" }] },
 						},
 					],
+					pageInfo: noNextPage,
 				},
 			},
 		};
@@ -606,6 +616,7 @@ describe("wizard helpers", () => {
 						data: {
 							projects: {
 								nodes: [{ name: "Backend" }, { name: "Frontend" }],
+								pageInfo: noNextPage,
 							},
 						},
 					}),
@@ -646,7 +657,7 @@ describe("wizard helpers", () => {
 				return {
 					ok: true,
 					json: async () => ({
-						data: { projects: { nodes: [] } },
+						data: { projects: { nodes: [], pageInfo: noNextPage } },
 					}),
 				};
 			});
@@ -681,6 +692,7 @@ describe("wizard helpers", () => {
 									{ name: "In Progress", type: "started" },
 									{ name: "Done", type: "completed" },
 								],
+								pageInfo: noNextPage,
 							},
 						},
 					}),

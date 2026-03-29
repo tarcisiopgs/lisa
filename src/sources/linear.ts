@@ -39,74 +39,92 @@ export class LinearSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const labels = normalizeLabels(config);
 		const primaryLabel = labels[0] ?? "";
-		const data = await gql<{
-			issues: {
+
+		type IssueNode = {
+			id: string;
+			identifier: string;
+			title: string;
+			description: string;
+			url: string;
+			priority: number;
+			labels: { nodes: { name: string }[] };
+			inverseRelations: {
 				nodes: {
-					id: string;
-					identifier: string;
-					title: string;
-					description: string;
-					url: string;
-					priority: number;
-					labels: { nodes: { name: string }[] };
-					inverseRelations: {
-						nodes: {
-							type: string;
-							issue: {
-								identifier: string;
-								state: { type: string };
-							};
-						}[];
+					type: string;
+					issue: {
+						identifier: string;
+						state: { type: string };
 					};
 				}[];
 			};
-		}>(
-			`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!) {
-				issues(
-					filter: {
-						team: { name: { eq: $teamName } }
-						project: { name: { eq: $projectName } }
-						labels: { name: { eq: $labelName } }
-						state: { name: { eq: $statusName } }
-					}
-					first: 50
-				) {
-					nodes {
-						id
-						identifier
-						title
-						description
-						url
-						priority
-						labels { nodes { name } }
-						inverseRelations(first: 50) {
-							nodes {
-								type
-								issue {
-									identifier
-									state { type }
-								}
-							}
-						}
-					}
-				}
-			}`,
-			{
+		};
+
+		const allNodes: IssueNode[] = [];
+		let cursor: string | undefined;
+
+		for (;;) {
+			const vars: Record<string, unknown> = {
 				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,
-			},
-		);
+			};
+			if (cursor) vars.cursor = cursor;
+
+			const data = await gql<{
+				issues: {
+					nodes: IssueNode[];
+					pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				};
+			}>(
+				`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!, $cursor: String) {
+					issues(
+						filter: {
+							team: { name: { eq: $teamName } }
+							project: { name: { eq: $projectName } }
+							labels: { name: { eq: $labelName } }
+							state: { name: { eq: $statusName } }
+						}
+						first: 50
+						after: $cursor
+					) {
+						nodes {
+							id
+							identifier
+							title
+							description
+							url
+							priority
+							labels { nodes { name } }
+							inverseRelations(first: 50) {
+								nodes {
+									type
+									issue {
+										identifier
+										state { type }
+									}
+								}
+							}
+						}
+						pageInfo { hasNextPage endCursor }
+					}
+				}`,
+				vars,
+			);
+
+			allNodes.push(...data.issues.nodes);
+			if (!data.issues.pageInfo.hasNextPage || !data.issues.pageInfo.endCursor) break;
+			cursor = data.issues.pageInfo.endCursor;
+		}
 
 		// Client-side filter: ensure issue has ALL configured labels (AND logic)
 		const issues =
 			labels.length > 1
-				? data.issues.nodes.filter((issue) => {
+				? allNodes.filter((issue) => {
 						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
 						return labels.every((l) => issueLabels.has(l.toLowerCase()));
 					})
-				: data.issues.nodes;
+				: allNodes;
 		if (issues.length === 0) return null;
 
 		// Separate unblocked from blocked issues based on dependency relations
@@ -333,52 +351,70 @@ export class LinearSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const labels = normalizeLabels(config);
 		const primaryLabel = labels[0] ?? "";
-		const data = await gql<{
-			issues: {
-				nodes: {
-					identifier: string;
-					title: string;
-					description: string;
-					url: string;
-					labels: { nodes: { name: string }[] };
-				}[];
-			};
-		}>(
-			`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!) {
-				issues(
-					filter: {
-						team: { name: { eq: $teamName } }
-						project: { name: { eq: $projectName } }
-						labels: { name: { eq: $labelName } }
-						state: { name: { eq: $statusName } }
-					}
-					first: 100
-				) {
-					nodes {
-						identifier
-						title
-						description
-						url
-						labels { nodes { name } }
-					}
-				}
-			}`,
-			{
+
+		type ListIssueNode = {
+			identifier: string;
+			title: string;
+			description: string;
+			url: string;
+			labels: { nodes: { name: string }[] };
+		};
+
+		const allNodes: ListIssueNode[] = [];
+		let cursor: string | undefined;
+
+		for (;;) {
+			const vars: Record<string, unknown> = {
 				teamName: config.scope,
 				projectName: config.project,
 				labelName: primaryLabel,
 				statusName: config.pick_from,
-			},
-		);
+			};
+			if (cursor) vars.cursor = cursor;
+
+			const data = await gql<{
+				issues: {
+					nodes: ListIssueNode[];
+					pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				};
+			}>(
+				`query($teamName: String!, $projectName: String!, $labelName: String!, $statusName: String!, $cursor: String) {
+					issues(
+						filter: {
+							team: { name: { eq: $teamName } }
+							project: { name: { eq: $projectName } }
+							labels: { name: { eq: $labelName } }
+							state: { name: { eq: $statusName } }
+						}
+						first: 100
+						after: $cursor
+					) {
+						nodes {
+							identifier
+							title
+							description
+							url
+							labels { nodes { name } }
+						}
+						pageInfo { hasNextPage endCursor }
+					}
+				}`,
+				vars,
+			);
+
+			allNodes.push(...data.issues.nodes);
+			if (!data.issues.pageInfo.hasNextPage || !data.issues.pageInfo.endCursor) break;
+			cursor = data.issues.pageInfo.endCursor;
+		}
 
 		// Client-side filter: ensure issue has ALL configured labels (AND logic)
 		const filtered =
 			labels.length > 1
-				? data.issues.nodes.filter((issue) => {
+				? allNodes.filter((issue) => {
 						const issueLabels = new Set(issue.labels.nodes.map((l) => l.name.toLowerCase()));
 						return labels.every((l) => issueLabels.has(l.toLowerCase()));
 					})
-				: data.issues.nodes;
+				: allNodes;
 
 		return filtered.map((issue) => ({
 			id: issue.identifier,
@@ -496,18 +532,35 @@ export class LinearSource implements Source {
 		const team = data.teams.nodes[0];
 		if (!team) throw new Error(`Team "${scope}" not found`);
 
-		const projectData = await gql<{
-			projects: { nodes: { name: string }[] };
-		}>(
-			`query($teamId: ID!) {
-				projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) {
-					nodes { name }
-				}
-			}`,
-			{ teamId: team.id },
-		);
+		const allProjects: { name: string }[] = [];
+		let cursor: string | undefined;
 
-		return projectData.projects.nodes.map((p) => ({ value: p.name, label: p.name }));
+		for (;;) {
+			const vars: Record<string, unknown> = { teamId: team.id };
+			if (cursor) vars.cursor = cursor;
+
+			const projectData = await gql<{
+				projects: {
+					nodes: { name: string }[];
+					pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				};
+			}>(
+				`query($teamId: ID!, $cursor: String) {
+					projects(filter: { accessibleTeams: { id: { eq: $teamId } } }, first: 50, after: $cursor) {
+						nodes { name }
+						pageInfo { hasNextPage endCursor }
+					}
+				}`,
+				vars,
+			);
+
+			allProjects.push(...projectData.projects.nodes);
+			if (!projectData.projects.pageInfo.hasNextPage || !projectData.projects.pageInfo.endCursor)
+				break;
+			cursor = projectData.projects.pageInfo.endCursor;
+		}
+
+		return allProjects.map((p) => ({ value: p.name, label: p.name }));
 	}
 
 	async listStatuses(scope: string): Promise<{ value: string; label: string }[]> {
@@ -525,18 +578,38 @@ export class LinearSource implements Source {
 		const team = data.teams.nodes[0];
 		if (!team) throw new Error(`Team "${scope}" not found`);
 
-		const statesData = await gql<{
-			workflowStates: { nodes: { name: string; type: string }[] };
-		}>(
-			`query($teamId: ID!) {
-				workflowStates(filter: { team: { id: { eq: $teamId } } }) {
-					nodes { name type }
-				}
-			}`,
-			{ teamId: team.id },
-		);
+		const allStates: { name: string; type: string }[] = [];
+		let stateCursor: string | undefined;
 
-		return statesData.workflowStates.nodes.map((s) => ({
+		for (;;) {
+			const vars: Record<string, unknown> = { teamId: team.id };
+			if (stateCursor) vars.cursor = stateCursor;
+
+			const statesData = await gql<{
+				workflowStates: {
+					nodes: { name: string; type: string }[];
+					pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				};
+			}>(
+				`query($teamId: ID!, $cursor: String) {
+					workflowStates(filter: { team: { id: { eq: $teamId } } }, first: 50, after: $cursor) {
+						nodes { name type }
+						pageInfo { hasNextPage endCursor }
+					}
+				}`,
+				vars,
+			);
+
+			allStates.push(...statesData.workflowStates.nodes);
+			if (
+				!statesData.workflowStates.pageInfo.hasNextPage ||
+				!statesData.workflowStates.pageInfo.endCursor
+			)
+				break;
+			stateCursor = statesData.workflowStates.pageInfo.endCursor;
+		}
+
+		return allStates.map((s) => ({
 			value: s.name,
 			label: `${s.name} (${s.type})`,
 		}));

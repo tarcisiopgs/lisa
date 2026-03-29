@@ -174,9 +174,23 @@ export class JiraSource implements Source {
 		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND ${statusClause} ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels,issuelinks";
 
-		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 50);
+		const issues: JiraIssue[] = [];
+		let startAt = 0;
+		const pageSize = 50;
 
-		const issues = data.issues ?? [];
+		while (true) {
+			const data = await jiraPost<JiraSearchResult>("/search/jql", {
+				jql,
+				fields: fields.split(","),
+				maxResults: pageSize,
+				startAt,
+			});
+			const batch = data.issues ?? [];
+			issues.push(...batch);
+			if (batch.length < pageSize || issues.length >= data.total) break;
+			startAt += batch.length;
+		}
+
 		if (issues.length === 0) return null;
 
 		// Check blocking relations for each issue
@@ -298,10 +312,25 @@ export class JiraSource implements Source {
 		const jql = `project = "${escapeJql(config.scope)}" AND ${labelClause} AND ${statusClause} ORDER BY priority ASC, created ASC`;
 		const fields = "summary,description,priority,status,labels";
 
-		const data = await jiraSearchJql<JiraSearchResult>(jql, fields, 100);
+		const allIssues: JiraIssue[] = [];
+		let startAt = 0;
+		const pageSize = 100;
+
+		while (true) {
+			const data = await jiraPost<JiraSearchResult>("/search/jql", {
+				jql,
+				fields: fields.split(","),
+				maxResults: pageSize,
+				startAt,
+			});
+			const batch = data.issues ?? [];
+			allIssues.push(...batch);
+			if (batch.length < pageSize || allIssues.length >= data.total) break;
+			startAt += batch.length;
+		}
 
 		const baseUrl = getBaseUrl();
-		return (data.issues ?? []).map((issue) => ({
+		return allIssues.map((issue) => ({
 			id: issue.key,
 			title: issue.fields.summary,
 			description: extractDescription(issue.fields.description),
@@ -310,18 +339,43 @@ export class JiraSource implements Source {
 	}
 
 	async listScopes(): Promise<{ value: string; label: string }[]> {
-		const data = await jiraGet<{ values: { key: string; name: string }[] }>(
-			"/project/search?maxResults=50",
-		);
-		return (data.values ?? []).map((p) => ({
+		const results: { key: string; name: string }[] = [];
+		let startAt = 0;
+		const pageSize = 50;
+
+		while (true) {
+			const data = await jiraGet<{
+				values: { key: string; name: string }[];
+				total: number;
+			}>(`/project/search?maxResults=${pageSize}&startAt=${startAt}`);
+			const batch = data.values ?? [];
+			results.push(...batch);
+			if (batch.length < pageSize || results.length >= data.total) break;
+			startAt += batch.length;
+		}
+
+		return results.map((p) => ({
 			value: p.key,
 			label: `${p.key} — ${p.name}`,
 		}));
 	}
 
 	async listLabels(): Promise<{ value: string; label: string }[]> {
-		const data = await jiraGet<{ values: string[] }>("/label?maxResults=100");
-		return (data.values ?? []).map((l) => ({
+		const results: string[] = [];
+		let startAt = 0;
+		const pageSize = 100;
+
+		while (true) {
+			const data = await jiraGet<{ values: string[]; total: number }>(
+				`/label?maxResults=${pageSize}&startAt=${startAt}`,
+			);
+			const batch = data.values ?? [];
+			results.push(...batch);
+			if (batch.length < pageSize || results.length >= data.total) break;
+			startAt += batch.length;
+		}
+
+		return results.map((l) => ({
 			value: l,
 			label: l,
 		}));

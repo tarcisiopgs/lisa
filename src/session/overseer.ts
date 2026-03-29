@@ -143,6 +143,7 @@ export function startOverseer(
 
 	let killed = false;
 	let paused = false;
+	let checkInProgress = false;
 	let lastSnapshot: string | undefined;
 	let lastChangeTime = Date.now();
 	let timer: ReturnType<typeof setInterval> | null = null;
@@ -160,8 +161,9 @@ export function startOverseer(
 	kanbanEmitter.on("loop:resume-provider", onResumeProvider);
 
 	const check = async () => {
-		if (killed || paused) return;
+		if (killed || paused || checkInProgress) return;
 
+		checkInProgress = true;
 		try {
 			const snapshot = await getSnapshot(cwd);
 
@@ -191,6 +193,8 @@ export function startOverseer(
 			}
 		} catch {
 			// Ignore monitoring errors — do not interrupt the provider
+		} finally {
+			checkInProgress = false;
 		}
 	};
 
@@ -232,6 +236,7 @@ export function startEnhancedOverseer(
 
 	let killed = false;
 	let paused = false;
+	let checkInProgress = false;
 	let lastSnapshot: string | undefined;
 	let lastChangeTime = Date.now();
 	let timer: ReturnType<typeof setInterval> | null = null;
@@ -249,8 +254,9 @@ export function startEnhancedOverseer(
 	kanbanEmitter.on("loop:resume-provider", onResumeProvider);
 
 	const check = async () => {
-		if (killed || paused) return;
+		if (killed || paused || checkInProgress) return;
 
+		checkInProgress = true;
 		try {
 			const snapshot = await getSnapshot(cwd);
 
@@ -289,6 +295,8 @@ export function startEnhancedOverseer(
 			}
 		} catch {
 			// Ignore monitoring errors — do not interrupt the provider
+		} finally {
+			checkInProgress = false;
 		}
 	};
 

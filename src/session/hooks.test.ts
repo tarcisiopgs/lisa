@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildHookEnv, executeHook, runHook } from "./hooks.js";
+import { buildHookEnv, executeHook, runHook, sanitizeEnv } from "./hooks.js";
 
 vi.mock("../output/logger.js", () => ({
 	log: vi.fn(),
@@ -76,6 +76,69 @@ describe("executeHook", () => {
 			{},
 		);
 		expect(result).toBe(true);
+	});
+});
+
+describe("sanitizeEnv", () => {
+	it("passes safe env vars through", () => {
+		const env = sanitizeEnv({
+			PATH: "/usr/bin",
+			HOME: "/home/user",
+			CI: "true",
+			LISA_FOO: "bar",
+		});
+		expect(env).toEqual({
+			PATH: "/usr/bin",
+			HOME: "/home/user",
+			CI: "true",
+			LISA_FOO: "bar",
+		});
+	});
+
+	it("blocks sensitive token and key vars", () => {
+		const env = sanitizeEnv({
+			GITHUB_TOKEN: "ghp_secret",
+			AWS_SECRET_ACCESS_KEY: "aws_secret",
+			ANTHROPIC_API_KEY: "sk-ant-secret",
+			PATH: "/usr/bin",
+		});
+		expect(env).toEqual({ PATH: "/usr/bin" });
+	});
+
+	it("blocks unknown vars not in the whitelist", () => {
+		const env = sanitizeEnv({
+			PATH: "/usr/bin",
+			SOME_RANDOM_VAR: "value",
+			MY_CUSTOM_SETTING: "value",
+			DATABASE_URL: "postgres://localhost",
+		});
+		expect(env).toEqual({ PATH: "/usr/bin" });
+	});
+
+	it("passes LC_* and XDG_* prefixed vars", () => {
+		const env = sanitizeEnv({
+			LC_ALL: "en_US.UTF-8",
+			LC_CTYPE: "UTF-8",
+			XDG_CONFIG_HOME: "/home/user/.config",
+		});
+		expect(env).toEqual({
+			LC_ALL: "en_US.UTF-8",
+			LC_CTYPE: "UTF-8",
+			XDG_CONFIG_HOME: "/home/user/.config",
+		});
+	});
+
+	it("passes package manager env vars", () => {
+		const env = sanitizeEnv({
+			NPM_CONFIG_REGISTRY: "https://registry.npmjs.org",
+			PNPM_HOME: "/home/user/.pnpm",
+			YARN_CACHE_FOLDER: "/tmp/yarn",
+		});
+		expect(env).toEqual({
+			NPM_CONFIG_REGISTRY: "https://registry.npmjs.org",
+			PNPM_HOME: "/home/user/.pnpm",
+			YARN_CACHE_FOLDER: "/tmp/yarn",
+		});
 	});
 });
 
