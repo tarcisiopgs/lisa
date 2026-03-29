@@ -93,8 +93,12 @@ export async function runConcurrentLoop(
 		} catch (err) {
 			logger.error(`Unhandled error in session for ${issue.id}: ${formatError(err)}`);
 			await revertIssueStatus(issue, source, config);
-			activeCleanups.delete(issue.id);
+			userKilledSet.delete(issue.id);
+			userSkippedSet.delete(issue.id);
+			providerPausedSet.delete(issue.id);
 			activeProviderPids.delete(issue.id);
+			activeCleanups.delete(issue.id);
+			claimedIssueIds.delete(issue.id);
 			if (config.bell !== false) notify(2);
 			return;
 		}
@@ -176,6 +180,7 @@ export async function runConcurrentLoop(
 			// Skip issues already claimed by another worker (race between fetch and status update)
 			if (issue && claimedIssueIds.has(issue.id)) {
 				logger.log(`Issue ${issue.id} already claimed by another worker. Skipping.`);
+				await sleep(Math.max(config.loop.cooldown * 1000, 2000));
 				break;
 			}
 

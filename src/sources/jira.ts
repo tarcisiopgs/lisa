@@ -128,9 +128,13 @@ function extractAdfText(node: Record<string, unknown>): string {
 	return parts.join("\n");
 }
 
-/** Escape double quotes in JQL string literals to prevent JQL injection. */
+/** Escape special characters in JQL string literals to prevent JQL injection. */
 function escapeJql(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+	return value
+		.replace(/\\/g, "\\\\")
+		.replace(/"/g, '\\"')
+		.replace(/'/g, "\\'")
+		.replace(/[\n\r\t]/g, " ");
 }
 
 /** Resolve a status name to its numeric ID via the project statuses endpoint. */

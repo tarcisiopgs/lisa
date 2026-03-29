@@ -46,12 +46,13 @@ function stopMergePolling(key: string): void {
 }
 
 function startMergePolling(issueId: string, prUrl: string): void {
-	if (activePolls.has(prUrl)) return;
+	const key = `${issueId}:${prUrl}`;
+	if (activePolls.has(key)) return;
 	const intervalId = setInterval(() => {
 		checkPrMergedByUrl(prUrl)
 			.then((merged) => {
 				if (merged) {
-					stopMergePolling(prUrl);
+					stopMergePolling(key);
 					kanbanEmitter.emit("issue:merged", issueId);
 				}
 			})
@@ -59,7 +60,7 @@ function startMergePolling(issueId: string, prUrl: string): void {
 				// ignore errors, keep polling
 			});
 	}, MERGE_POLL_INTERVAL_MS);
-	activePolls.set(prUrl, intervalId);
+	activePolls.set(key, intervalId);
 }
 
 export interface KanbanStateData {
