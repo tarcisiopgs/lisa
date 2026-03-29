@@ -54,6 +54,8 @@ export async function runConcurrentLoop(
 	let consecutiveExhaustions = 0;
 	const MAX_CONSECUTIVE_EXHAUSTIONS = 3;
 	const slotPool = Array.from({ length: concurrency }, (_, i) => i);
+	let watchStartTime: number | null = null;
+	const watchTimeout = config.loop.watch_timeout ?? 0;
 
 	const processIssue = async (issue: Issue, session: number, slotIndex: number): Promise<void> => {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
@@ -186,6 +188,17 @@ export async function runConcurrentLoop(
 
 			if (!issue) {
 				if (opts.watch) {
+					if (watchStartTime === null) watchStartTime = Date.now();
+
+					if (watchTimeout > 0) {
+						const elapsed = (Date.now() - watchStartTime) / 1000;
+						if (elapsed >= watchTimeout) {
+							logger.ok(`Watch mode timeout reached (${watchTimeout}s). Stopping.`);
+							noMoreIssues = true;
+							break;
+						}
+					}
+
 					if (activeWorkers.size === 0) {
 						if (completedCount > 0) {
 							logger.ok(`All issues resolved. Prompting user to continue watching...`);
@@ -228,6 +241,7 @@ export async function runConcurrentLoop(
 			}
 
 			kanbanEmitter.emit("work:resumed");
+			watchStartTime = null; // Reset watch timeout when an issue is picked up
 			sessionCounter = tentativeSession;
 			const session = sessionCounter;
 			claimedIssueIds.add(issue.id);

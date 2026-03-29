@@ -17,7 +17,7 @@ import { installSignalHandlers } from "./signals.js";
 import { setupEventListeners } from "./state.js";
 
 // Register kanban event listeners at module load time
-setupEventListeners();
+export const cleanupEventListeners = setupEventListeners();
 
 export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<void> {
 	const source = createSource(config.source);

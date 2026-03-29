@@ -1,3 +1,4 @@
+import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { normalizeLabels, REQUEST_TIMEOUT_MS } from "./base.js";
 
@@ -98,12 +99,8 @@ export class TrelloSource implements Source {
 	async fetchNextIssue(config: SourceConfig): Promise<Issue | null> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelResults = await Promise.allSettled(
-			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
-		);
-		const labelIds = labelResults
-			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
-			.map((r) => r.value);
+		const labelNames = normalizeLabels(config);
+		const labelIds = await resolveLabelsWithWarnings(board.id, labelNames);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
@@ -165,12 +162,8 @@ export class TrelloSource implements Source {
 	async listIssues(config: SourceConfig): Promise<Issue[]> {
 		const board = await findBoardByName(config.scope);
 		const list = await findListByName(board.id, config.pick_from);
-		const labelResults = await Promise.allSettled(
-			normalizeLabels(config).map((name) => findLabelByName(board.id, name).then((l) => l.id)),
-		);
-		const labelIds = labelResults
-			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
-			.map((r) => r.value);
+		const labelNames = normalizeLabels(config);
+		const labelIds = await resolveLabelsWithWarnings(board.id, labelNames);
 
 		const cards = await trelloGet<TrelloCard[]>(
 			`/lists/${list.id}/cards`,
@@ -221,12 +214,7 @@ export class TrelloSource implements Source {
 
 		// Resolve label IDs
 		const labelNames = Array.isArray(opts.label) ? opts.label : [opts.label];
-		const labelResults = await Promise.allSettled(
-			labelNames.map((name) => findLabelByName(board.id, name).then((l) => l.id)),
-		);
-		const labelIds = labelResults
-			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
-			.map((r) => r.value);
+		const labelIds = await resolveLabelsWithWarnings(board.id, labelNames);
 
 		const params = [
 			`idList=${list.id}`,
@@ -239,6 +227,36 @@ export class TrelloSource implements Source {
 		const card = await trelloPost<{ id: string }>("/cards", params);
 		return card.id;
 	}
+}
+
+async function resolveLabelsWithWarnings(boardId: string, names: string[]): Promise<string[]> {
+	const results = await Promise.allSettled(
+		names.map((name) => findLabelByName(boardId, name).then((l) => l.id)),
+	);
+
+	const resolved: string[] = [];
+	const failed: string[] = [];
+
+	for (let i = 0; i < results.length; i++) {
+		const result = results[i]!;
+		if (result.status === "fulfilled") {
+			resolved.push(result.value);
+		} else {
+			failed.push(names[i]!);
+		}
+	}
+
+	if (failed.length > 0 && resolved.length > 0) {
+		logger.warn(`Failed to resolve Trello labels: ${failed.join(", ")}`);
+	}
+
+	if (failed.length > 0 && resolved.length === 0) {
+		throw new Error(
+			`All Trello label resolutions failed: ${failed.join(", ")}. Cannot match issues without labels.`,
+		);
+	}
+
+	return resolved;
 }
 
 function parseTrelloIdentifier(input: string): string {

@@ -468,23 +468,7 @@ export class LinearSource implements Source {
 				logger.log(`Label "${labelName}" created automatically in team ${issueData.issue.team.id}`);
 				teamLabel = created.issueLabelCreate.issueLabel;
 			} else {
-				// Race condition: label may have been created by another process — refetch
-				const refetch = await gql<{
-					issue: { team: { labels: { nodes: { id: string; name: string }[] } } };
-				}>(
-					`query($identifier: String!) {
-						issue(id: $identifier) {
-							team { labels { nodes { id name } } }
-						}
-					}`,
-					{ identifier: issueId },
-				);
-				teamLabel = refetch.issue.team.labels.nodes.find(
-					(l) => l.name.toLowerCase() === labelName.toLowerCase(),
-				);
-				if (!teamLabel) {
-					throw new Error(`Failed to create or find label "${labelName}" in team`);
-				}
+				throw new Error(`Failed to create label "${labelName}" in team`);
 			}
 		}
 

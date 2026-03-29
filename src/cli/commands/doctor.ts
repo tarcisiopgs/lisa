@@ -6,6 +6,7 @@ import pc from "picocolors";
 import { configExists, loadConfig, validateConfig } from "../../config.js";
 import { formatError } from "../../errors.js";
 import { isGhCliAvailable } from "../../git/github.js";
+import * as logger from "../../output/logger.js";
 import { createProvider } from "../../providers/index.js";
 import { isProofOfWorkEnabled } from "../../session/proof-of-work.js";
 import { isSpecComplianceEnabled } from "../../session/spec-compliance.js";
@@ -24,7 +25,8 @@ function checkCommandExists(command: string): boolean {
 	try {
 		execSync(`which ${command}`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
 		return true;
-	} catch {
+	} catch (err) {
+		logger.verbose(`Command "${command}" not found: ${formatError(err)}`);
 		return false;
 	}
 }
@@ -238,7 +240,8 @@ export const doctor = defineCommand({
 					suggestion: `Install it or change provider in .lisa/config.yaml`,
 					category: "core",
 				});
-			} catch {
+			} catch (err) {
+				logger.verbose(`Provider check failed: ${formatError(err)}`);
 				results.push({
 					passed: false,
 					label: `Provider "${config.provider}" is installed`,
@@ -289,8 +292,8 @@ export const doctor = defineCommand({
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 			hasRemote = true;
-		} catch {
-			/* no git remote */
+		} catch (err) {
+			logger.verbose(`Git remote check failed: ${formatError(err)}`);
 		}
 		results.push({
 			passed: hasRemote,
@@ -308,8 +311,8 @@ export const doctor = defineCommand({
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 			baseBranchExists = true;
-		} catch {
-			/* branch not found */
+		} catch (err) {
+			logger.verbose(`Base branch "${baseBranch}" check failed: ${formatError(err)}`);
 		}
 		results.push({
 			passed: baseBranchExists,

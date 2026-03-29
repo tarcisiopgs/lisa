@@ -12,7 +12,19 @@ export function generateBranchName(issueId: string, title: string): string {
 		.replace(/^-|-$/g, "");
 
 	const safeId = issueId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-	return `feat/${safeId}-${slug}`;
+	let branch = `feat/${safeId}-${slug}`;
+
+	// Sanitize: remove path traversal sequences and invalid git ref patterns
+	branch = branch.replace(/\.\./g, "");
+	branch = branch.replace(/@\{/g, "");
+	branch = branch.replace(/^[./]+/, "").replace(/[./]+$/, "");
+
+	// Fallback if sanitization left an empty or prefix-only name
+	if (!branch || branch === "feat/" || branch === "feat") {
+		branch = `feat/${safeId}-${Date.now()}`;
+	}
+
+	return branch;
 }
 
 /**

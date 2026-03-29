@@ -51,6 +51,8 @@ export async function runSequentialLoop(
 	const MAX_CONSECUTIVE_FETCH_ERRORS = 3;
 	let consecutiveExhaustions = 0;
 	const MAX_CONSECUTIVE_EXHAUSTIONS = 3;
+	let watchStartTime: number | null = null;
+	const watchTimeout = config.loop.watch_timeout ?? 0;
 
 	while (true) {
 		session++;
@@ -127,6 +129,16 @@ export async function runSequentialLoop(
 			}
 
 			if (opts.watch) {
+				if (watchStartTime === null) watchStartTime = Date.now();
+
+				if (watchTimeout > 0) {
+					const elapsed = (Date.now() - watchStartTime) / 1000;
+					if (elapsed >= watchTimeout) {
+						logger.ok(`Watch mode timeout reached (${watchTimeout}s). Stopping.`);
+						break;
+					}
+				}
+
 				if (completedCount > 0) {
 					logger.ok(`All issues resolved. Prompting user to continue watching...`);
 					kanbanEmitter.emit("work:watch-prompt");
@@ -173,6 +185,7 @@ export async function runSequentialLoop(
 		}
 
 		kanbanEmitter.emit("work:resumed");
+		watchStartTime = null; // Reset watch timeout when an issue is picked up
 		logger.ok(`Picked up: ${issue.id} — ${issue.title}`);
 		setTitle(`Lisa \u2014 ${issue.id}`);
 

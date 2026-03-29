@@ -5,6 +5,7 @@ import { join, resolve as resolvePath } from "node:path";
 import * as clack from "@clack/prompts";
 import { formatError } from "../errors.js";
 import { isGhCliAvailable } from "../git/github.js";
+import * as logger from "../output/logger.js";
 import type { PRPlatform, RepoConfig, SourceName } from "../types/index.js";
 
 export function getVersion(): string {
@@ -12,7 +13,8 @@ export function getVersion(): string {
 		const pkgPath = resolvePath(new URL(".", import.meta.url).pathname, "../package.json");
 		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
 		return pkg.version;
-	} catch {
+	} catch (err) {
+		logger.verbose(`Failed to read package.json version: ${formatError(err)}`);
 		return "0.0.0";
 	}
 }
@@ -30,7 +32,8 @@ export async function isCursorFreePlan(): Promise<boolean> {
 			try {
 				execSync(`${b} --version`, { stdio: "ignore" });
 				return true;
-			} catch {
+			} catch (err) {
+				logger.verbose(`Cursor binary "${b}" not found: ${formatError(err)}`);
 				return false;
 			}
 		});
@@ -48,8 +51,8 @@ export async function isCursorFreePlan(): Promise<boolean> {
 	} finally {
 		try {
 			rmSync(tmpDir, { recursive: true, force: true });
-		} catch {
-			/* best-effort cleanup */
+		} catch (err) {
+			logger.verbose(`Failed to clean up temp dir ${tmpDir}: ${formatError(err)}`);
 		}
 	}
 }
@@ -78,7 +81,8 @@ export function fetchCursorModels(): string[] {
 			try {
 				execSync(`${b} --version`, { stdio: "ignore" });
 				return true;
-			} catch {
+			} catch (err) {
+				logger.verbose(`Cursor binary "${b}" not available: ${formatError(err)}`);
 				return false;
 			}
 		});
@@ -96,7 +100,8 @@ export function fetchCursorModels(): string[] {
 		// Filter to curated list, preserving preferred order
 		const filtered = CURSOR_PREFERRED_MODELS.filter((m) => all.includes(m));
 		return filtered.length > 0 ? filtered : CURSOR_PREFERRED_MODELS;
-	} catch {
+	} catch (err) {
+		logger.verbose(`Failed to fetch Cursor models: ${formatError(err)}`);
 		return CURSOR_PREFERRED_MODELS;
 	}
 }
@@ -119,7 +124,8 @@ export function fetchOpenCodeModels(): string[] {
 			.split("\n")
 			.map((l) => l.trim())
 			.filter((m) => /^[a-z0-9][\w.-]*\/.+/i.test(m));
-	} catch {
+	} catch (err) {
+		logger.verbose(`Failed to fetch OpenCode models: ${formatError(err)}`);
 		return [];
 	}
 }
@@ -149,8 +155,8 @@ export async function detectPlatform(): Promise<PRPlatform> {
 						: "Bitbucket";
 			clack.log.info(`Detected ${platformLabel} remote`);
 		}
-	} catch {
-		// Not in a git repo or no remote — skip detection
+	} catch (err) {
+		logger.verbose(`Platform detection from git remote failed: ${formatError(err)}`);
 	}
 
 	const initialValue: PRPlatform = detectedPlatform ?? "cli";
@@ -267,7 +273,8 @@ export function detectDefaultBranch(repoPath: string): string {
 			encoding: "utf-8",
 		}).trim();
 		return ref.replace("origin/", "");
-	} catch {
+	} catch (err) {
+		logger.verbose(`Failed to detect default branch, falling back to "main": ${formatError(err)}`);
 		return "main";
 	}
 }
@@ -278,7 +285,8 @@ export function getGitRepoName(repoPath: string): string | null {
 		// Handle both HTTPS (https://github.com/org/repo.git) and SSH (git@github.com:org/repo.git)
 		const match = url.match(/\/([^/]+?)(?:\.git)?$/) ?? url.match(/:([^/]+?)(?:\.git)?$/);
 		return match?.[1] ?? null;
-	} catch {
+	} catch (err) {
+		logger.verbose(`Failed to get git repo name for ${repoPath}: ${formatError(err)}`);
 		return null;
 	}
 }
