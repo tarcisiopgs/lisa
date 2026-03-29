@@ -869,6 +869,7 @@ describe("JiraSource", () => {
 							{ key: "ENG", name: "Engineering" },
 							{ key: "OPS", name: "Operations" },
 						],
+						total: 2,
 					}),
 				]);
 
@@ -880,7 +881,7 @@ describe("JiraSource", () => {
 			});
 
 			it("returns empty array when no projects", async () => {
-				global.fetch = mockFetchSequence([ok({ values: [] })]);
+				global.fetch = mockFetchSequence([ok({ values: [], total: 0 })]);
 
 				const result = await source.listScopes();
 				expect(result).toEqual([]);
@@ -893,7 +894,7 @@ describe("JiraSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => ({ values: [] }),
+						json: async () => ({ values: [], total: 0 }),
 						text: async () => "",
 					});
 				});
@@ -905,7 +906,7 @@ describe("JiraSource", () => {
 
 		describe("listLabels", () => {
 			it("returns labels as value/label pairs", async () => {
-				global.fetch = mockFetchSequence([ok({ values: ["lisa", "ready", "wip"] })]);
+				global.fetch = mockFetchSequence([ok({ values: ["lisa", "ready", "wip"], total: 3 })]);
 
 				const result = await source.listLabels();
 				expect(result).toEqual([
@@ -916,7 +917,7 @@ describe("JiraSource", () => {
 			});
 
 			it("returns empty array when no labels", async () => {
-				global.fetch = mockFetchSequence([ok({ values: [] })]);
+				global.fetch = mockFetchSequence([ok({ values: [], total: 0 })]);
 
 				const result = await source.listLabels();
 				expect(result).toEqual([]);
@@ -929,7 +930,7 @@ describe("JiraSource", () => {
 					return Promise.resolve({
 						ok: true,
 						status: 200,
-						json: async () => ({ values: [] }),
+						json: async () => ({ values: [], total: 0 }),
 						text: async () => "",
 					});
 				});
@@ -944,10 +945,18 @@ describe("JiraSource", () => {
 				global.fetch = mockFetchSequence([
 					ok([
 						{
-							statuses: [{ name: "Backlog" }, { name: "In Progress" }, { name: "Done" }],
+							statuses: [
+								{ id: "1", name: "Backlog" },
+								{ id: "2", name: "In Progress" },
+								{ id: "3", name: "Done" },
+							],
 						},
 						{
-							statuses: [{ name: "Backlog" }, { name: "In Review" }, { name: "Done" }],
+							statuses: [
+								{ id: "1", name: "Backlog" },
+								{ id: "4", name: "In Review" },
+								{ id: "3", name: "Done" },
+							],
 						},
 					]),
 				]);

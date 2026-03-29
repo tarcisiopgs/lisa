@@ -1,4 +1,4 @@
-import { GUARDRAILS_PLACEHOLDER } from "../prompt.js";
+import { GUARDRAILS_PLACEHOLDER } from "../prompt/index.js";
 import {
 	appendEntry,
 	buildGuardrailsSection,

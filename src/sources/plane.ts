@@ -1,4 +1,4 @@
-import { formatError } from "../errors.js";
+import { formatError, SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
@@ -19,7 +19,7 @@ function getAppUrl(): string {
 
 function getAuthHeaders(): Record<string, string> {
 	const token = process.env.PLANE_API_TOKEN;
-	if (!token) throw new Error("PLANE_API_TOKEN must be set");
+	if (!token) throw new SourceError("PLANE_API_TOKEN must be set", "plane");
 	return { "X-Api-Key": token };
 }
 

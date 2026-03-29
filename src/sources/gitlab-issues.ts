@@ -1,3 +1,4 @@
+import { SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { type ApiClient, createApiClient, normalizeLabels } from "./base.js";
@@ -12,7 +13,7 @@ function getBaseUrl(): string {
 
 function getAuthHeaders(): Record<string, string> {
 	const token = process.env.GITLAB_TOKEN;
-	if (!token) throw new Error("GITLAB_TOKEN must be set");
+	if (!token) throw new SourceError("GITLAB_TOKEN must be set", "gitlab-issues");
 	return { "PRIVATE-TOKEN": token };
 }
 

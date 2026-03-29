@@ -13,7 +13,7 @@ import {
 	buildScopedImplementPrompt,
 	detectTestRunner,
 	extractReadmeHeadings,
-} from "./prompt.js";
+} from "./prompt/index.js";
 import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "./types/index.js";
 
 function makeIssue(overrides?: Partial<Issue>): Issue {

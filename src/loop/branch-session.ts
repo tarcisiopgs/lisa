@@ -12,7 +12,7 @@ import { hasCodeChanges } from "../git/worktree.js";
 import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { getManifestPath } from "../paths.js";
-import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt.js";
+import { buildImplementPrompt, detectPackageManager, detectTestRunner } from "../prompt/index.js";
 import { runWithFallback } from "../providers/index.js";
 import { isCiMonitorEnabled, monitorCi } from "../session/ci-monitor.js";
 import { readContext } from "../session/context-manager.js";

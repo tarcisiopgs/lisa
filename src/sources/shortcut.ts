@@ -1,11 +1,11 @@
-import { formatError } from "../errors.js";
+import { formatError, SourceError } from "../errors.js";
 import * as logger from "../output/logger.js";
 import type { CreateIssueOpts, Issue, Source, SourceConfig } from "../types/index.js";
 import { createApiClient, normalizeLabels } from "./base.js";
 
 function getAuthHeaders(): Record<string, string> {
 	const token = process.env.SHORTCUT_API_TOKEN;
-	if (!token) throw new Error("SHORTCUT_API_TOKEN must be set");
+	if (!token) throw new SourceError("SHORTCUT_API_TOKEN must be set", "shortcut");
 	return { "Shortcut-Token": token };
 }
 

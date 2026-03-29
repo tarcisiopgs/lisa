@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { literal, object, string, union } from "zod";
+import { LisaError } from "./errors.js";
 import type {
 	CiMonitorConfig,
 	HooksConfig,
@@ -69,7 +70,7 @@ const configSchema = object({
 	workspace: string().optional(),
 }).passthrough();
 
-export class ConfigValidationError extends Error {
+export class ConfigValidationError extends LisaError {
 	constructor(message: string) {
 		super(message);
 		this.name = "ConfigValidationError";
