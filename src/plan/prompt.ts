@@ -53,6 +53,8 @@ For each issue, provide:
 - **relevantFiles**: Array of file paths in the codebase that will be modified or created
 - **order**: Integer (1-based) — execution order based on dependencies
 - **dependsOn**: Array of order numbers this issue depends on (empty if independent)
+- **verifyCommand**: A shell command that validates the issue is complete (e.g., \`npm test\`, \`npx tsc --noEmit\`, \`curl localhost:3000/health\`)
+- **doneCriteria**: What success looks like when the verify command runs (e.g., "All tests pass", "Returns 200 OK")
 ${config.repos.length > 1 ? "- **repo**: Name of the target repository from the list above (required for multi-repo)\n" : ""}
 ## Rules
 
@@ -62,11 +64,12 @@ ${config.repos.length > 1 ? "- **repo**: Name of the target repository from the 
 4. Issues MUST include test expectations in their acceptance criteria
 5. Order issues so dependencies come first (lower order = executes first)
 6. Use clear, specific titles — not vague ("Improve X" is bad, "Add rate limit middleware to /api/users" is good)
-7. Output ONLY valid JSON — no markdown code fences, no explanation text
+7. Each issue SHOULD include a verifyCommand that can programmatically validate completion
+8. Output ONLY valid JSON — no markdown code fences, no explanation text
 
 ## Output Format
 
 Respond with ONLY this JSON structure (no wrapping, no markdown):
 
-{"issues":[{"title":"...","description":"...","acceptanceCriteria":["..."],"relevantFiles":["..."],"order":1,"dependsOn":[]${config.repos.length > 1 ? ',"repo":"..."' : ""}}]}`;
+{"issues":[{"title":"...","description":"...","acceptanceCriteria":["..."],"relevantFiles":["..."],"order":1,"dependsOn":[],"verifyCommand":"...","doneCriteria":"..."${config.repos.length > 1 ? ',"repo":"..."' : ""}}]}`;
 }

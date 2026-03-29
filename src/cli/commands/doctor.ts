@@ -64,11 +64,21 @@ function runAdvancedChecks(config: LisaConfig): CheckResult[] {
 		}
 	}
 
-	// Spec compliance: flag if enabled but no acceptance criteria validation
+	// Spec compliance: flag if enabled
 	if (isSpecComplianceEnabled(config.spec_compliance)) {
 		results.push({
 			passed: true,
 			label: "Spec compliance is enabled",
+			category: "advanced",
+		});
+	}
+
+	// Plan validation: flag if enabled
+	if (config.plan_validation?.enabled) {
+		const maxIter = config.plan_validation.max_iterations ?? 2;
+		results.push({
+			passed: true,
+			label: `Plan validation is enabled (max ${maxIter} iteration${maxIter !== 1 ? "s" : ""})`,
 			category: "advanced",
 		});
 	}

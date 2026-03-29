@@ -110,6 +110,25 @@ export interface SpecComplianceConfig {
 	block_on_failure?: boolean; // default: false — if true, skip PR creation when compliance fails
 }
 
+export interface PlanValidationConfig {
+	enabled?: boolean; // default: false
+	max_iterations?: number; // default: 2
+}
+
+export interface ValidationFinding {
+	dimension: string;
+	severity: "high" | "medium" | "low";
+	description: string;
+	suggestion: string;
+	issueOrder?: number;
+}
+
+export interface PlanValidationResult {
+	passed: boolean;
+	findings: ValidationFinding[];
+	refinedIssues?: PlannedIssue[];
+}
+
 export interface SpecComplianceCriterion {
 	criterion: string;
 	met: boolean;
@@ -255,6 +274,7 @@ export interface LisaConfig {
 	review_monitor?: ReviewMonitorConfig;
 	reactions?: ReactionsConfig;
 	spec_compliance?: SpecComplianceConfig;
+	plan_validation?: PlanValidationConfig;
 	progress_comments?: ProgressConfig;
 	pr?: PrConfig;
 }
@@ -358,6 +378,8 @@ export interface PlannedIssue {
 	order: number;
 	dependsOn: number[];
 	repo?: string;
+	verifyCommand?: string;
+	doneCriteria?: string;
 }
 
 export interface ChatMessage {
