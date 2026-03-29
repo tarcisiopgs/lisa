@@ -1,6 +1,6 @@
 {
 	"name": "@tarcisiopgs/lisa",
-	"version": "1.35.0",
+	"version": "1.36.0",
 	"description": "Autonomous issue resolver",
 	"keywords": [
 		"loop",
