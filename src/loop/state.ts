@@ -87,15 +87,15 @@ export function killProviderForIssue(issueId: string): void {
 	}, 5000);
 }
 
-export function setupEventListeners(): void {
-	kanbanEmitter.on("loop:pause", () => {
+export function setupEventListeners(): () => void {
+	const onPause = () => {
 		_loopPaused = true;
-	});
-	kanbanEmitter.on("loop:resume", () => {
+	};
+	const onResume = () => {
 		_loopPaused = false;
-	});
+	};
 
-	kanbanEmitter.on("loop:pause-provider", (issueId?: string) => {
+	const onPauseProvider = (issueId?: string) => {
 		if (issueId) {
 			// Pause a specific issue's provider
 			const pid = activeProviderPids.get(issueId);
@@ -119,9 +119,9 @@ export function setupEventListeners(): void {
 			}
 		}
 		kanbanEmitter.emit("provider:paused", issueId);
-	});
+	};
 
-	kanbanEmitter.on("loop:resume-provider", (issueId?: string) => {
+	const onResumeProvider = (issueId?: string) => {
 		if (issueId) {
 			const pid = activeProviderPids.get(issueId);
 			if (pid && providerPausedSet.has(issueId)) {
@@ -147,9 +147,9 @@ export function setupEventListeners(): void {
 			providerPausedSet.clear();
 		}
 		kanbanEmitter.emit("provider:resumed", issueId);
-	});
+	};
 
-	kanbanEmitter.on("loop:kill", (issueId?: string) => {
+	const onKill = (issueId?: string) => {
 		if (issueId) {
 			userKilledSet.add(issueId);
 			killProviderForIssue(issueId);
@@ -161,9 +161,9 @@ export function setupEventListeners(): void {
 				killProviderForIssue(firstId);
 			}
 		}
-	});
+	};
 
-	kanbanEmitter.on("loop:skip", (issueId?: string) => {
+	const onSkip = (issueId?: string) => {
 		if (issueId) {
 			userSkippedSet.add(issueId);
 			killProviderForIssue(issueId);
@@ -174,15 +174,35 @@ export function setupEventListeners(): void {
 				killProviderForIssue(firstId);
 			}
 		}
-	});
+	};
 
-	kanbanEmitter.on("loop:run", () => {
+	const onRun = () => {
 		resolveIdle();
-	});
+	};
 
-	kanbanEmitter.on("loop:quit", () => {
+	const onQuit = () => {
 		_userQuitFromWatchPrompt = true;
 		setShuttingDown(true);
 		resolveIdle();
-	});
+	};
+
+	kanbanEmitter.on("loop:pause", onPause);
+	kanbanEmitter.on("loop:resume", onResume);
+	kanbanEmitter.on("loop:pause-provider", onPauseProvider);
+	kanbanEmitter.on("loop:resume-provider", onResumeProvider);
+	kanbanEmitter.on("loop:kill", onKill);
+	kanbanEmitter.on("loop:skip", onSkip);
+	kanbanEmitter.on("loop:run", onRun);
+	kanbanEmitter.on("loop:quit", onQuit);
+
+	return () => {
+		kanbanEmitter.off("loop:pause", onPause);
+		kanbanEmitter.off("loop:resume", onResume);
+		kanbanEmitter.off("loop:pause-provider", onPauseProvider);
+		kanbanEmitter.off("loop:resume-provider", onResumeProvider);
+		kanbanEmitter.off("loop:kill", onKill);
+		kanbanEmitter.off("loop:skip", onSkip);
+		kanbanEmitter.off("loop:run", onRun);
+		kanbanEmitter.off("loop:quit", onQuit);
+	};
 }

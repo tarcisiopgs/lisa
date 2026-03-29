@@ -52,6 +52,7 @@ export interface LoopConfig {
 	concurrency?: number;
 	session_timeout?: number; // seconds per provider run, 0 = disabled (default)
 	output_stall_timeout?: number; // seconds without stdout before killing provider (default: 120, 0 = disabled)
+	watch_timeout?: number; // seconds, max time in watch mode before stopping. 0 = no limit (default)
 }
 
 export interface OverseerConfig {
