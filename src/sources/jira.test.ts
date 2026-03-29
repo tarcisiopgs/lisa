@@ -307,6 +307,79 @@ describe("JiraSource", () => {
 			expect(body.jql).toContain("status = 10001");
 		});
 
+		it("escapes special characters in JQL values", async () => {
+			const capturedCalls: { url: string; body?: string }[] = [];
+			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+				capturedCalls.push({ url, body: opts?.body as string | undefined });
+				if (url.includes("/project/") && url.includes("/statuses")) {
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => [
+							{
+								statuses: [{ id: "10001", name: 'Back"log' }],
+							},
+						],
+						text: async () => "",
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => ({ issues: [], total: 0 }),
+					text: async () => "",
+				});
+			});
+
+			await source.fetchNextIssue({
+				...baseConfig,
+				scope: "ENG'S",
+				label: "lisa\nnewline",
+				pick_from: 'Back"log',
+			});
+
+			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
+			expect(searchCall).toBeDefined();
+			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			// Single quotes are escaped
+			expect(body.jql).toContain(`project = "ENG\\'S"`);
+			// Newlines are replaced with spaces
+			expect(body.jql).toContain(`labels = "lisa newline"`);
+			// Uses numeric status ID (so no escaped quotes in status clause)
+			expect(body.jql).toContain("status = 10001");
+		});
+
+		it("escapes single quotes and control chars in status name fallback", async () => {
+			const capturedCalls: { url: string; body?: string }[] = [];
+			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+				capturedCalls.push({ url, body: opts?.body as string | undefined });
+				if (url.includes("/project/") && url.includes("/statuses")) {
+					return Promise.resolve({
+						ok: false,
+						status: 403,
+						json: async () => ({}),
+						text: async () => "Forbidden",
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					json: async () => ({ issues: [], total: 0 }),
+					text: async () => "",
+				});
+			});
+
+			await source.fetchNextIssue({
+				...baseConfig,
+				pick_from: 'It\'s "ready"\nnow',
+			});
+
+			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
+			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			// Double quotes, single quotes, and newlines are all escaped/stripped
+			expect(body.jql).toContain(`status = "It\\'s \\"ready\\" now"`);
+		});
+
 		it("falls back to status name when project statuses endpoint fails", async () => {
 			const capturedCalls: { url: string; body?: string }[] = [];
 			global.fetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
