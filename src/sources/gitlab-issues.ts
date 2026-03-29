@@ -102,9 +102,17 @@ export class GitLabIssuesSource implements Source {
 		const isOrphanDetection = !!config.pick_from && !validStates.includes(config.pick_from);
 		const filterLabels = isOrphanDetection ? [config.pick_from] : normalizeLabels(config);
 		const label = filterLabels.map((l) => encodeURIComponent(l)).join(",");
-		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
+		const issues: GitLabIssue[] = [];
+		let page = 1;
 
-		const issues = await api().get<GitLabIssue[]>(path);
+		while (true) {
+			const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100&page=${page}`;
+			const batch = await api().get<GitLabIssue[]>(path);
+			issues.push(...batch);
+			if (batch.length < 100) break;
+			page++;
+		}
+
 		if (issues.length === 0) return null;
 
 		// Check blocking relations for each issue
@@ -255,10 +263,19 @@ export class GitLabIssuesSource implements Source {
 		const project = parseGitLabProject(config.scope);
 		const labelsArr = normalizeLabels(config);
 		const label = labelsArr.map((l) => encodeURIComponent(l)).join(",");
-		const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100`;
 
-		const issues = await api().get<GitLabIssue[]>(path);
-		return issues.map((issue) => ({
+		const allIssues: GitLabIssue[] = [];
+		let page = 1;
+
+		while (true) {
+			const path = `/projects/${project}/issues?labels=${label}&state=opened&per_page=100&page=${page}`;
+			const batch = await api().get<GitLabIssue[]>(path);
+			allIssues.push(...batch);
+			if (batch.length < 100) break;
+			page++;
+		}
+
+		return allIssues.map((issue) => ({
 			id: makeIssueId(config.scope, issue.iid),
 			title: issue.title,
 			description: issue.description ?? "",

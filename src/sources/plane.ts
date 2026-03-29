@@ -104,11 +104,40 @@ interface PlaneRelation {
 	issue: string;
 }
 
-// Handles both paginated ({ results: T[] }) and plain array responses
+// Handles both paginated ({ results: T[] }) and plain array responses, following all pages
 async function fetchAll<T>(path: string): Promise<T[]> {
 	const data = await planeGet<T[] | PlanePage<T>>(path);
 	if (Array.isArray(data)) return data;
-	return data.results ?? [];
+
+	const all: T[] = [...(data.results ?? [])];
+	let nextUrl = data.next;
+
+	while (nextUrl) {
+		// next can be a full URL or a relative path; extract the path portion
+		let nextPath: string;
+		try {
+			const url = new URL(nextUrl);
+			nextPath = url.pathname + url.search;
+			// Strip the base API prefix if present
+			const basePrefix = `${getBaseUrl()}/api/v1`;
+			const basePrefixPath = new URL(basePrefix).pathname;
+			if (nextPath.startsWith(basePrefixPath)) {
+				nextPath = nextPath.slice(basePrefixPath.length);
+			}
+		} catch {
+			nextPath = nextUrl;
+		}
+
+		const page = await planeGet<T[] | PlanePage<T>>(nextPath);
+		if (Array.isArray(page)) {
+			all.push(...page);
+			break;
+		}
+		all.push(...(page.results ?? []));
+		nextUrl = page.next;
+	}
+
+	return all;
 }
 
 const PRIORITY_ORDER: Record<string, number> = {
@@ -222,12 +251,12 @@ export class PlaneSource implements Source {
 			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
 			.map((r) => r.value);
 
-		const data = await planeGet<PlanePage<PlaneIssue>>(
+		const allIssues = await fetchAll<PlaneIssue>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
 		);
 
 		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
-		const matching = data.results
+		const matching = allIssues
 			.filter((i) => i.state === stateId)
 			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)));
 		if (matching.length === 0) return null;
@@ -373,12 +402,12 @@ export class PlaneSource implements Source {
 			.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
 			.map((r) => r.value);
 
-		const data = await planeGet<PlanePage<PlaneIssue>>(
+		const allIssues = await fetchAll<PlaneIssue>(
 			`/workspaces/${workspaceSlug}/projects/${projectId}/work-items/?state=${stateId}&per_page=100`,
 		);
 
 		// Filter client-side by state because the Plane API ?state= param is not reliably applied.
-		return data.results
+		return allIssues
 			.filter((i) => i.state === stateId)
 			.filter((i) => labelIds.every((lid) => i.labels.includes(lid)))
 			.map((i) => {

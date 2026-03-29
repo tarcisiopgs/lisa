@@ -11,30 +11,14 @@ export interface HookResult {
 
 const DEFAULT_HOOK_TIMEOUT = 60_000;
 
-/** Env var patterns to exclude from hook processes to prevent secret leakage. */
-const SENSITIVE_ENV_PATTERNS = [
-	/^GITHUB_TOKEN$/,
-	/^GH_TOKEN$/,
-	/^GITLAB_TOKEN$/,
-	/^BITBUCKET_.*(TOKEN|PASSWORD|SECRET)/i,
-	/^LINEAR_API_KEY$/,
-	/^TRELLO_(API_KEY|TOKEN)$/,
-	/^PLANE_API_TOKEN$/,
-	/^SHORTCUT_API_TOKEN$/,
-	/^JIRA_(API_TOKEN|TOKEN)$/,
-	/^AWS_(SECRET|SESSION).*KEY/i,
-	/^ANTHROPIC_API_KEY$/,
-	/^OPENAI_API_KEY$/,
-	/^GOOGLE_API_KEY$/,
-	/^GEMINI_API_KEY$/,
-	/^NPM_TOKEN$/,
-	/^PYPI_TOKEN$/,
-];
+/** Whitelist of env var name patterns safe to pass to hook processes. */
+const SAFE_ENV_PATTERN =
+	/^(PATH|HOME|USER|LANG|LANGUAGE|LC_.+|SHELL|TERM|TERM_PROGRAM|PWD|OLDPWD|TMPDIR|TMP|TEMP|EDITOR|VISUAL|CI|LISA_.+|NODE_ENV|NODE_PATH|NPM_.+|PNPM_.+|YARN_.+|XDG_.+|COLORTERM|FORCE_COLOR|NO_COLOR|COLUMNS|LINES|HOSTNAME|LOGNAME|SHLVL)$/;
 
-function sanitizeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+export function sanitizeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 	const result: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
-		if (value !== undefined && !SENSITIVE_ENV_PATTERNS.some((p) => p.test(key))) {
+		if (value !== undefined && SAFE_ENV_PATTERN.test(key)) {
 			result[key] = value;
 		}
 	}
