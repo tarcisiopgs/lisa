@@ -8,6 +8,7 @@ import type {
 	LifecycleConfig,
 	LisaConfig,
 	OverseerConfig,
+	PlanValidationConfig,
 	PRPlatform,
 	PrConfig,
 	ProgressConfig,
@@ -267,6 +268,7 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 	const rawReviewMonitor = parsed.review_monitor as Partial<ReviewMonitorConfig> | undefined;
 	const rawReactions = parsed.reactions as ReactionsConfig | undefined;
 	const rawSpecCompliance = parsed.spec_compliance as Partial<SpecComplianceConfig> | undefined;
+	const rawPlanValidation = parsed.plan_validation as Partial<PlanValidationConfig> | undefined;
 	const rawProgress = parsed.progress_comments as Partial<ProgressConfig> | undefined;
 	const rawPr = parsed.pr as Partial<PrConfig> | undefined;
 
@@ -336,6 +338,12 @@ export function loadConfig(cwd: string = process.cwd()): LisaConfig {
 					enabled: rawSpecCompliance.enabled ?? false,
 					max_retries: rawSpecCompliance.max_retries,
 					block_on_failure: rawSpecCompliance.block_on_failure,
+				}
+			: undefined,
+		plan_validation: rawPlanValidation
+			? {
+					enabled: rawPlanValidation.enabled ?? false,
+					max_iterations: rawPlanValidation.max_iterations,
 				}
 			: undefined,
 		progress_comments: rawProgress ? { enabled: rawProgress.enabled ?? false } : undefined,

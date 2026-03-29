@@ -42,6 +42,13 @@ export async function createPlanIssues(
 		// Ensure acceptance criteria are embedded in the description as a checklist
 		let description = ensureAcceptanceCriteria(issue.description, issue.acceptanceCriteria);
 
+		if (issue.verifyCommand) {
+			description += `\n\n## Verify Command\n\n\`\`\`bash\n${issue.verifyCommand}\n\`\`\`\n`;
+			if (issue.doneCriteria) {
+				description += `Expected: ${issue.doneCriteria}\n`;
+			}
+		}
+
 		if (issue.dependsOn.length > 0 && !source.linkDependency) {
 			const depRefs = issue.dependsOn
 				.map((depOrder) => {

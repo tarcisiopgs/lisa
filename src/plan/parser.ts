@@ -9,6 +9,8 @@ interface RawPlanResponse {
 		order: number;
 		dependsOn: number[];
 		repo?: string;
+		verifyCommand?: string;
+		doneCriteria?: string;
 	}[];
 }
 
@@ -72,6 +74,8 @@ export function parsePlanResponse(raw: string): PlannedIssue[] {
 				? issue.dependsOn.filter((d) => typeof d === "number")
 				: [],
 			repo: typeof issue.repo === "string" ? issue.repo : undefined,
+			verifyCommand: typeof issue.verifyCommand === "string" ? issue.verifyCommand : undefined,
+			doneCriteria: typeof issue.doneCriteria === "string" ? issue.doneCriteria : undefined,
 		};
 	});
 

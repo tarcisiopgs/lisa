@@ -9,6 +9,7 @@ import type { PlannedIssue, PlanResult } from "../types/index.js";
 import { generatePlan } from "./generate.js";
 import type { RunPlanOptions } from "./index.js";
 import { savePlan } from "./persistence.js";
+import { buildExecutionWaves } from "./waves.js";
 
 /**
  * Interactive wizard for reviewing and editing a plan.
@@ -80,23 +81,39 @@ function displayPlan(plan: PlanResult): void {
 	clack.log.info(`${pc.bold("Goal:")} ${plan.goal}`);
 	clack.log.info("");
 
+	const waves = buildExecutionWaves(plan.issues);
 	const sorted = [...plan.issues].sort((a, b) => a.order - b.order);
-	for (const issue of sorted) {
-		const deps =
-			issue.dependsOn.length > 0
-				? pc.gray(` → depends on: ${issue.dependsOn.map((d) => `#${d}`).join(", ")}`)
-				: "";
-		const repo = issue.repo ? pc.cyan(` [${issue.repo}]`) : "";
-		const files =
-			issue.relevantFiles.length > 0
-				? pc.gray(
-						`\n     Files: ${issue.relevantFiles.slice(0, 3).join(", ")}${issue.relevantFiles.length > 3 ? ` +${issue.relevantFiles.length - 3}` : ""}`,
-					)
-				: "";
 
-		clack.log.info(
-			`  ${pc.yellow(String(issue.order))}. ${pc.bold(issue.title)}${repo}${deps}${files}`,
-		);
+	for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
+		const wave = waves[waveIdx]!;
+		const label = wave.length > 1 ? "parallel" : "sequential";
+		clack.log.info(pc.dim(`  Wave ${waveIdx + 1} (${label}):`));
+
+		for (const orderNum of wave) {
+			const issue = sorted.find((i) => i.order === orderNum);
+			if (!issue) continue;
+
+			const deps =
+				issue.dependsOn.length > 0
+					? pc.gray(` → depends on: ${issue.dependsOn.map((d) => `#${d}`).join(", ")}`)
+					: "";
+			const repo = issue.repo ? pc.cyan(` [${issue.repo}]`) : "";
+			const files =
+				issue.relevantFiles.length > 0
+					? pc.gray(
+							`\n     Files: ${issue.relevantFiles.slice(0, 3).join(", ")}${issue.relevantFiles.length > 3 ? ` +${issue.relevantFiles.length - 3}` : ""}`,
+						)
+					: "";
+			const verify = issue.verifyCommand ? pc.gray(`\n     Verify: ${issue.verifyCommand}`) : "";
+			const criteria =
+				issue.acceptanceCriteria.length > 0
+					? pc.gray(`\n     Criteria: ${issue.acceptanceCriteria.length} item(s)`)
+					: "";
+
+			clack.log.info(
+				`  ${pc.yellow(String(issue.order))}. ${pc.bold(issue.title)}${repo}${deps}${files}${criteria}${verify}`,
+			);
+		}
 	}
 	clack.log.info("");
 }
@@ -197,17 +214,19 @@ async function reorderIssues(plan: PlanResult, _workspace: string): Promise<void
 	if (clack.isCancel(answer)) return;
 
 	const newOrder = (answer as string).split(",").map((n) => Number(n.trim()));
-	const oldOrderMap = new Map<number, PlannedIssue>();
-	for (const issue of plan.issues) {
-		oldOrderMap.set(issue.order, issue);
+
+	// Build mapping: old order → new order
+	const oldToNew = new Map<number, number>();
+	for (let i = 0; i < newOrder.length; i++) {
+		oldToNew.set(newOrder[i]!, i + 1);
 	}
 
-	// Reassign orders based on position in newOrder
-	for (let i = 0; i < newOrder.length; i++) {
-		const issue = oldOrderMap.get(newOrder[i]!);
-		if (issue) {
-			issue.order = i + 1;
-		}
+	// Reassign orders and remap dependsOn references
+	for (const issue of plan.issues) {
+		issue.order = oldToNew.get(issue.order) ?? issue.order;
+		issue.dependsOn = issue.dependsOn
+			.map((d) => oldToNew.get(d) ?? d)
+			.filter((d) => d !== issue.order); // remove self-references
 	}
 
 	clack.log.success("Issues reordered.");
@@ -246,10 +265,23 @@ export function issueToMarkdown(issue: PlannedIssue): string {
 	let md = `# ${issue.title}\n\n`;
 	md += `${issue.description}\n`;
 
+	if (issue.dependsOn.length > 0) {
+		md += `\n## Depends On\n\n`;
+		md += `${issue.dependsOn.join(", ")}\n`;
+	}
+
 	if (issue.relevantFiles.length > 0) {
 		md += `\n## Relevant Files\n\n`;
 		for (const f of issue.relevantFiles) {
 			md += `- ${f}\n`;
+		}
+	}
+
+	if (issue.verifyCommand) {
+		md += `\n## Verify\n\n`;
+		md += `\`\`\`bash\n${issue.verifyCommand}\n\`\`\`\n`;
+		if (issue.doneCriteria) {
+			md += `\nExpected: ${issue.doneCriteria}\n`;
 		}
 	}
 
@@ -261,16 +293,40 @@ export function markdownToIssue(content: string, original: PlannedIssue): Partia
 	const titleLine = lines.find((l) => l.startsWith("# "));
 	const title = titleLine ? titleLine.replace(/^#\s+/, "").trim() : original.title;
 
-	// Everything between the title and "## Relevant Files" is the description
+	// Find section boundaries
 	const titleIdx = lines.indexOf(titleLine ?? "");
+	const depsIdx = lines.findIndex((l) => l.startsWith("## Depends On"));
 	const filesIdx = lines.findIndex((l) => l.startsWith("## Relevant Files"));
-	const descLines = filesIdx > 0 ? lines.slice(titleIdx + 1, filesIdx) : lines.slice(titleIdx + 1);
+	const verifyIdx = lines.findIndex((l) => l.startsWith("## Verify"));
+
+	// Description ends at the first section after the title
+	const sectionBoundaries = [depsIdx, filesIdx, verifyIdx].filter((i) => i > 0);
+	const descEnd = sectionBoundaries.length > 0 ? Math.min(...sectionBoundaries) : -1;
+	const descLines = descEnd > 0 ? lines.slice(titleIdx + 1, descEnd) : lines.slice(titleIdx + 1);
 	const description = descLines.join("\n").trim();
 
 	// Extract acceptance criteria from - [ ] items
 	const acceptanceCriteria = descLines
 		.filter((l) => l.trim().startsWith("- [ ]") || l.trim().startsWith("- [x]"))
 		.map((l) => l.trim().replace(/^- \[[ x]\]\s*/, ""));
+
+	// Extract dependsOn
+	let dependsOn: number[] | undefined;
+	if (depsIdx > 0) {
+		const nextSection = [filesIdx, verifyIdx].filter((i) => i > depsIdx);
+		const depsEnd = nextSection.length > 0 ? Math.min(...nextSection) : lines.length;
+		const depsContent = lines
+			.slice(depsIdx + 1, depsEnd)
+			.join(" ")
+			.trim();
+		if (depsContent) {
+			const parsed = depsContent
+				.split(/[,\s]+/)
+				.map((s) => Number.parseInt(s.trim(), 10))
+				.filter((n) => !Number.isNaN(n));
+			if (parsed.length > 0) dependsOn = parsed;
+		}
+	}
 
 	// Extract files
 	const relevantFiles: string[] = [];
@@ -285,11 +341,33 @@ export function markdownToIssue(content: string, original: PlannedIssue): Partia
 		}
 	}
 
+	// Extract verify command and done criteria
+	let verifyCommand: string | undefined;
+	let doneCriteria: string | undefined;
+	if (verifyIdx > 0) {
+		const verifyLines = lines.slice(verifyIdx + 1);
+		const codeStart = verifyLines.findIndex((l) => l.trim().startsWith("```"));
+		const codeEnd = verifyLines.findIndex((l, i) => i > codeStart && l.trim().startsWith("```"));
+		if (codeStart >= 0 && codeEnd > codeStart) {
+			verifyCommand = verifyLines
+				.slice(codeStart + 1, codeEnd)
+				.join("\n")
+				.trim();
+		}
+		const expectedLine = verifyLines.find((l) => l.trim().startsWith("Expected:"));
+		if (expectedLine) {
+			doneCriteria = expectedLine.trim().replace(/^Expected:\s*/, "");
+		}
+	}
+
 	return {
 		title,
 		description: description || original.description,
 		acceptanceCriteria:
 			acceptanceCriteria.length > 0 ? acceptanceCriteria : original.acceptanceCriteria,
 		relevantFiles: relevantFiles.length > 0 ? relevantFiles : original.relevantFiles,
+		...(dependsOn ? { dependsOn } : {}),
+		...(verifyCommand ? { verifyCommand } : {}),
+		...(doneCriteria ? { doneCriteria } : {}),
 	};
 }

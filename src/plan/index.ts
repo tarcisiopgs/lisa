@@ -8,6 +8,9 @@ import { runBrainstormingPhase } from "./brainstorm.js";
 import { createPlanIssues } from "./create.js";
 import { generatePlan } from "./generate.js";
 import { loadLatestPlan, savePlan } from "./persistence.js";
+import { validateAndRefinePlan } from "./plan-checker.js";
+import { detectDependencyCycles, detectFileOverlaps } from "./validate.js";
+import { buildExecutionWaves } from "./waves.js";
 import { runPlanWizard } from "./wizard.js";
 
 export interface RunPlanOptions {
@@ -75,13 +78,48 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	}
 
 	// Generate plan via AI
-	const issues = await generatePlan(refinedGoal, config, { parentDescription });
+	let validatedIssues = await generatePlan(refinedGoal, config, { parentDescription });
+
+	// Validate dependency graph
+	const cycles = detectDependencyCycles(validatedIssues);
+	if (cycles) {
+		logger.warn(`Dependency cycles detected: ${cycles.join(", ")}`);
+		validatedIssues = await generatePlan(refinedGoal, config, {
+			parentDescription,
+			feedback: `Fix dependency cycles: ${cycles.join(", ")}. Ensure no circular dependencies.`,
+		});
+	}
+
+	const overlaps = detectFileOverlaps(validatedIssues);
+	if (overlaps.length > 0) {
+		for (const o of overlaps) {
+			clack.log.warning(
+				`File ${o.file} touched by issues ${o.issues.join(", ")} — merge conflict risk`,
+			);
+		}
+	}
+
+	// Plan validation (AI-powered quality gate)
+	if (config.plan_validation?.enabled && !opts.jsonOutput) {
+		logger.log("Validating plan quality...");
+		const { issues: validated, findings } = await validateAndRefinePlan(
+			refinedGoal,
+			validatedIssues,
+			config,
+		);
+		validatedIssues = validated;
+		for (const f of findings) {
+			if (f.severity === "high") {
+				clack.log.warning(`[${f.dimension}] ${f.description}`);
+			}
+		}
+	}
 
 	// Create plan result
 	const plan: PlanResult = {
 		goal: refinedGoal,
 		sourceIssueId: opts.issueId,
-		issues,
+		issues: validatedIssues,
 		createdAt: new Date().toISOString(),
 		status: "draft",
 		brainstormHistory,
@@ -157,11 +195,13 @@ async function reviewAndCreate(
 
 	// Dynamic import to avoid circular dependency
 	const { runLoop } = await import("../loop/index.js");
+	const waves = buildExecutionWaves(plan.issues);
+	const maxWaveSize = Math.max(...waves.map((w) => w.length));
 	await runLoop(config, {
 		once: false,
 		watch: false,
 		limit: createdIds.length,
 		dryRun: false,
-		concurrency: 1,
+		concurrency: maxWaveSize > 1 ? maxWaveSize : 1,
 	});
 }
