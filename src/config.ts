@@ -120,7 +120,7 @@ export function validateConfig(config: LisaConfig): void {
 }
 
 export const DEFAULT_OVERSEER_CONFIG: OverseerConfig = {
-	enabled: true,
+	enabled: false,
 	check_interval: 30,
 	stuck_threshold: 300,
 };
