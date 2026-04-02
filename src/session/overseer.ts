@@ -20,7 +20,7 @@ export interface OutputStallHandle {
 	stop(): void;
 }
 
-const DEFAULT_OUTPUT_STALL_TIMEOUT = 300;
+const DEFAULT_OUTPUT_STALL_TIMEOUT = 0;
 
 /**
  * Monitors provider stdout for prolonged silence. Kills the process if no

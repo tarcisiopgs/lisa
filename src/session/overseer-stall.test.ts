@@ -37,18 +37,13 @@ describe("createOutputStallDetector", () => {
 		expect(proc.killCalls).toHaveLength(0);
 	});
 
-	it("uses default timeout (300s) when undefined", async () => {
+	it("returns a no-op handle when undefined (disabled by default)", () => {
 		const proc = makeMockProc();
 		const handle = createOutputStallDetector(proc, undefined);
 
-		await vi.advanceTimersByTimeAsync(299_999);
-		expect(handle.wasKilled()).toBe(false);
-
-		await vi.advanceTimersByTimeAsync(1);
-		expect(handle.wasKilled()).toBe(true);
-		expect(proc.killCalls).toContain("SIGTERM");
-
 		handle.stop();
+		expect(handle.wasKilled()).toBe(false);
+		expect(proc.killCalls).toHaveLength(0);
 	});
 
 	it("kills the process after the stall timeout elapses", async () => {
