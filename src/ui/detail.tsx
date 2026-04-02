@@ -31,8 +31,9 @@ export function openUrl(url: string): void {
 interface IssueDetailProps {
 	card: KanbanCard;
 	onBack: () => void;
-	reviewers?: string[];
 	assignees?: string[];
+	showReviewerPicker?: boolean;
+	reviewerPickerIndex?: number;
 }
 
 function hyperlink(url: string, text: string): string {
@@ -96,7 +97,13 @@ export function statusLabel(
 	return { text: "QUEUED", color: "white" };
 }
 
-export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailProps) {
+export function IssueDetail({
+	card,
+	onBack,
+	assignees,
+	showReviewerPicker,
+	reviewerPickerIndex = 0,
+}: IssueDetailProps) {
 	const [now, setNow] = useState(Date.now());
 	const [logScrollOffset, setLogScrollOffset] = useState(0);
 	const [userScrolled, setUserScrolled] = useState(false);
@@ -152,9 +159,13 @@ export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailP
 	// Plus conditional rows: log file path(1), PR URLs (N), PR metadata (0-1)
 	const prCount = card.prUrls.length > 0 ? card.prUrls.length : 0;
 	const logFileRow = card.logFile ? 1 : 0;
-	const hasPrMeta = card.column === "done" && (reviewers?.length || assignees?.length);
+	const cardReviewers = card.reviewers ?? [];
+	const hasPrMeta = card.prUrls.length > 0 && (cardReviewers.length > 0 || assignees?.length);
 	const prMetaRow = hasPrMeta ? 1 : 0;
-	const headerOverhead = 6 + prCount + logFileRow + prMetaRow;
+	const pickerRows = showReviewerPicker
+		? Math.min((card.availableReviewers ?? []).length + 2, 12)
+		: 0;
+	const headerOverhead = 6 + prCount + logFileRow + prMetaRow + pickerRows;
 	const bodyRows = Math.max(1, terminalRows - headerOverhead);
 
 	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
@@ -265,18 +276,18 @@ export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailP
 					</Box>
 				))}
 
-			{/* PR metadata: reviewers + assignees (only for done cards with config) */}
+			{/* PR metadata: reviewers + assignees */}
 			{hasPrMeta && (
 				<Box marginTop={0} flexDirection="row">
-					{reviewers?.length ? (
+					{cardReviewers.length > 0 ? (
 						<>
 							<Text color="cyan" dimColor>
 								{"REVIEWERS: "}
 							</Text>
-							<Text color="cyan">{reviewers.join(", ")}</Text>
+							<Text color="cyan">{cardReviewers.join(", ")}</Text>
 						</>
 					) : null}
-					{reviewers?.length && assignees?.length ? (
+					{cardReviewers.length > 0 && assignees?.length ? (
 						<Text color="gray" dimColor>
 							{" │ "}
 						</Text>
@@ -291,6 +302,38 @@ export function IssueDetail({ card, onBack, reviewers, assignees }: IssueDetailP
 							</Text>
 						</>
 					) : null}
+				</Box>
+			)}
+
+			{/* Reviewer picker overlay */}
+			{showReviewerPicker && (
+				<Box marginTop={0} flexDirection="column">
+					<Text color="yellow">{"────────────────────────"}</Text>
+					<Text color="yellow" bold>
+						{"TOGGLE REVIEWERS"}
+					</Text>
+					{(card.availableReviewers ?? []).length === 0 ? (
+						<Text color="gray" dimColor>
+							{"No contributors found"}
+						</Text>
+					) : (
+						(card.availableReviewers ?? []).slice(0, 10).map((username, i) => {
+							const isActive = cardReviewers.includes(username);
+							const isSelected = i === reviewerPickerIndex;
+							return (
+								<Box key={username} flexDirection="row">
+									<Text color={isSelected ? "yellow" : "white"}>{isSelected ? "▸ " : "  "}</Text>
+									<Text color={isActive ? "cyan" : "gray"}>{isActive ? "[✓] " : "[ ] "}</Text>
+									<Text color={isActive ? "cyan" : "white"} bold={isActive}>
+										{username}
+									</Text>
+								</Box>
+							);
+						})
+					)}
+					<Text color="gray" dimColor>
+						{"[↑↓] navigate  [space] toggle  [Esc] close"}
+					</Text>
 				</Box>
 			)}
 

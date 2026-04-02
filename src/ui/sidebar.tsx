@@ -218,6 +218,7 @@ export function Sidebar({
 			{activeView === "detail" && (
 				<Box marginTop={1} flexDirection="column">
 					{hasPrUrl && <Text dimColor>{"[o]  open PR"}</Text>}
+					{hasPrUrl && <Text dimColor>{"[r]  reviewers"}</Text>}
 					{canMerge && !merging && !mergeConfirm && <Text dimColor>{"[m]  merge"}</Text>}
 					{merging && <Text color="yellow">{"⏳ merging..."}</Text>}
 					{mergeConfirm && <Text color="yellow">{"⚠ CI not passed\n   merge? [y/n]"}</Text>}

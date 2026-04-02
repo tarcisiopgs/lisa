@@ -3,11 +3,18 @@ import * as clack from "@clack/prompts";
 import pc from "picocolors";
 import { saveConfig } from "../config.js";
 import { isGhCliAvailable } from "../git/github.js";
+import { listPlatformContributors } from "../git/platform.js";
 import { ensureWorktreeGitignore } from "../git/worktree.js";
 import { getAllProvidersWithAvailability } from "../providers/index.js";
 import { createSource } from "../sources/index.js";
 import { getTemplateById, getTemplates, templateToPartialConfig } from "../templates.js";
-import type { LisaConfig, ProviderName, SourceName, WorkflowMode } from "../types/index.js";
+import type {
+	LisaConfig,
+	PRPlatform,
+	ProviderName,
+	SourceName,
+	WorkflowMode,
+} from "../types/index.js";
 import {
 	detectDefaultBranch,
 	detectGitRepos,
@@ -630,6 +637,37 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		reviewMonitorEnabled = enableReviewMonitor as boolean;
 	}
 
+	// --- PR reviewers ---
+	let prReviewers: string[] = [];
+	const wantReviewers = await clack.confirm({
+		message: "Configure default PR reviewers?",
+		initialValue: !!initial?.pr?.reviewers?.length,
+	});
+	if (clack.isCancel(wantReviewers)) return process.exit(0);
+
+	if (wantReviewers) {
+		const listFn = async (): Promise<{ value: string; label: string }[]> => {
+			const contributors = await listPlatformContributors(platform as PRPlatform, process.cwd());
+			return contributors.map((c) => ({ value: c, label: c }));
+		};
+
+		const reviewerValue = await selectOrInput({
+			listFn,
+			message: "Who should review PRs? (select contributors or type usernames)",
+			multi: true,
+			initialValue: initial?.pr?.reviewers?.join(", ") ?? "",
+			placeholder: "e.g. alice, bob",
+			spinnerMessage: "Fetching repository contributors...",
+		});
+
+		prReviewers = Array.isArray(reviewerValue)
+			? reviewerValue
+			: (reviewerValue as string)
+					.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean);
+	}
+
 	const cfg: LisaConfig = {
 		provider: providerName,
 		provider_options: {
@@ -656,6 +694,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
 		...(reviewMonitorEnabled ? { review_monitor: { enabled: true } } : {}),
+		...(prReviewers.length ? { pr: { reviewers: prReviewers } } : {}),
 	};
 
 	saveConfig(cfg);
