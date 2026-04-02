@@ -66,7 +66,7 @@ export async function runBranchSession(
 	const pm = detectPackageManager(workspace);
 	const projectContext = analyzeProject(workspace);
 	const repoContextMd = readContext(workspace);
-	const relevantFiles = enrichContext(workspace, issue);
+	const relevantFiles = await enrichContext(workspace, issue);
 
 	// Detect and start infrastructure
 	const lifecycleEnv = await startInfra(issue.id, workspace, config);

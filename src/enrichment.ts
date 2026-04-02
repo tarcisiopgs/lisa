@@ -1,5 +1,8 @@
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Issue } from "./types/index.js";
+
+const execFileAsync = promisify(execFile);
 
 const STOP_WORDS = new Set([
 	"the",
@@ -239,31 +242,50 @@ export function extractKeywords(text: string): string[] {
 	return [...new Set(words)];
 }
 
-export function enrichContext(cwd: string, issue: Issue): string | null {
+export async function enrichContext(cwd: string, issue: Issue): Promise<string | null> {
 	const keywords = extractKeywords(`${issue.title} ${issue.description}`);
 	if (keywords.length === 0) return null;
 
-	// Build grep exclude args
-	const excludeDirs = EXCLUDE_DIRS.map((d) => `--exclude-dir=${d}`).join(" ");
-	const excludeExts = EXCLUDE_EXTENSIONS.map((e) => `--exclude=${e}`).join(" ");
+	// Build grep args
+	const excludeDirArgs = EXCLUDE_DIRS.flatMap((d) => ["--exclude-dir", d]);
+	const excludeExtArgs = EXCLUDE_EXTENSIONS.flatMap((e) => ["--exclude", e]);
+	const includeArgs = [
+		"*.ts",
+		"*.tsx",
+		"*.js",
+		"*.jsx",
+		"*.py",
+		"*.rb",
+		"*.go",
+		"*.rs",
+		"*.java",
+		"*.yaml",
+		"*.yml",
+		"*.json",
+	].flatMap((p) => ["--include", p]);
 
 	// Search for each keyword and count file occurrences
 	const fileCounts = new Map<string, number>();
 
-	for (const keyword of keywords.slice(0, 15)) {
-		// limit to 15 keywords for speed
+	const searches = keywords.slice(0, 15).map(async (keyword) => {
 		try {
-			const result = execSync(
-				`grep -rl ${excludeDirs} ${excludeExts} -i --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --include='*.py' --include='*.rb' --include='*.go' --include='*.rs' --include='*.java' --include='*.yaml' --include='*.yml' --include='*.json' -- ${JSON.stringify(keyword)} . 2>/dev/null || true`,
+			const { stdout } = await execFileAsync(
+				"grep",
+				["-rl", ...excludeDirArgs, ...excludeExtArgs, "-i", ...includeArgs, "--", keyword, "."],
 				{ cwd, encoding: "utf-8", timeout: 5000, maxBuffer: 1024 * 1024 },
 			);
-			const files = result.trim().split("\n").filter(Boolean);
-			for (const file of files) {
-				const rel = file.startsWith("./") ? file.slice(2) : file;
-				fileCounts.set(rel, (fileCounts.get(rel) ?? 0) + 1);
-			}
+			return stdout.trim().split("\n").filter(Boolean);
 		} catch {
-			// grep timeout or error — skip this keyword
+			// grep timeout, error, or no matches (exit code 1) — skip
+			return [];
+		}
+	});
+
+	const results = await Promise.all(searches);
+	for (const files of results) {
+		for (const file of files) {
+			const rel = file.startsWith("./") ? file.slice(2) : file;
+			fileCounts.set(rel, (fileCounts.get(rel) ?? 0) + 1);
 		}
 	}
 
