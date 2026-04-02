@@ -178,7 +178,7 @@ export async function runNativeWorktreeSession(
 	const pm = detectPackageManager(repoPath);
 	const projectContext = analyzeProject(repoPath);
 	const repoContextMd = readContext(repoPath);
-	const relevantFiles = enrichContext(repoPath, issue);
+	const relevantFiles = await enrichContext(repoPath, issue);
 
 	const workspace = resolve(config.workspace);
 	const hookEnv = buildHookEnv(issue.id, issue.title, "", repoPath);
@@ -385,7 +385,7 @@ export async function runManualWorktreeSession(
 	const pm = detectPackageManager(worktreePath);
 	const projectContext = analyzeProject(worktreePath);
 	const repoContextMd = readContext(repoPath);
-	const relevantFiles = enrichContext(worktreePath, issue);
+	const relevantFiles = await enrichContext(worktreePath, issue);
 
 	// Detect infrastructure
 	const lifecycleEnv = await startInfra(issue.id, worktreePath, config);

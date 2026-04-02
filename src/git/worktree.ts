@@ -85,9 +85,15 @@ export async function createWorktree(
 		}
 	}
 
-	await execa("git", ["fetch", "origin", baseBranch], { cwd: repoRoot });
+	await execa("git", ["fetch", "origin", baseBranch], {
+		cwd: repoRoot,
+		stdin: "ignore",
+		timeout: 30_000,
+	});
 	await execa("git", ["worktree", "add", "-b", branchName, worktreePath, `origin/${baseBranch}`], {
 		cwd: repoRoot,
+		stdin: "ignore",
+		timeout: 30_000,
 	});
 
 	return worktreePath;
