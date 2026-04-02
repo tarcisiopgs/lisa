@@ -53,7 +53,7 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 - **Smart activity detection** — reads agent session logs to prevent false stuck kills during analysis phases
 - **Progress comments** — posts real-time status updates on issues as Lisa works through stages
 - **Context enrichment** — greps for issue-related files and surfaces them in the agent prompt
-- **PR reviewers & assignees** — auto-request reviews and assign PRs via config; `self` keyword resolves to the authenticated user
+- **PR reviewers & assignees** — auto-request reviews and assign PRs via config; `self` keyword resolves to the authenticated user. Manage reviewers interactively from the TUI detail view (`r`)
 - **Self-healing** — orphan recovery on startup, push failure retry, stuck process detection
 - **Guardrails** — past failures are injected into future prompts to avoid repeating mistakes
 - **Lineage context** — plan-decomposed issues get sibling task awareness, preventing duplicate work in concurrent mode
@@ -360,6 +360,7 @@ The real-time Kanban board shows issue progress, streams provider output, and de
 |-----|--------|
 | `↑` `↓` | Scroll output log |
 | `o` | Open PR in browser |
+| `r` | Toggle reviewer picker (add/remove reviewers on the PR) |
 | `m` | Merge PR (warns if CI not passed) |
 | `Esc` | Back to board |
 
