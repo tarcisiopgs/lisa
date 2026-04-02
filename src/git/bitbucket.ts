@@ -204,6 +204,81 @@ export function isBitbucketUrl(url: string): boolean {
 	return url.includes("bitbucket.org") && url.includes("pull-requests");
 }
 
+/**
+ * Lists workspace members (users with access to the repository).
+ * Returns usernames sorted alphabetically.
+ */
+export async function listWorkspaceMembers(cwd: string): Promise<string[]> {
+	try {
+		const { workspace } = await getBitbucketRepoInfo(cwd);
+		const authHeader = getAuthHeader();
+
+		const res = await fetch(
+			`${API_URL}/workspaces/${encodeURIComponent(workspace)}/members?pagelen=100`,
+			{
+				headers: { Authorization: authHeader },
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			},
+		);
+		if (!res.ok) return [];
+
+		const data = (await res.json()) as {
+			values: { user: { display_name: string; nickname: string; username?: string } }[];
+		};
+		return data.values
+			.map((v) => v.user.nickname || v.user.username || "")
+			.filter(Boolean)
+			.sort((a, b) => a.localeCompare(b));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Removes reviewers from a Bitbucket PR. Non-fatal.
+ * Uses GET-modify-PUT to remove specific reviewers.
+ */
+export async function removePrReviewers(prUrl: string, reviewers: string[]): Promise<void> {
+	if (!reviewers.length) return;
+
+	const parsed = parseBitbucketPrUrl(prUrl);
+	if (!parsed) return;
+	const authHeader = getAuthHeader();
+
+	// Resolve usernames to account_ids
+	const accountIds = await resolveAccountIds(reviewers);
+	const idsToRemove = new Set(accountIds.values());
+
+	// GET current PR
+	const getRes = await fetch(
+		`${API_URL}/repositories/${parsed.workspace}/${parsed.repoSlug}/pullrequests/${parsed.id}`,
+		{
+			headers: { Authorization: authHeader },
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		},
+	);
+	if (!getRes.ok) return;
+
+	const prData = (await getRes.json()) as {
+		title: string;
+		reviewers: { account_id: string }[];
+	};
+	const remaining = (prData.reviewers ?? []).filter((r) => !idsToRemove.has(r.account_id));
+
+	await fetch(
+		`${API_URL}/repositories/${parsed.workspace}/${parsed.repoSlug}/pullrequests/${parsed.id}`,
+		{
+			method: "PUT",
+			headers: {
+				Authorization: authHeader,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ title: prData.title, reviewers: remaining }),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		},
+	);
+}
+
 let authenticatedUserCache: string | null = null;
 
 /**

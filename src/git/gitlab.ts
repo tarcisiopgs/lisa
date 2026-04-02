@@ -216,6 +216,72 @@ export function isGitLabUrl(url: string): boolean {
 	return /gitlab\./.test(url) && url.includes("merge_requests");
 }
 
+/**
+ * Lists project members (users with access to the project).
+ * Returns usernames sorted alphabetically.
+ */
+export async function listProjectMembers(cwd: string): Promise<string[]> {
+	try {
+		const { host, namespace, project } = await getGitLabRepoInfo(cwd);
+		const token = getToken();
+		const apiBase = buildApiBase(host);
+		const encodedPath = encodeProjectPath(namespace, project);
+
+		const res = await fetch(`${apiBase}/projects/${encodedPath}/members/all?per_page=100`, {
+			headers: { "PRIVATE-TOKEN": token },
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+		if (!res.ok) return [];
+
+		const members = (await res.json()) as { username: string }[];
+		return members
+			.map((m) => m.username)
+			.filter(Boolean)
+			.sort((a, b) => a.localeCompare(b));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Removes reviewers from a GitLab MR. Non-fatal.
+ * Uses GET-modify-PUT to remove specific reviewer IDs.
+ */
+export async function removeMrReviewers(mrUrl: string, reviewerUsernames: string[]): Promise<void> {
+	if (!reviewerUsernames.length) return;
+
+	const parsed = parseGitLabMrUrl(mrUrl);
+	if (!parsed) return;
+
+	const token = getToken();
+	const apiBase = buildApiBase(parsed.host);
+	const encodedPath = encodeURIComponent(parsed.projectPath);
+
+	// Resolve usernames to IDs
+	const idMap = await resolveUserIds(reviewerUsernames, parsed.host, parsed.projectPath);
+	const idsToRemove = new Set(idMap.values());
+
+	// GET current MR
+	const getRes = await fetch(`${apiBase}/projects/${encodedPath}/merge_requests/${parsed.iid}`, {
+		headers: { "PRIVATE-TOKEN": token },
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+	if (!getRes.ok) return;
+
+	const mrData = (await getRes.json()) as { reviewers: { id: number }[] };
+	const remaining = (mrData.reviewers ?? []).filter((r) => !idsToRemove.has(r.id));
+
+	await fetch(`${apiBase}/projects/${encodedPath}/merge_requests/${parsed.iid}`, {
+		method: "PUT",
+		headers: {
+			"PRIVATE-TOKEN": token,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({ reviewer_ids: remaining.map((r) => r.id) }),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+}
+
 let authenticatedUserCache: string | null = null;
 
 /**

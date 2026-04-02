@@ -207,6 +207,12 @@ export async function runBranchSession(
 	await appendPlatformAttribution(prUrl, result.providerUsed, config.platform);
 	await applyPrReviewersAndAssignees(prUrl, config.pr, config.platform);
 
+	// Emit per-card reviewer data to TUI
+	if (config.pr?.reviewers?.length) {
+		const applied = config.pr.reviewers.filter((r) => r !== "self");
+		kanbanEmitter.emit("issue:reviewers-updated", issue.id, applied);
+	}
+
 	// Append proof of work to PR body if validation was run
 	if (validationResults) {
 		await appendPlatformProofOfWork(prUrl, validationResults, config.platform);

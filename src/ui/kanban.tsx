@@ -34,6 +34,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 	const [mergeConfirm, setMergeConfirm] = useState<string | null>(null);
 	const [merging, setMerging] = useState<string | null>(null);
 	const [updateInfo] = useState<UpdateInfo | null>(() => getCachedUpdateInfo());
+	const [showReviewerPicker, setShowReviewerPicker] = useState(false);
+	const [reviewerPickerIndex, setReviewerPickerIndex] = useState(0);
 
 	// Plan state
 	const [planMessages, setPlanMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
@@ -201,6 +203,38 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 		setMerging(null);
 	}
 
+	async function handleToggleReviewer(card: KanbanCard, index: number) {
+		const available = card.availableReviewers ?? [];
+		const username = available[index];
+		if (!username) return;
+
+		const current = card.reviewers ?? [];
+		const isActive = current.includes(username);
+
+		const { addPlatformReviewer, removePlatformReviewer } = await import("../git/platform.js");
+		const prUrl = card.prUrls[0];
+		if (!prUrl) return;
+
+		if (isActive) {
+			await removePlatformReviewer(prUrl, username, config.platform);
+			kanbanEmitter.emit(
+				"issue:reviewers-updated",
+				card.id,
+				current.filter((r) => r !== username),
+			);
+		} else {
+			await addPlatformReviewer(prUrl, username, config.platform);
+			kanbanEmitter.emit("issue:reviewers-updated", card.id, [...current, username]);
+		}
+	}
+
+	async function fetchAvailableReviewers(card: KanbanCard) {
+		if (card.availableReviewers && card.availableReviewers.length > 0) return;
+		const { listPlatformContributors } = await import("../git/platform.js");
+		const contributors = await listPlatformContributors(config.platform, process.cwd());
+		kanbanEmitter.emit("issue:available-reviewers", card.id, contributors);
+	}
+
 	useInput((input, key) => {
 		if (isWatchPrompt) {
 			if (input === "w") {
@@ -281,9 +315,31 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			return;
 		}
 
-		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o, m) are handled.
+		// Detail view: only legend-visible shortcuts (Esc, ↑↓, o, m, r) are handled.
 		// Scroll and "o" are handled by IssueDetail's own useInput.
 		if (activeView === "detail") {
+			// Reviewer picker mode — swallow all input except navigation, toggle, and escape
+			if (showReviewerPicker && selectedCard) {
+				const available = selectedCard.availableReviewers ?? [];
+				if (key.upArrow) {
+					setReviewerPickerIndex((prev) => Math.max(0, prev - 1));
+					return;
+				}
+				if (key.downArrow) {
+					setReviewerPickerIndex((prev) => Math.min(Math.max(0, available.length - 1), prev + 1));
+					return;
+				}
+				if (input === " ") {
+					handleToggleReviewer(selectedCard, reviewerPickerIndex);
+					return;
+				}
+				if (key.escape) {
+					setShowReviewerPicker(false);
+					return;
+				}
+				return; // Swallow all other input during reviewer picker
+			}
+
 			// Merge confirmation response
 			if (mergeConfirm === selectedCardId) {
 				if (input === "y") {
@@ -296,6 +352,18 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 					return;
 				}
 				return; // Swallow all other input during confirmation
+			}
+
+			// Toggle reviewer picker
+			if (input === "r" && selectedCard && selectedCard.prUrls.length > 0) {
+				if (showReviewerPicker) {
+					setShowReviewerPicker(false);
+				} else {
+					setShowReviewerPicker(true);
+					setReviewerPickerIndex(0);
+					fetchAvailableReviewers(selectedCard);
+				}
+				return;
 			}
 
 			if (
@@ -312,6 +380,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 
 			if (key.escape) {
 				setMergeConfirm(null);
+				setShowReviewerPicker(false);
 				setActiveView("board");
 				setSelectedCardId(null);
 			}
@@ -539,9 +608,11 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 					onBack={() => {
 						setActiveView("board");
 						setSelectedCardId(null);
+						setShowReviewerPicker(false);
 					}}
-					reviewers={config.pr?.reviewers}
 					assignees={config.pr?.assignees}
+					showReviewerPicker={showReviewerPicker}
+					reviewerPickerIndex={reviewerPickerIndex}
 				/>
 			)}
 		</Box>

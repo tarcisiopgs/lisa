@@ -240,6 +240,74 @@ export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
 	};
 }
 
+/**
+ * Lists repository collaborators (users with push access).
+ * Uses gh CLI or GitHub API. Returns usernames sorted alphabetically.
+ */
+export async function listCollaborators(
+	cwd: string,
+	method: PRPlatform = "cli",
+): Promise<string[]> {
+	try {
+		const { owner, repo } = await getRepoInfo(cwd);
+
+		if (method === "cli" && (await isGhCliAvailable())) {
+			const { stdout } = await execa("gh", [
+				"api",
+				"--paginate",
+				"--jq",
+				".[].login",
+				`/repos/${owner}/${repo}/collaborators`,
+			]);
+			return stdout
+				.trim()
+				.split("\n")
+				.filter(Boolean)
+				.sort((a, b) => a.localeCompare(b));
+		}
+
+		const res = await fetch(`${API_URL}/repos/${owner}/${repo}/collaborators?per_page=100`, {
+			headers: {
+				Authorization: `Bearer ${getToken()}`,
+				Accept: "application/vnd.github+json",
+			},
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+		if (!res.ok) return [];
+		const data = (await res.json()) as { login: string }[];
+		return data
+			.map((c) => c.login)
+			.filter(Boolean)
+			.sort((a, b) => a.localeCompare(b));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Removes requested reviewers from a GitHub PR. Non-fatal.
+ */
+export async function removeReviewers(prUrl: string, reviewers: string[]): Promise<void> {
+	if (!reviewers.length) return;
+	const parsed = parseGitHubPrUrl(prUrl);
+	if (!parsed) return;
+
+	await execa(
+		"gh",
+		[
+			"api",
+			"--method",
+			"DELETE",
+			`/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}/requested_reviewers`,
+			"--input",
+			"-",
+		],
+		{
+			input: JSON.stringify({ reviewers }),
+		},
+	);
+}
+
 let authenticatedUserCache: string | null = null;
 
 /**

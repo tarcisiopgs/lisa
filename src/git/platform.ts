@@ -12,6 +12,8 @@ import {
 	addPrReviewers as addBitbucketReviewers,
 	appendPrAttribution as appendBitbucketAttribution,
 	appendPrBody as appendBitbucketBody,
+	listWorkspaceMembers as listBitbucketMembers,
+	removePrReviewers as removeBitbucketReviewers,
 } from "./bitbucket.js";
 import {
 	addAssignees as addGitHubAssignees,
@@ -19,12 +21,16 @@ import {
 	appendPrAttribution as appendGitHubAttribution,
 	appendPrBody as appendGitHubBody,
 	getAuthenticatedUser as getGitHubAuthenticatedUser,
+	listCollaborators as listGitHubCollaborators,
+	removeReviewers as removeGitHubReviewers,
 } from "./github.js";
 import {
 	addMrReviewersAndAssignees,
 	appendMrAttribution as appendGitLabAttribution,
 	appendMrBody as appendGitLabBody,
 	getGitLabAuthenticatedUser,
+	listProjectMembers as listGitLabMembers,
+	removeMrReviewers as removeGitLabReviewers,
 } from "./gitlab.js";
 
 /**
@@ -216,5 +222,69 @@ export async function applyPrReviewersAndAssignees(
 		}
 	} catch (err) {
 		warn(`Failed to add reviewers/assignees: ${formatError(err)}`);
+	}
+}
+
+/**
+ * Lists repository contributors/members for the given platform. Non-fatal.
+ * Returns usernames sorted alphabetically.
+ */
+export async function listPlatformContributors(
+	platform: PRPlatform,
+	cwd: string,
+): Promise<string[]> {
+	try {
+		if (platform === "gitlab") {
+			return await listGitLabMembers(cwd);
+		}
+		if (platform === "bitbucket") {
+			return await listBitbucketMembers(cwd);
+		}
+		// "cli" or "token" — GitHub
+		return await listGitHubCollaborators(cwd, platform);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Adds a single reviewer to a PR/MR. Non-fatal.
+ */
+export async function addPlatformReviewer(
+	prUrl: string,
+	reviewer: string,
+	platform: PRPlatform,
+): Promise<void> {
+	try {
+		if (platform === "gitlab") {
+			await addMrReviewersAndAssignees(prUrl, [reviewer], []);
+		} else if (platform === "bitbucket") {
+			await addBitbucketReviewers(prUrl, [reviewer]);
+		} else {
+			await addGitHubReviewers(prUrl, [reviewer]);
+		}
+	} catch (err) {
+		warn(`Failed to add reviewer "${reviewer}": ${formatError(err)}`);
+	}
+}
+
+/**
+ * Removes a single reviewer from a PR/MR. Non-fatal.
+ */
+export async function removePlatformReviewer(
+	prUrl: string,
+	reviewer: string,
+	platform: PRPlatform,
+): Promise<void> {
+	try {
+		if (platform === "gitlab") {
+			await removeGitLabReviewers(prUrl, [reviewer]);
+		} else if (platform === "bitbucket") {
+			await removeBitbucketReviewers(prUrl, [reviewer]);
+		} else {
+			await removeGitHubReviewers(prUrl, [reviewer]);
+		}
+	} catch (err) {
+		warn(`Failed to remove reviewer "${reviewer}": ${formatError(err)}`);
 	}
 }

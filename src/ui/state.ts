@@ -22,6 +22,8 @@ export interface KanbanCard {
 	merged?: boolean;
 	queueOrder?: number;
 	substatus?: string;
+	reviewers?: string[];
+	availableReviewers?: string[];
 }
 
 const MERGE_POLL_INTERVAL_MS = 5_000;
@@ -242,6 +244,16 @@ export function useKanbanState(
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, substatus } : c)));
 		};
 
+		const onReviewersUpdated = (issueId: string, reviewers: string[]) => {
+			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, reviewers } : c)));
+		};
+
+		const onAvailableReviewers = (issueId: string, available: string[]) => {
+			setCards((prev) =>
+				prev.map((c) => (c.id === issueId ? { ...c, availableReviewers: available } : c)),
+			);
+		};
+
 		const MAX_OUTPUT_SIZE = 200_000; // ~200 KB cap per issue
 		const outputBuffer = new Map<string, string>();
 		let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -297,6 +309,8 @@ export function useKanbanState(
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:log-file", onLogFile);
 		kanbanEmitter.on("issue:substatus", onSubstatus);
+		kanbanEmitter.on("issue:reviewers-updated", onReviewersUpdated);
+		kanbanEmitter.on("issue:available-reviewers", onAvailableReviewers);
 		kanbanEmitter.on("issue:output", onOutput);
 
 		const onModelChanged = (model: string) => setModelInUse(model);
@@ -347,6 +361,8 @@ export function useKanbanState(
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:log-file", onLogFile);
 			kanbanEmitter.off("issue:substatus", onSubstatus);
+			kanbanEmitter.off("issue:reviewers-updated", onReviewersUpdated);
+			kanbanEmitter.off("issue:available-reviewers", onAvailableReviewers);
 			kanbanEmitter.off("issue:output", onOutput);
 			kanbanEmitter.off("provider:model-changed", onModelChanged);
 			kanbanEmitter.off("work:empty", onEmpty);
