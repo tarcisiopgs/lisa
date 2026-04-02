@@ -12,6 +12,7 @@ import {
 	checkIssueSpec,
 	checkoutBaseBranches,
 	moveToInProgress,
+	pullBaseBranch,
 	refreshKanban,
 	revertIssueStatus,
 	sleep,
@@ -80,6 +81,9 @@ export async function runConcurrentLoop(
 		await moveToInProgress(issue, source, config);
 
 		activeCleanups.set(issue.id, { previousStatus, source, sourceConfig: config.source_config });
+
+		// Pull latest changes so the agent works on up-to-date code
+		await pullBaseBranch(config);
 
 		let sessionResult: SessionResult;
 		try {

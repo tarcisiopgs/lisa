@@ -199,6 +199,36 @@ export function emptyCommitFailure(result: FallbackResult): SessionResult {
 	});
 }
 
+/**
+ * Pull the latest changes from the base branch in the workspace and all
+ * configured sub-repos. Runs before each session so the agent always works
+ * on up-to-date code. Best-effort — failures are logged but do not block
+ * the session.
+ */
+export async function pullBaseBranch(config: LisaConfig): Promise<void> {
+	const workspace = resolve(config.workspace);
+	const baseBranch = config.base_branch;
+
+	const repoPaths = [workspace];
+	if (config.repos.length > 0) {
+		for (const repo of config.repos) {
+			repoPaths.push(resolve(workspace, repo.path));
+		}
+	}
+
+	for (const repoPath of repoPaths) {
+		try {
+			await execa("git", ["pull", "--ff-only", "origin", baseBranch], {
+				cwd: repoPath,
+				reject: true,
+				timeout: 30_000,
+			});
+		} catch (err) {
+			logger.warn(`Failed to pull ${baseBranch} in ${repoPath}: ${formatError(err)}`);
+		}
+	}
+}
+
 /** Append session summary to log file (best-effort, ignores errors). */
 export function appendSessionLog(logFile: string, result: FallbackResult): void {
 	try {
