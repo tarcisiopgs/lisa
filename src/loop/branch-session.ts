@@ -130,10 +130,33 @@ export async function runBranchSession(
 		return failureResult(result.providerUsed, result);
 	}
 
-	const hasChanges = await hasCodeChanges(workspace, config.base_branch);
-	if (!hasChanges) {
-		await reporter.fail("No code changes produced");
-		return emptyCommitFailure(result);
+	// Read manifest early — the agent may have already pushed and created a PR
+	// (e.g. in multi-repo setups where changes happen in a sub-repo). In that
+	// case the root workspace has no git diff but the work is complete.
+	const manifest = readManifestFile(manifestPath);
+	try {
+		unlinkSync(manifestPath);
+	} catch {
+		/* best-effort cleanup */
+	}
+
+	let prUrl = manifest?.prUrl;
+	if (!prUrl) {
+		const extractedUrl = extractPrUrlFromOutput(result.output);
+		if (extractedUrl) {
+			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
+			prUrl = extractedUrl;
+		}
+	}
+
+	// Skip code-change check when the agent already created a PR — the working
+	// directory may be clean because the agent pushed from a sub-repo.
+	if (!prUrl) {
+		const hasChanges = await hasCodeChanges(workspace, config.base_branch);
+		if (!hasChanges) {
+			await reporter.fail("No code changes produced");
+			return emptyCommitFailure(result);
+		}
 	}
 
 	// Proof of Work: run validation commands before PR creation
@@ -183,24 +206,10 @@ export async function runBranchSession(
 		return failureResult(result.providerUsed, result);
 	}
 
-	const manifest = readManifestFile(manifestPath);
-	try {
-		unlinkSync(manifestPath);
-	} catch {
-		/* best-effort cleanup */
-	}
-
-	let prUrl = manifest?.prUrl;
 	if (!prUrl) {
-		const extractedUrl = extractPrUrlFromOutput(result.output);
-		if (extractedUrl) {
-			logger.warn(`Manifest missing prUrl for ${issue.id}, extracted from output: ${extractedUrl}`);
-			prUrl = extractedUrl;
-		} else {
-			logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
-			await reporter.fail("No PR URL produced");
-			return failureResult(result.providerUsed, result);
-		}
+		logger.error(`Agent did not produce a manifest with prUrl for ${issue.id}.`);
+		await reporter.fail("No PR URL produced");
+		return failureResult(result.providerUsed, result);
 	}
 
 	logger.ok(`PR created by provider: ${prUrl}`);
