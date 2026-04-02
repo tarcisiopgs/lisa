@@ -33,6 +33,7 @@ const VALID_PROVIDERS = [
 	"goose",
 	"aider",
 	"codex",
+	"kilo",
 ] as const;
 const VALID_SOURCES = [
 	"linear",

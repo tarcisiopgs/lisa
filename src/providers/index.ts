@@ -21,6 +21,7 @@ import { CopilotProvider } from "./copilot.js";
 import { CursorProvider } from "./cursor.js";
 import { GeminiProvider } from "./gemini.js";
 import { GooseProvider } from "./goose.js";
+import { KiloProvider } from "./kilo.js";
 import { OpenCodeProvider } from "./opencode.js";
 
 const providers: Record<ProviderName, () => Provider> = {
@@ -32,6 +33,7 @@ const providers: Record<ProviderName, () => Provider> = {
 	goose: () => new GooseProvider(),
 	aider: () => new AiderProvider(),
 	codex: () => new CodexProvider(),
+	kilo: () => new KiloProvider(),
 };
 
 export async function getAllProvidersWithAvailability(): Promise<

@@ -15,7 +15,8 @@ export type ProviderName =
 	| "cursor"
 	| "goose"
 	| "aider"
-	| "codex";
+	| "codex"
+	| "kilo";
 export type WorkflowMode = "worktree" | "branch";
 
 export interface ProviderOptions {
