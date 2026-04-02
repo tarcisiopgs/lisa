@@ -35,6 +35,7 @@ export function resolveModels(config: LisaConfig): ModelSpec[] {
 		"goose",
 		"aider",
 		"codex",
+		"kilo",
 	]);
 	for (const m of providerModels) {
 		if (knownProviders.has(m) && m !== config.provider) {

@@ -93,6 +93,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		goose: "Goose",
 		aider: "Aider",
 		codex: "OpenAI Codex",
+		kilo: "Kilo Code",
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
@@ -118,6 +119,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 			"gpt-5.4",
 		],
 		// cursor: populated dynamically below (fetchCursorModels)
+		// kilo: model configured in Kilo's own config (~/.config/kilo/kilo.jsonc)
 	};
 
 	const allProviders = await getAllProvidersWithAvailability();
@@ -133,7 +135,8 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 				`  ${pc.bold("GitHub Copilot CLI")} ${pc.dim("npm i -g @github/copilot-cli")}\n` +
 				`  ${pc.bold("OpenAI Codex")}       ${pc.dim("npm i -g @openai/codex")}\n` +
 				`  ${pc.bold("Goose")}              ${pc.dim("https://block.github.io/goose")}\n` +
-				`  ${pc.bold("Aider")}              ${pc.dim("pip install aider-chat")}`,
+				`  ${pc.bold("Aider")}              ${pc.dim("pip install aider-chat")}\n` +
+				`  ${pc.bold("Kilo Code")}          ${pc.dim("npm i -g @kilocode/cli")}`,
 		);
 		return process.exit(1);
 	}

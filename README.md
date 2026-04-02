@@ -38,7 +38,7 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 ## Features
 
 - **7 issue trackers** — Linear, GitHub Issues, GitLab Issues, Jira, Trello, Plane, Shortcut
-- **8 AI agents** — Claude Code, Gemini CLI, GitHub Copilot CLI, Cursor Agent, Aider, Goose, OpenCode, Codex
+- **9 AI agents** — Claude Code, Gemini CLI, GitHub Copilot CLI, Cursor Agent, Aider, Goose, OpenCode, Codex, Kilo Code
 - **AI planning** — describe a goal, the AI brainstorms with you, decomposes it into issues with dependencies, created in your tracker
 - **Language-aware** — responds in the same language you write your goal in
 - **Spec compliance** — LLM-verified acceptance criteria check before PR creation, with auto-retry
@@ -67,6 +67,7 @@ If something fails — pre-push hooks, quota limits, stuck processes — Lisa ha
 | Gemini CLI | `gemini` | Goose | `goose` |
 | GitHub Copilot CLI | `copilot` | Aider | `aider` |
 | OpenCode | `opencode` | OpenAI Codex | `codex` |
+| Kilo Code | `kilo` | | |
 
 Configure models and provider-specific options:
 
