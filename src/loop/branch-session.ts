@@ -23,6 +23,7 @@ import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
 	appendSessionLog,
+	autoMergePr,
 	buildRunOptions,
 	checkReconciliation,
 	defaultProvider,
@@ -254,6 +255,9 @@ export async function runBranchSession(
 			}
 		}
 	}
+
+	// Auto-merge: merge PR after CI passes (if enabled)
+	await autoMergePr(prUrl, issue.id, config);
 
 	await reporter.finish([prUrl]);
 

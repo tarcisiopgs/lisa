@@ -252,6 +252,7 @@ export interface ProgressConfig {
 export interface PrConfig {
 	reviewers?: string[];
 	assignees?: string[];
+	auto_merge?: boolean; // auto-merge PR after CI passes (default: false)
 }
 
 export interface LisaConfig {

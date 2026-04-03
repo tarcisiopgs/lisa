@@ -671,6 +671,14 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 					.filter(Boolean);
 	}
 
+	// --- Auto-merge ---
+	const wantAutoMerge = await clack.confirm({
+		message: "Auto-merge PRs after CI passes?",
+		initialValue: initial?.pr?.auto_merge ?? false,
+	});
+	if (clack.isCancel(wantAutoMerge)) return process.exit(0);
+	const autoMerge = wantAutoMerge === true;
+
 	const cfg: LisaConfig = {
 		provider: providerName,
 		provider_options: {
@@ -697,7 +705,14 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		repos,
 		loop: { cooldown: 10, max_sessions: 0 },
 		...(reviewMonitorEnabled ? { review_monitor: { enabled: true } } : {}),
-		...(prReviewers.length ? { pr: { reviewers: prReviewers } } : {}),
+		...(prReviewers.length || autoMerge
+			? {
+					pr: {
+						...(prReviewers.length ? { reviewers: prReviewers } : {}),
+						...(autoMerge ? { auto_merge: true } : {}),
+					},
+				}
+			: {}),
 	};
 
 	saveConfig(cfg);
