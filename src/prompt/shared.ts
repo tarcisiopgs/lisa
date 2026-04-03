@@ -120,7 +120,8 @@ export function buildValidateStep(testRunner: TestRunner, pm: PackageManager = "
 		: "";
 	return `**Validate**: Confirm all quality gates before committing:
 ${testLine}   - Run lint/typecheck scripts if available (e.g., \`npm run lint\`, \`npm run typecheck\`).
-   - Fix every error. Do NOT commit with failing tests or lint errors.`;
+   - Fix every error. Do NOT commit with failing tests or lint errors.
+   - Run the **full** test suite, not just the files you changed — your changes may break existing tests that import or mock the same modules.`;
 }
 
 export function buildPreCommitHookInstructions(): string {

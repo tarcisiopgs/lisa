@@ -4,6 +4,7 @@ import * as logger from "../output/logger.js";
 import { startSpinner, stopSpinner } from "../output/terminal.js";
 import { runWithFallback } from "../providers/index.js";
 import type { CiMonitorConfig, Issue, LisaConfig, ModelSpec, RunOptions } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 
 export interface CiMonitorResult {
 	passed: boolean;
@@ -157,6 +158,7 @@ export async function monitorCi(
 
 	while (true) {
 		startSpinner(`${issue.id} — waiting for CI...`);
+		kanbanEmitter.emit("issue:ci-status", issue.id, "pending");
 		const startTime = Date.now();
 		let lastRun: CiRun | null = null;
 
@@ -173,11 +175,13 @@ export async function monitorCi(
 
 			if (lastRun.status === "success") {
 				stopSpinner();
+				kanbanEmitter.emit("issue:ci-status", issue.id, "passing");
 				logger.ok(`CI passed: ${lastRun.name}`);
 				return { passed: true, skipped: false, attempts: maxRetries - retriesLeft };
 			}
 
 			if (lastRun.status === "failure") {
+				kanbanEmitter.emit("issue:ci-status", issue.id, "failing");
 				break; // Exit poll loop to handle failure
 			}
 

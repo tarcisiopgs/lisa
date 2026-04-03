@@ -22,6 +22,7 @@ export interface KanbanCard {
 	merged?: boolean;
 	queueOrder?: number;
 	substatus?: string;
+	ciStatus?: "pending" | "passing" | "failing";
 	reviewers?: string[];
 	availableReviewers?: string[];
 }
@@ -244,6 +245,10 @@ export function useKanbanState(
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, substatus } : c)));
 		};
 
+		const onCiStatus = (issueId: string, ciStatus: "pending" | "passing" | "failing") => {
+			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, ciStatus } : c)));
+		};
+
 		const onReviewersUpdated = (issueId: string, reviewers: string[]) => {
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, reviewers } : c)));
 		};
@@ -309,6 +314,7 @@ export function useKanbanState(
 		kanbanEmitter.on("provider:resumed", onProviderResumed);
 		kanbanEmitter.on("issue:log-file", onLogFile);
 		kanbanEmitter.on("issue:substatus", onSubstatus);
+		kanbanEmitter.on("issue:ci-status", onCiStatus);
 		kanbanEmitter.on("issue:reviewers-updated", onReviewersUpdated);
 		kanbanEmitter.on("issue:available-reviewers", onAvailableReviewers);
 		kanbanEmitter.on("issue:output", onOutput);
@@ -361,6 +367,7 @@ export function useKanbanState(
 			kanbanEmitter.off("provider:resumed", onProviderResumed);
 			kanbanEmitter.off("issue:log-file", onLogFile);
 			kanbanEmitter.off("issue:substatus", onSubstatus);
+			kanbanEmitter.off("issue:ci-status", onCiStatus);
 			kanbanEmitter.off("issue:reviewers-updated", onReviewersUpdated);
 			kanbanEmitter.off("issue:available-reviewers", onAvailableReviewers);
 			kanbanEmitter.off("issue:output", onOutput);
