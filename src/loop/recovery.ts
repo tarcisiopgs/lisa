@@ -4,6 +4,7 @@ import * as logger from "../output/logger.js";
 import { appendRawEntry } from "../session/guardrails.js";
 import { clearPrUrl } from "../session/pr-cache.js";
 import type { LisaConfig, Source } from "../types/index.js";
+import { kanbanEmitter } from "../ui/state.js";
 
 /**
  * Checks if previously-created PRs for this issue were closed without merge.
@@ -61,6 +62,7 @@ export async function recoverOrphanIssues(source: Source, config: LisaConfig): P
 		);
 		try {
 			await source.updateStatus(orphan.id, config.source_config.pick_from, config.source_config);
+			kanbanEmitter.emit("issue:reverted", orphan.id);
 			logger.ok(`Recovered orphan ${orphan.id}`);
 		} catch (err) {
 			logger.error(`Failed to recover orphan ${orphan.id}: ${formatError(err)}`);

@@ -209,22 +209,48 @@ export async function pullBaseBranch(config: LisaConfig): Promise<void> {
 	const workspace = resolve(config.workspace);
 	const baseBranch = config.base_branch;
 
-	const repoPaths = [workspace];
+	// Only pull in sub-repos when configured; skip the root workspace
+	// since multi-repo setups typically have the root as a plain directory
+	// (not a git repo) with sub-repos inside.
+	const repoPaths: string[] = [];
 	if (config.repos.length > 0) {
 		for (const repo of config.repos) {
 			repoPaths.push(resolve(workspace, repo.path));
 		}
+	} else {
+		repoPaths.push(workspace);
 	}
 
 	for (const repoPath of repoPaths) {
 		try {
+			// Ensure we're on the base branch before pulling
+			await execa("git", ["checkout", baseBranch], {
+				cwd: repoPath,
+				reject: true,
+				timeout: 15_000,
+			});
 			await execa("git", ["pull", "--ff-only", "origin", baseBranch], {
 				cwd: repoPath,
 				reject: true,
 				timeout: 30_000,
 			});
-		} catch (err) {
-			logger.warn(`Failed to pull ${baseBranch} in ${repoPath}: ${formatError(err)}`);
+		} catch {
+			// ff-only may fail if the local branch diverged (e.g. agent committed
+			// directly on main in branch workflow). Reset to match remote.
+			try {
+				await execa("git", ["fetch", "origin", baseBranch], {
+					cwd: repoPath,
+					reject: true,
+					timeout: 30_000,
+				});
+				await execa("git", ["reset", "--hard", `origin/${baseBranch}`], {
+					cwd: repoPath,
+					reject: true,
+					timeout: 15_000,
+				});
+			} catch (err) {
+				logger.warn(`Failed to pull ${baseBranch} in ${repoPath}: ${formatError(err)}`);
+			}
 		}
 	}
 }
