@@ -40,7 +40,7 @@ import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
 	appendSessionLog,
-	autoMergePr,
+	autoMergeAllPrs,
 	buildRunOptions,
 	checkReconciliation,
 	defaultProvider,
@@ -326,7 +326,7 @@ export async function runNativeWorktreeSession(
 	if (worktreePath) await cleanupWorktree(repoPath, worktreePath);
 
 	// Auto-merge: merge PR after CI passes (if enabled)
-	await autoMergePr(prUrl, issue.id, config);
+	await autoMergeAllPrs([prUrl], issue.id, config);
 
 	await reporter.finish([prUrl]);
 
@@ -687,7 +687,7 @@ export async function runManualWorktreeSession(
 	await cleanupWorktree(repoPath, worktreePath);
 
 	// Auto-merge: merge PR after CI passes (if enabled)
-	await autoMergePr(prUrl, issue.id, config);
+	await autoMergeAllPrs([prUrl], issue.id, config);
 
 	await reporter.finish([prUrl]);
 

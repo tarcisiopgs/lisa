@@ -23,6 +23,7 @@ export interface KanbanCard {
 	queueOrder?: number;
 	substatus?: string;
 	ciStatus?: "pending" | "passing" | "failing";
+	autoMergeStatus?: "waiting" | "merging" | "merged" | "failed";
 	reviewers?: string[];
 	availableReviewers?: string[];
 }
@@ -249,6 +250,15 @@ export function useKanbanState(
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, ciStatus } : c)));
 		};
 
+		const onAutoMergeStatus = (
+			issueId: string,
+			status: "waiting" | "merging" | "merged" | "failed",
+		) => {
+			setCards((prev) =>
+				prev.map((c) => (c.id === issueId ? { ...c, autoMergeStatus: status } : c)),
+			);
+		};
+
 		const onReviewersUpdated = (issueId: string, reviewers: string[]) => {
 			setCards((prev) => prev.map((c) => (c.id === issueId ? { ...c, reviewers } : c)));
 		};
@@ -315,6 +325,7 @@ export function useKanbanState(
 		kanbanEmitter.on("issue:log-file", onLogFile);
 		kanbanEmitter.on("issue:substatus", onSubstatus);
 		kanbanEmitter.on("issue:ci-status", onCiStatus);
+		kanbanEmitter.on("issue:auto-merge-status", onAutoMergeStatus);
 		kanbanEmitter.on("issue:reviewers-updated", onReviewersUpdated);
 		kanbanEmitter.on("issue:available-reviewers", onAvailableReviewers);
 		kanbanEmitter.on("issue:output", onOutput);
@@ -368,6 +379,7 @@ export function useKanbanState(
 			kanbanEmitter.off("issue:log-file", onLogFile);
 			kanbanEmitter.off("issue:substatus", onSubstatus);
 			kanbanEmitter.off("issue:ci-status", onCiStatus);
+			kanbanEmitter.off("issue:auto-merge-status", onAutoMergeStatus);
 			kanbanEmitter.off("issue:reviewers-updated", onReviewersUpdated);
 			kanbanEmitter.off("issue:available-reviewers", onAvailableReviewers);
 			kanbanEmitter.off("issue:output", onOutput);

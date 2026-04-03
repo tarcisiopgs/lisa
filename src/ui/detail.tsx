@@ -166,7 +166,8 @@ export function IssueDetail({
 		? Math.min((card.availableReviewers ?? []).length + 2, 12)
 		: 0;
 	const ciRow = card.ciStatus ? 1 : 0;
-	const headerOverhead = 6 + prCount + logFileRow + ciRow + prMetaRow + pickerRows;
+	const autoMergeRow = card.autoMergeStatus ? 1 : 0;
+	const headerOverhead = 6 + prCount + logFileRow + ciRow + autoMergeRow + prMetaRow + pickerRows;
 	const bodyRows = Math.max(1, terminalRows - headerOverhead);
 
 	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
@@ -293,6 +294,32 @@ export function IssueDetail({
 							: card.ciStatus === "failing"
 								? "✖ failing"
 								: "⏳ pending"}
+					</Text>
+				</Box>
+			)}
+
+			{/* Auto-merge status */}
+			{card.autoMergeStatus && (
+				<Box marginTop={0}>
+					<Text color="gray" dimColor>
+						{"MERGE: "}
+					</Text>
+					<Text
+						color={
+							card.autoMergeStatus === "merged"
+								? "magenta"
+								: card.autoMergeStatus === "failed"
+									? "red"
+									: "yellow"
+						}
+					>
+						{card.autoMergeStatus === "merged"
+							? `✔ merged (${card.prUrls.length} PR${card.prUrls.length > 1 ? "s" : ""})`
+							: card.autoMergeStatus === "failed"
+								? "✖ failed"
+								: card.autoMergeStatus === "merging"
+									? "⏳ merging..."
+									: "⏳ waiting for CI"}
 					</Text>
 				</Box>
 			)}

@@ -208,15 +208,23 @@ export function Card({
 							{formatElapsed(card.finishedAt - card.startedAt)}
 						</Text>
 						{card.prUrls.length > 0 && (
-							<Text color={card.merged ? "magenta" : "yellow"} dimColor>
-								{card.merged ? "PR✔" : "PR"}
-								{card.ciStatus === "pending"
-									? "⏳"
-									: card.ciStatus === "passing"
-										? "✔"
-										: card.ciStatus === "failing"
-											? "✖"
-											: ""}
+							<Text
+								color={
+									card.autoMergeStatus === "failed"
+										? "red"
+										: card.merged || card.autoMergeStatus === "merged"
+											? "magenta"
+											: "yellow"
+								}
+								dimColor
+							>
+								{card.merged || card.autoMergeStatus === "merged"
+									? "PR✔"
+									: card.autoMergeStatus === "waiting" || card.autoMergeStatus === "merging"
+										? "PR⏳"
+										: card.autoMergeStatus === "failed"
+											? "PR✖"
+											: "PR"}
 							</Text>
 						)}
 					</Box>

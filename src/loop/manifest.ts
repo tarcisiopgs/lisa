@@ -58,6 +58,35 @@ export function extractPrUrlFromOutput(output: string): string | null {
 	return null;
 }
 
+export function extractAllPrUrlsFromOutput(output: string): string[] {
+	const patterns = [
+		/https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/g,
+		/https?:\/\/[^/]*gitlab[^/]*\/[^/].+?\/-\/merge_requests\/\d+/g,
+		/https?:\/\/bitbucket\.org\/[^/]+\/[^/]+\/pull-requests\/\d+/g,
+	];
+	const urls = new Set<string>();
+	for (const pattern of patterns) {
+		for (const match of output.matchAll(pattern)) {
+			urls.add(match[0]);
+		}
+	}
+	return [...urls];
+}
+
+export function readAllManifestPrUrls(filePath: string): string[] {
+	if (!existsSync(filePath)) return [];
+	try {
+		const parsed = JSON.parse(readFileSync(filePath, "utf-8").trim());
+		if (Array.isArray(parsed)) {
+			return parsed.map((m: LisaManifest) => m.prUrl).filter((url): url is string => !!url);
+		}
+		const single = parsed as LisaManifest;
+		return single.prUrl ? [single.prUrl] : [];
+	} catch {
+		return [];
+	}
+}
+
 export function readPlanFile(filePath: string): ExecutionPlan | null {
 	if (!existsSync(filePath)) return null;
 	try {

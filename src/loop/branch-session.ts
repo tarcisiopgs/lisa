@@ -23,7 +23,7 @@ import type { Issue, LisaConfig, ModelSpec, Source } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import {
 	appendSessionLog,
-	autoMergePr,
+	autoMergeAllPrs,
 	buildRunOptions,
 	checkReconciliation,
 	defaultProvider,
@@ -35,7 +35,12 @@ import {
 	startInfra,
 	startReconciliationMonitor,
 } from "./helpers.js";
-import { extractPrUrlFromOutput, readManifestFile } from "./manifest.js";
+import {
+	extractAllPrUrlsFromOutput,
+	extractPrUrlFromOutput,
+	readAllManifestPrUrls,
+	readManifestFile,
+} from "./manifest.js";
 import type { SessionResult } from "./result.js";
 
 export async function runBranchSession(
@@ -135,13 +140,14 @@ export async function runBranchSession(
 	// (e.g. in multi-repo setups where changes happen in a sub-repo). In that
 	// case the root workspace has no git diff but the work is complete.
 	const manifest = readManifestFile(manifestPath);
+	const allManifestPrUrls = readAllManifestPrUrls(manifestPath);
 	try {
 		unlinkSync(manifestPath);
 	} catch {
 		/* best-effort cleanup */
 	}
 
-	let prUrl = manifest?.prUrl;
+	let prUrl = manifest?.prUrl ?? allManifestPrUrls[0];
 	if (!prUrl) {
 		const extractedUrl = extractPrUrlFromOutput(result.output);
 		if (extractedUrl) {
@@ -149,6 +155,14 @@ export async function runBranchSession(
 			prUrl = extractedUrl;
 		}
 	}
+
+	// Collect all PR URLs for multi-repo auto-merge
+	const allPrUrls = new Set<string>(allManifestPrUrls);
+	for (const url of extractAllPrUrlsFromOutput(result.output)) {
+		allPrUrls.add(url);
+	}
+	if (prUrl) allPrUrls.add(prUrl);
+	const prUrls = [...allPrUrls];
 
 	// Skip code-change check when the agent already created a PR — the working
 	// directory may be clean because the agent pushed from a sub-repo.
@@ -257,15 +271,15 @@ export async function runBranchSession(
 	}
 
 	// Auto-merge: merge PR after CI passes (if enabled)
-	await autoMergePr(prUrl, issue.id, config);
+	await autoMergeAllPrs(prUrls, issue.id, config);
 
-	await reporter.finish([prUrl]);
+	await reporter.finish(prUrls);
 
 	logger.ok(`Session ${session} complete for ${issue.id}`);
 	return {
 		success: true,
 		providerUsed: result.providerUsed,
-		prUrls: [prUrl],
+		prUrls,
 		fallback: result,
 	};
 }
