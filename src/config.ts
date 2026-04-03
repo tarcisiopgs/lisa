@@ -189,12 +189,14 @@ function parsePrConfig(raw: Partial<PrConfig> | undefined): PrConfig | undefined
 	const assignees = isStringArray(raw.assignees)
 		? raw.assignees.filter(isValidPrUsername)
 		: undefined;
+	const autoMerge = raw.auto_merge === true;
 
-	if (!reviewers?.length && !assignees?.length) return undefined;
+	if (!reviewers?.length && !assignees?.length && !autoMerge) return undefined;
 
 	return {
 		reviewers: reviewers?.length ? reviewers : undefined,
 		assignees: assignees?.length ? assignees : undefined,
+		auto_merge: autoMerge || undefined,
 	};
 }
 
