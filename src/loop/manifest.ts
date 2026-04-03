@@ -32,7 +32,13 @@ export function cleanupManifest(cwd: string, issueId?: string): void {
 export function readManifestFile(filePath: string): LisaManifest | null {
 	if (!existsSync(filePath)) return null;
 	try {
-		return JSON.parse(readFileSync(filePath, "utf-8").trim()) as LisaManifest;
+		const parsed = JSON.parse(readFileSync(filePath, "utf-8").trim());
+		// Agents may write an array of manifests for multi-repo issues.
+		// Extract the first entry that has a prUrl.
+		if (Array.isArray(parsed)) {
+			return (parsed.find((m: LisaManifest) => m.prUrl) as LisaManifest) ?? null;
+		}
+		return parsed as LisaManifest;
 	} catch {
 		/* non-fatal: malformed data */
 		return null;
