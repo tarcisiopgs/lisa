@@ -269,11 +269,14 @@ export async function pullBaseBranch(config: LisaConfig): Promise<void> {
 	}
 }
 
+/** Maximum time (ms) to wait for CI before auto-merging. */
+const AUTO_MERGE_CI_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const AUTO_MERGE_POLL_MS = 15_000; // 15 seconds
+
 /**
- * Auto-merge a PR after the session completes successfully.
- * Merges the PR, emits the merged event (which triggers pullBaseBranch),
- * and logs the result. Best-effort — merge failures are logged but do not
- * fail the session.
+ * Auto-merge a PR after CI passes. Polls CI status until it passes,
+ * then merges. Gives up on timeout or CI failure.
+ * Best-effort — failures are logged but do not fail the session.
  */
 export async function autoMergePr(
 	prUrl: string,
@@ -282,15 +285,54 @@ export async function autoMergePr(
 ): Promise<void> {
 	if (!config.pr?.auto_merge) return;
 
-	logger.log(`Auto-merging PR for ${issueId}...`);
-	const { mergePr } = await import("../git/merge.js");
-	const result = await mergePr(prUrl);
-	if (result.success) {
-		logger.ok(`Auto-merged: ${prUrl}`);
-		kanbanEmitter.emit("issue:merged", issueId);
-	} else {
-		logger.warn(`Auto-merge failed for ${issueId}: ${result.error}`);
+	const { checkPrCiStatus, mergePr } = await import("../git/merge.js");
+
+	logger.log(`Waiting for CI before auto-merge of ${issueId}...`);
+	kanbanEmitter.emit("issue:ci-status", issueId, "pending");
+
+	const deadline = Date.now() + AUTO_MERGE_CI_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		if (isShuttingDown() || hasUserQuitFromWatchPrompt()) return;
+
+		const ciStatus = await checkPrCiStatus(prUrl);
+
+		if (ciStatus === "passing") {
+			kanbanEmitter.emit("issue:ci-status", issueId, "passing");
+			logger.log(`CI passed for ${issueId}. Auto-merging...`);
+			const result = await mergePr(prUrl);
+			if (result.success) {
+				logger.ok(`Auto-merged: ${prUrl}`);
+				kanbanEmitter.emit("issue:merged", issueId);
+			} else {
+				logger.warn(`Auto-merge failed for ${issueId}: ${result.error}`);
+			}
+			return;
+		}
+
+		if (ciStatus === "failing") {
+			kanbanEmitter.emit("issue:ci-status", issueId, "failing");
+			logger.warn(`CI failed for ${issueId}. Skipping auto-merge.`);
+			return;
+		}
+
+		if (ciStatus === "unknown") {
+			// No CI configured — merge immediately
+			logger.log(`No CI checks found for ${issueId}. Auto-merging...`);
+			const result = await mergePr(prUrl);
+			if (result.success) {
+				logger.ok(`Auto-merged: ${prUrl}`);
+				kanbanEmitter.emit("issue:merged", issueId);
+			} else {
+				logger.warn(`Auto-merge failed for ${issueId}: ${result.error}`);
+			}
+			return;
+		}
+
+		// Still pending — wait and poll again
+		await sleep(AUTO_MERGE_POLL_MS);
 	}
+
+	logger.warn(`CI did not complete within timeout for ${issueId}. Skipping auto-merge.`);
 }
 
 /** Append session summary to log file (best-effort, ignores errors). */
