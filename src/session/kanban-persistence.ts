@@ -20,6 +20,7 @@ interface PersistedCard {
 	merged?: boolean;
 	logFile?: string;
 	substatus?: string;
+	ciStatus?: "pending" | "passing" | "failing";
 	outputLogTail: string[];
 }
 
@@ -40,6 +41,7 @@ function resolveCard(card: PersistedCard): KanbanCard {
 				finishedAt: card.finishedAt ?? Date.now(),
 				prUrls: card.prUrls,
 				merged: card.merged,
+				ciStatus: card.ciStatus,
 				logFile: card.logFile,
 				outputLog: card.outputLogTail.join("\n"),
 			};
@@ -66,6 +68,7 @@ function resolveCard(card: PersistedCard): KanbanCard {
 		skipped: card.skipped,
 		killed: card.killed,
 		merged: card.merged,
+		ciStatus: card.ciStatus,
 		logFile: card.logFile,
 		outputLog: card.outputLogTail.join("\n"),
 	};
@@ -165,6 +168,11 @@ class KanbanPersistence {
 
 		on("issue:substatus", (issueId: string, substatus: string) => {
 			this.updateCard(issueId, { substatus });
+			this.scheduleFlush();
+		});
+
+		on("issue:ci-status", (issueId: string, ciStatus: string) => {
+			this.updateCard(issueId, { ciStatus: ciStatus as PersistedCard["ciStatus"] });
 			this.scheduleFlush();
 		});
 

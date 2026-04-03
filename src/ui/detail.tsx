@@ -165,7 +165,8 @@ export function IssueDetail({
 	const pickerRows = showReviewerPicker
 		? Math.min((card.availableReviewers ?? []).length + 2, 12)
 		: 0;
-	const headerOverhead = 6 + prCount + logFileRow + prMetaRow + pickerRows;
+	const ciRow = card.ciStatus ? 1 : 0;
+	const headerOverhead = 6 + prCount + logFileRow + ciRow + prMetaRow + pickerRows;
 	const bodyRows = Math.max(1, terminalRows - headerOverhead);
 
 	const lines = useMemo(() => processOutputLines(card.outputLog), [card.outputLog]);
@@ -275,6 +276,26 @@ export function IssueDetail({
 						</Text>
 					</Box>
 				))}
+
+			{/* CI status */}
+			{card.ciStatus && (
+				<Box marginTop={0}>
+					<Text color="gray" dimColor>
+						{"CI: "}
+					</Text>
+					<Text
+						color={
+							card.ciStatus === "passing" ? "green" : card.ciStatus === "failing" ? "red" : "yellow"
+						}
+					>
+						{card.ciStatus === "passing"
+							? "✔ passing"
+							: card.ciStatus === "failing"
+								? "✖ failing"
+								: "⏳ pending"}
+					</Text>
+				</Box>
+			)}
 
 			{/* PR metadata: reviewers + assignees */}
 			{hasPrMeta && (

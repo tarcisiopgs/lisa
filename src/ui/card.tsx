@@ -210,6 +210,13 @@ export function Card({
 						{card.prUrls.length > 0 && (
 							<Text color={card.merged ? "magenta" : "yellow"} dimColor>
 								{card.merged ? "PR✔" : "PR"}
+								{card.ciStatus === "pending"
+									? "⏳"
+									: card.ciStatus === "passing"
+										? "✔"
+										: card.ciStatus === "failing"
+											? "✖"
+											: ""}
 							</Text>
 						)}
 					</Box>
