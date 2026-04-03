@@ -21,6 +21,7 @@ interface PersistedCard {
 	logFile?: string;
 	substatus?: string;
 	ciStatus?: "pending" | "passing" | "failing";
+	autoMergeStatus?: "waiting" | "merging" | "merged" | "failed";
 	outputLogTail: string[];
 }
 
@@ -42,6 +43,7 @@ function resolveCard(card: PersistedCard): KanbanCard {
 				prUrls: card.prUrls,
 				merged: card.merged,
 				ciStatus: card.ciStatus,
+				autoMergeStatus: card.autoMergeStatus,
 				logFile: card.logFile,
 				outputLog: card.outputLogTail.join("\n"),
 			};
@@ -69,6 +71,7 @@ function resolveCard(card: PersistedCard): KanbanCard {
 		killed: card.killed,
 		merged: card.merged,
 		ciStatus: card.ciStatus,
+		autoMergeStatus: card.autoMergeStatus,
 		logFile: card.logFile,
 		outputLog: card.outputLogTail.join("\n"),
 	};
@@ -173,6 +176,13 @@ class KanbanPersistence {
 
 		on("issue:ci-status", (issueId: string, ciStatus: string) => {
 			this.updateCard(issueId, { ciStatus: ciStatus as PersistedCard["ciStatus"] });
+			this.scheduleFlush();
+		});
+
+		on("issue:auto-merge-status", (issueId: string, autoMergeStatus: string) => {
+			this.updateCard(issueId, {
+				autoMergeStatus: autoMergeStatus as PersistedCard["autoMergeStatus"],
+			});
 			this.scheduleFlush();
 		});
 
