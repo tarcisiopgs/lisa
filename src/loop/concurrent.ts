@@ -11,6 +11,7 @@ import { kanbanEmitter } from "../ui/state.js";
 import {
 	checkIssueSpec,
 	checkoutBaseBranches,
+	interruptibleSleep,
 	moveToInProgress,
 	pullBaseBranch,
 	refreshKanban,
@@ -221,7 +222,11 @@ export async function runConcurrentLoop(
 						);
 						kanbanEmitter.emit("work:watching");
 						setTitle("Lisa \u2014 watching...");
-						await sleep(WATCH_POLL_INTERVAL_MS);
+						await interruptibleSleep(WATCH_POLL_INTERVAL_MS);
+						if (hasUserQuitFromWatchPrompt() || isShuttingDown()) {
+							noMoreIssues = true;
+							break;
+						}
 						kanbanEmitter.emit("work:watch-resume");
 					}
 					// Don't count this as a session — tentativeSession was never committed

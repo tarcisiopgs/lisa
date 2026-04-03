@@ -14,6 +14,7 @@ import { runBranchSession } from "./branch-session.js";
 import {
 	checkIssueSpec,
 	checkoutBaseBranches,
+	interruptibleSleep,
 	moveToInProgress,
 	pullBaseBranch,
 	refreshKanban,
@@ -152,7 +153,10 @@ export async function runSequentialLoop(
 					logger.ok(`Resuming watch mode (polling every ${WATCH_POLL_INTERVAL_MS / 1000}s)...`);
 					kanbanEmitter.emit("work:watching");
 					setTitle("Lisa \u2014 watching...");
-					await sleep(WATCH_POLL_INTERVAL_MS);
+					await interruptibleSleep(WATCH_POLL_INTERVAL_MS);
+					if (hasUserQuitFromWatchPrompt() || isShuttingDown()) {
+						break;
+					}
 					kanbanEmitter.emit("work:watch-resume");
 					session--;
 					continue;
@@ -162,7 +166,10 @@ export async function runSequentialLoop(
 				);
 				kanbanEmitter.emit("work:watching");
 				setTitle("Lisa \u2014 watching...");
-				await sleep(WATCH_POLL_INTERVAL_MS);
+				await interruptibleSleep(WATCH_POLL_INTERVAL_MS);
+				if (hasUserQuitFromWatchPrompt() || isShuttingDown()) {
+					break;
+				}
 				kanbanEmitter.emit("work:watch-resume");
 				session--;
 				continue;

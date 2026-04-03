@@ -36,7 +36,9 @@ import { validateIssueSpec } from "../validation.js";
 import type { SessionResult } from "./result.js";
 import {
 	activeProviderPids,
+	hasUserQuitFromWatchPrompt,
 	isLoopPaused,
+	isShuttingDown,
 	reconciliationSet,
 	userKilledSet,
 	userSkippedSet,
@@ -132,6 +134,18 @@ export async function checkoutBaseBranches(config: LisaConfig, workspace: string
 
 export function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Sleep that can be interrupted by shutdown or quit signals.
+ * Polls every second instead of blocking for the full duration.
+ */
+export async function interruptibleSleep(ms: number): Promise<void> {
+	const end = Date.now() + ms;
+	while (Date.now() < end) {
+		if (isShuttingDown() || hasUserQuitFromWatchPrompt()) return;
+		await sleep(Math.min(1000, end - Date.now()));
+	}
 }
 
 export async function waitIfPaused(): Promise<void> {
@@ -252,6 +266,30 @@ export async function pullBaseBranch(config: LisaConfig): Promise<void> {
 				logger.warn(`Failed to pull ${baseBranch} in ${repoPath}: ${formatError(err)}`);
 			}
 		}
+	}
+}
+
+/**
+ * Auto-merge a PR after the session completes successfully.
+ * Merges the PR, emits the merged event (which triggers pullBaseBranch),
+ * and logs the result. Best-effort — merge failures are logged but do not
+ * fail the session.
+ */
+export async function autoMergePr(
+	prUrl: string,
+	issueId: string,
+	config: LisaConfig,
+): Promise<void> {
+	if (!config.pr?.auto_merge) return;
+
+	logger.log(`Auto-merging PR for ${issueId}...`);
+	const { mergePr } = await import("../git/merge.js");
+	const result = await mergePr(prUrl);
+	if (result.success) {
+		logger.ok(`Auto-merged: ${prUrl}`);
+		kanbanEmitter.emit("issue:merged", issueId);
+	} else {
+		logger.warn(`Auto-merge failed for ${issueId}: ${result.error}`);
 	}
 }
 
