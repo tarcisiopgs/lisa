@@ -9,6 +9,7 @@ import type { LisaConfig } from "../types/index.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { runConcurrentLoop } from "./concurrent.js";
 import { ensureWorkspaceContext } from "./context-generation.js";
+import { pullBaseBranch } from "./helpers.js";
 import type { LoopOptions } from "./models.js";
 import { resolveModels } from "./models.js";
 import { recoverOrphanIssues } from "./recovery.js";
@@ -39,6 +40,12 @@ export async function runLoop(config: LisaConfig, opts: LoopOptions): Promise<vo
 			logger.warn(`Background context generation failed: ${formatError(err)}`);
 		});
 	}
+
+	// Pull latest code whenever a merge is detected so subsequent sessions
+	// work on up-to-date code (best-effort, non-blocking)
+	kanbanEmitter.on("issue:merged", () => {
+		pullBaseBranch(config).catch(() => {});
+	});
 
 	// Listen for TUI merge-comment events to post a comment on the issue tracker
 	kanbanEmitter.on("issue:merge-comment", async (issueId: string, prUrls: string[]) => {
