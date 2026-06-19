@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Lisa?
 
-A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider, Codex) and delivers pull requests via GitHub, GitLab, or Bitbucket. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
+A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider, Codex, Kilo Code, MiMo Code) and delivers pull requests via GitHub, GitLab, or Bitbucket. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
 
 ## Language
 
@@ -147,6 +147,8 @@ src/
 │   ├── goose.ts          # Goose (Block): goose run --text
 │   ├── aider.ts          # Aider: aider --message ... --yes-always [--model MODEL]
 │   ├── codex.ts          # OpenAI Codex: codex --approval-mode full-auto
+│   ├── kilo.ts           # Kilo Code: kilo run --auto
+│   ├── mimo.ts           # MiMo Code: mimo run --dangerously-skip-permissions
 │   ├── pty.ts            # PTY-based provider execution (alternative to sh -c)
 │   ├── output-buffer.ts  # Provider output buffering
 │   ├── heap.ts           # Priority heap for model scheduling

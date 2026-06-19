@@ -130,6 +130,21 @@ export function fetchOpenCodeModels(): string[] {
 	}
 }
 
+export function fetchMimoModels(): string[] {
+	try {
+		const raw = execSync("mimo models", { encoding: "utf-8", timeout: 10000 });
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
+		const clean = raw.replace(/\x1b\[[0-9;]*[mGKHFA-Z]/g, "");
+		return clean
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((m) => /^[a-z0-9][\w.-]*\/.+/i.test(m));
+	} catch (err) {
+		logger.verbose(`Failed to fetch MiMo models: ${formatError(err)}`);
+		return [];
+	}
+}
+
 export function detectPlatformFromRemoteUrl(remoteUrl: string): PRPlatform | null {
 	if (/github\.com/.test(remoteUrl)) return "cli"; // GitHub → default to CLI
 	if (/gitlab\./.test(remoteUrl)) return "gitlab";

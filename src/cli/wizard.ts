@@ -21,6 +21,7 @@ import {
 	detectPlatform,
 	fetchCopilotModels,
 	fetchCursorModels,
+	fetchMimoModels,
 	fetchOpenCodeModels,
 	getMissingEnvVars,
 	isCursorFreePlan,
@@ -94,6 +95,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		aider: "Aider",
 		codex: "OpenAI Codex",
 		kilo: "Kilo Code",
+		mimo: "MiMo Code",
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
@@ -136,7 +138,8 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 				`  ${pc.bold("OpenAI Codex")}       ${pc.dim("npm i -g @openai/codex")}\n` +
 				`  ${pc.bold("Goose")}              ${pc.dim("https://block.github.io/goose")}\n` +
 				`  ${pc.bold("Aider")}              ${pc.dim("pip install aider-chat")}\n` +
-				`  ${pc.bold("Kilo Code")}          ${pc.dim("npm i -g @kilocode/cli")}`,
+				`  ${pc.bold("Kilo Code")}          ${pc.dim("npm i -g @kilocode/cli")}\n` +
+				`  ${pc.bold("MiMo Code")}          ${pc.dim("npm i -g @mimo-ai/cli")}`,
 		);
 		return process.exit(1);
 	}
@@ -287,6 +290,12 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 						"google/gemini-2.5-pro",
 						"google/gemini-2.5-flash",
 					];
+	} else if (providerName === "mimo") {
+		const dynamic = fetchMimoModels();
+		availableModels =
+			dynamic.length > 0
+				? dynamic
+				: ["mimo/mimo-auto", "xiaomi/mimo-v2.5-pro", "xiaomi/mimo-v2.5", "xiaomi/mimo-v2-flash"];
 	}
 
 	if (availableModels && availableModels.length > 0) {
