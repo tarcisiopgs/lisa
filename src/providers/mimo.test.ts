@@ -84,6 +84,16 @@ describe("MimoProvider", () => {
 			expect(config.logLine).toContain("--model anthropic/claude-sonnet-4-6");
 		});
 
+		it("rejects a model with unsafe shell characters before spawning", async () => {
+			const result = await new MimoProvider().run("do something", {
+				...opts,
+				model: "bad;rm -rf /",
+			});
+			expect(result.success).toBe(false);
+			expect(result.output).toContain("unsafe characters");
+			expect(mockRunProvider).not.toHaveBeenCalled();
+		});
+
 		it("returns failure result when run throws", async () => {
 			mockRunProvider.mockRejectedValue(new Error("spawn failed"));
 			const result = await new MimoProvider().run("do something", opts);
