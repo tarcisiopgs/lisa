@@ -94,6 +94,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		aider: "Aider",
 		codex: "OpenAI Codex",
 		kilo: "Kilo Code",
+		mimo: "MiMo Code",
 	};
 
 	const providerModels: Partial<Record<ProviderName, string[]>> = {
