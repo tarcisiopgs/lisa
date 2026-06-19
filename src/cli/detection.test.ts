@@ -8,6 +8,7 @@ import {
 	detectGitRepos,
 	detectPlatformFromRemoteUrl,
 	fetchCopilotModels,
+	fetchMimoModels,
 	fetchOpenCodeModels,
 	getGitRepoName,
 	getVersion,
@@ -72,6 +73,36 @@ describe("fetchOpenCodeModels", () => {
 			throw new Error("command not found: opencode");
 		});
 		const result = fetchOpenCodeModels();
+		expect(result).toEqual([]);
+	});
+});
+
+describe("fetchMimoModels", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it("returns all provider/model lines from mimo models output", () => {
+		vi.mocked(execSync).mockReturnValue(
+			"mimo/mimo-auto\nxiaomi/mimo-v2.5-pro\nxiaomi/mimo-v2-flash\n",
+		);
+		const result = fetchMimoModels();
+		expect(result).toEqual(["mimo/mimo-auto", "xiaomi/mimo-v2.5-pro", "xiaomi/mimo-v2-flash"]);
+	});
+
+	it("filters out blank lines and lines without a slash", () => {
+		vi.mocked(execSync).mockReturnValue(
+			"\nmimo/mimo-auto\n\nsomegarbage\nhttps://mimo.xiaomi.com/docs\nxiaomi/mimo-v2.5\n",
+		);
+		const result = fetchMimoModels();
+		expect(result).toEqual(["mimo/mimo-auto", "xiaomi/mimo-v2.5"]);
+	});
+
+	it("returns empty array when mimo models command fails", () => {
+		vi.mocked(execSync).mockImplementation(() => {
+			throw new Error("command not found: mimo");
+		});
+		const result = fetchMimoModels();
 		expect(result).toEqual([]);
 	});
 });
