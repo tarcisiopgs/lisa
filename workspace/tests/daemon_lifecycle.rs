@@ -269,3 +269,41 @@ fn frame_larger_than_the_limit_closes_the_connection() {
     let mut conn = Conn::new(raw);
     assert!(conn.recv_daemon().is_err());
 }
+
+#[test]
+fn runtime_dir_that_is_a_symlink_is_refused_before_connecting() {
+    let tmp = short_tmp();
+    let real = tmp.path().join("elsewhere");
+    std::fs::create_dir_all(&real).unwrap_or_else(|e| panic!("{e}"));
+    // Um daemon "estranho" escuta no destino do symlink
+    let listener = UnixListener::bind(real.join("daemon.sock")).unwrap_or_else(|e| panic!("{e}"));
+    listener
+        .set_nonblocking(true)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let link = tmp.path().join("rt");
+    std::os::unix::fs::symlink(&real, &link).unwrap_or_else(|e| panic!("{e}"));
+    let paths = RuntimePaths::in_dir(link);
+    let c = Connector::new(paths, build("a"), Box::new(|| Ok(())));
+    assert!(c.connect(ClientKind::Ui).is_err());
+    assert!(
+        listener.accept().is_err(),
+        "the client must not connect through the symlink"
+    );
+}
+
+#[test]
+fn runtime_dir_with_loose_permissions_is_tightened() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = short_tmp();
+    let dir = tmp.path().join("rt");
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777))
+        .unwrap_or_else(|e| panic!("{e}"));
+    RuntimePaths::in_dir(dir.clone())
+        .ensure_dir()
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mode = std::fs::symlink_metadata(&dir)
+        .map(|m| m.permissions().mode() & 0o777)
+        .unwrap_or(0);
+    assert_eq!(mode, 0o700);
+}

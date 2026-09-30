@@ -33,6 +33,8 @@ pub enum Action {
     Send(ClientMsg),
     /// Toca o sino do terminal hospedeiro (atenção sem duplicar a notificação do sistema).
     Bell,
+    /// Guarda a permissão escolhida como padrão para os próximos worktrees (R9).
+    RememberAutonomy(bool),
     Quit,
 }
 
@@ -114,6 +116,8 @@ pub struct App {
     notice: Option<Notice>,
     window_focused: bool,
     exit_message: Option<String>,
+    /// Permissão pré-selecionada ao criar um worktree (R9).
+    default_autonomy: bool,
 }
 
 /// `~` no começo do caminho vira o HOME.
@@ -141,7 +145,12 @@ impl App {
             notice: None,
             window_focused: false,
             exit_message: None,
+            default_autonomy: false,
         }
+    }
+
+    pub fn set_default_autonomy(&mut self, autonomy: bool) {
+        self.default_autonomy = autonomy;
     }
 
     // ---- Leitura (render) ----
@@ -289,6 +298,17 @@ impl App {
     pub fn attach_msg(&self, env: Vec<(String, String)>) -> ClientMsg {
         let (cols, rows) = self.pane_size();
         ClientMsg::Attach { cols, rows, env }
+    }
+
+    /// Mensagens para (re)conectar: o daemon esquece o foco quando a UI cai.
+    pub fn attach_msgs(&self, env: Vec<(String, String)>) -> Vec<ClientMsg> {
+        vec![
+            self.attach_msg(env),
+            ClientMsg::Focus {
+                worktree: self.focused.clone(),
+                window_focused: self.window_focused,
+            },
+        ]
     }
 
     pub fn on_resize(&mut self, cols: u16, rows: u16) -> Vec<Action> {
@@ -571,11 +591,16 @@ impl App {
             .iter()
             .position(|a| a.available)
             .unwrap_or(0);
+        let supported = self
+            .workspace
+            .agents
+            .get(agent)
+            .is_some_and(|a| a.autonomy_supported);
         self.dialog = Some(Dialog::NewWorktree(NewWorktree {
             project,
             name: String::new(),
             agent,
-            autonomy: false,
+            autonomy: self.default_autonomy && supported,
             field: Field::Name,
             pending: false,
             error: None,
@@ -695,16 +720,20 @@ impl App {
                         }
                         d.pending = true;
                         d.error = None;
-                        return vec![Action::Send(ClientMsg::CreateWorktree {
-                            project: d.project.clone(),
-                            name: d.name.trim().to_owned(),
-                            agent: agent.name.clone(),
-                            permission: if d.autonomy {
-                                PermissionWire::FullAutonomy
-                            } else {
-                                PermissionWire::Normal
-                            },
-                        })];
+                        let autonomy = d.autonomy && agent.autonomy_supported;
+                        return vec![
+                            Action::Send(ClientMsg::CreateWorktree {
+                                project: d.project.clone(),
+                                name: d.name.trim().to_owned(),
+                                agent: agent.name.clone(),
+                                permission: if autonomy {
+                                    PermissionWire::FullAutonomy
+                                } else {
+                                    PermissionWire::Normal
+                                },
+                            }),
+                            Action::RememberAutonomy(autonomy),
+                        ];
                     }
                     _ => {}
                 }

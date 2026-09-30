@@ -104,6 +104,7 @@ impl Connector {
         kind: ClientKind,
         stop_agents: bool,
     ) -> Result<(Conn, HelloReply), ConnectError> {
+        self.paths.ensure_dir()?;
         if let Ok(stream) = UnixStream::connect(&self.paths.socket) {
             let mut conn = Conn::new(stream);
             self.handshake(&mut conn, ClientKind::Cli)?;
@@ -129,6 +130,7 @@ impl Connector {
     }
 
     fn handshake(&self, conn: &mut Conn, kind: ClientKind) -> Result<HelloReply, ConnectError> {
+        conn.set_read_timeout(Some(self.timeout))?;
         conn.send_hello(&Hello {
             magic: MAGIC,
             protocol_version: PROTOCOL_VERSION,
@@ -136,11 +138,14 @@ impl Connector {
             build_id: self.build.build_id.clone(),
             client_kind: kind,
         })?;
-        Ok(conn.recv_hello_reply()?)
+        let reply = conn.recv_hello_reply()?;
+        conn.set_read_timeout(None)?;
+        Ok(reply)
     }
 
     /// Conecta; sem daemon, sobe um e espera até o timeout.
     fn open(&self, kind: ClientKind) -> Result<(Conn, HelloReply), ConnectError> {
+        self.paths.ensure_dir()?;
         if let Ok(stream) = UnixStream::connect(&self.paths.socket) {
             let mut conn = Conn::new(stream);
             if let Ok(reply) = self.handshake(&mut conn, kind) {
@@ -168,6 +173,7 @@ impl Connector {
 
 /// Conecta a um daemon já rodando, sem subir outro nem esperar (hooks).
 pub fn connect_existing(paths: &RuntimePaths, build: &BuildInfo, kind: ClientKind) -> Option<Conn> {
+    paths.ensure_dir().ok()?;
     let stream = UnixStream::connect(&paths.socket).ok()?;
     let mut conn = Conn::new(stream);
     conn.set_read_timeout(Some(Duration::from_secs(1))).ok()?;

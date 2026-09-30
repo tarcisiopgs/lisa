@@ -19,12 +19,21 @@ pub struct LaunchRequest<'a> {
     pub rows: u16,
 }
 
-/// Shell de login do ambiente da UI, senão `/bin/sh`.
+/// Shells que entendem `-lc` com `"$0" "$@"`.
+const POSIX_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "dash", "ksh"];
+
+/// Shell de login do ambiente da UI quando é POSIX; senão `/bin/sh` (fish, nushell e
+/// tcsh não aceitam o script de exec, e o PATH já vem no ambiente da UI).
 fn login_shell(env: &[(String, String)]) -> String {
     env.iter()
         .find(|(k, _)| k == "SHELL")
         .map(|(_, v)| v.clone())
-        .filter(|v| !v.is_empty())
+        .filter(|v| {
+            std::path::Path::new(v)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| POSIX_SHELLS.contains(&n))
+        })
         .unwrap_or_else(|| "/bin/sh".to_owned())
 }
 
@@ -74,6 +83,15 @@ mod tests {
             launch.args,
             ["-lc", EXEC_SCRIPT, "claude", "--session-id", "abc"]
         );
+    }
+
+    #[test]
+    fn non_posix_login_shell_falls_back_to_sh() {
+        for shell in ["/opt/homebrew/bin/fish", "/usr/local/bin/nu", "/bin/tcsh"] {
+            let launch = build_launch(request(vec![("SHELL".into(), shell.into())]))
+                .unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(launch.program, "/bin/sh", "{shell}");
+        }
     }
 
     #[test]

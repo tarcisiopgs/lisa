@@ -17,7 +17,7 @@ use crate::protocol::work::{
     AgentOption, AgentState, ClientMsg, DaemonMsg, PermissionWire, ProjectView, Snapshot,
     WorkspaceState, WorktreeView,
 };
-use crate::registry::{Registry, RegistryError};
+use crate::registry::{Registry, RegistryError, execute_plan};
 use crate::session::hooks::write_claude_settings;
 use crate::session::launch::{LaunchRequest, build_launch};
 use crate::session::pty::Launch;
@@ -313,17 +313,26 @@ impl Inner {
 
     /// Começa a rastrear o estado de um agente recém-subido.
     fn track_spawn(&self, id: &str) {
-        let rich = lock(&self.registry)
+        let hooked = lock(&self.registry)
             .worktree(id)
             .and_then(|w| w.agent.as_deref())
             .and_then(AgentId::from_name)
             == Some(AgentId::Claude);
-        let mut tracker = Tracker::new(rich);
+        let mut tracker = if hooked {
+            Tracker::with_hooks()
+        } else {
+            Tracker::new(false)
+        };
         tracker.on(Signal::Spawned);
         lock(&self.trackers).insert(id.to_owned(), tracker);
         lock(&self.scanners).insert(id.to_owned(), OscScanner::default());
         lock(&self.last_output).insert(id.to_owned(), Instant::now());
         lock(&self.notified).remove(id);
+    }
+
+    /// Estado vem dos hooks do agente; BEL e OSC não mexem nele.
+    fn hooked(&self, pane: &str) -> bool {
+        lock(&self.trackers).get(pane).is_some_and(Tracker::hooks)
     }
 
     fn is_looking(&self, pane: &str) -> bool {
@@ -421,7 +430,15 @@ impl Inner {
         }
     }
 
-    fn create_worktree(&self, project: &str, name: &str, agent: &str, permission: PermissionWire) {
+    /// Validações rápidas aqui; o git (fetch pode levar até 30 s) roda numa thread,
+    /// sem segurar o registro, para não congelar os outros worktrees.
+    fn create_worktree(
+        self: &Arc<Self>,
+        project: &str,
+        name: &str,
+        agent: &str,
+        permission: PermissionWire,
+    ) {
         let Some(agent_id) = AgentId::from_name(agent) else {
             return self.error(format!("unknown agent {agent}"));
         };
@@ -442,15 +459,27 @@ impl Inner {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
         );
-        let outcome = lock(&self.registry).create_worktree(project, name, &git_env);
-        let outcome = match outcome {
-            Ok(o) => o,
+        let plan = lock(&self.registry).plan_worktree(project, name);
+        let plan = match plan {
+            Ok(p) => p,
             Err(e) => return self.error(e),
         };
-        if let Some(warning) = &outcome.warning {
-            self.send(&DaemonMsg::Notice(warning.clone()));
-        }
-        let id = outcome.worktree.id;
+        let inner = Arc::clone(self);
+        let agent = agent.to_owned();
+        thread::spawn(move || match execute_plan(&plan, &git_env) {
+            Ok(warning) => {
+                if let Some(w) = warning {
+                    inner.send(&DaemonMsg::Notice(w));
+                }
+                let id = lock(&inner.registry).add_planned(&plan).id;
+                inner.start_new_agent(&id, agent_id, &agent, permission);
+            }
+            Err(e) => inner.error(e),
+        });
+    }
+
+    fn start_new_agent(&self, id: &str, agent_id: AgentId, agent: &str, permission: Permission) {
+        let id = id.to_owned();
         let session_id = agents::spec(agent_id)
             .new_session_flag
             .map(|_| new_session_id());
@@ -479,30 +508,55 @@ impl Inner {
         self.broadcast_state();
     }
 
-    fn remove_worktree(&self, id: &str, force: bool) {
+    /// Checagens e remoção no git sem segurar o registro, numa thread.
+    fn remove_worktree(self: &Arc<Self>, id: &str, force: bool) {
+        let inner = Arc::clone(self);
+        let id = id.to_owned();
+        thread::spawn(move || inner.remove_worktree_now(&id, force));
+    }
+
+    fn remove_worktree_now(&self, id: &str, force: bool) {
         let refused = |block: RemovalBlock| DaemonMsg::RemovalRefused {
             id: id.to_owned(),
             reason: block.to_string(),
         };
-        if !force {
-            match lock(&self.registry).removal_check(id) {
-                Ok(Some(block)) => return self.send(&refused(block)),
-                Ok(None) => {}
-                Err(e) => return self.error(e),
-            }
+        let target = lock(&self.registry).removal_target(id);
+        let (wt, project) = match target {
+            Ok(t) => t,
+            Err(e) => return self.error(e),
+        };
+        let check = || {
+            (!wt.broken && wt.path.exists())
+                .then(|| {
+                    git::removal_block(
+                        &project.path,
+                        &wt.path,
+                        &wt.branch,
+                        &project.base_branch,
+                        project.remote.is_some(),
+                    )
+                })
+                .flatten()
+        };
+        // Antes de parar o agente: uma recusa não pode derrubá-lo
+        if !force && let Some(block) = check() {
+            return self.send(&refused(block));
         }
         self.sessions.stop(id);
-        let result = lock(&self.registry).remove_worktree(id, force);
-        match result {
-            Ok(()) => {
-                self.sessions.forget(id);
-                lock(&self.trackers).remove(id);
-                lock(&self.notified).remove(id);
-                lock(&self.last_sent).remove(id);
-            }
-            Err(RegistryError::Blocked(block)) => self.send(&refused(block)),
-            Err(e) => self.error(e),
+        // De novo depois de parar: o agente pode ter escrito durante a parada
+        if !force && let Some(block) = check() {
+            self.send(&refused(block));
+            return self.broadcast_state();
         }
+        if let Err(e) = git::remove_worktree(&project.path, &wt.path, &wt.branch) {
+            self.error(e);
+            return self.broadcast_state();
+        }
+        lock(&self.registry).forget_worktree(id);
+        self.sessions.forget(id);
+        lock(&self.trackers).remove(id);
+        lock(&self.notified).remove(id);
+        lock(&self.last_sent).remove(id);
         self.save();
         self.broadcast_state();
     }
@@ -535,6 +589,7 @@ impl Inner {
             {
                 // O fallback usa um id novo: é ele que vale para o próximo resume
                 Ok(true) => {
+                    inner.track_spawn(&id);
                     if let Some(wt) = lock(&inner.registry).worktree_mut(&id) {
                         wt.session_id = Some(fresh_id);
                     }
@@ -590,7 +645,12 @@ impl Inner {
                 window_focused,
             } => self.set_focus(worktree, window_focused),
             ClientMsg::Input { pane, bytes } => {
-                self.apply(&pane, Signal::UserInput);
+                // Digitar não é trabalhar: só um Enter submete. Agentes com hooks
+                // avisam o envio pelo UserPromptSubmit.
+                let hooked = lock(&self.trackers).get(&pane).is_some_and(Tracker::hooks);
+                if !hooked && bytes.contains(&b'\r') {
+                    self.apply(&pane, Signal::UserInput);
+                }
                 self.sessions.input(&pane, bytes);
             }
             ClientMsg::Resize { cols, rows } => {
@@ -641,7 +701,10 @@ fn spawn_event_loop(inner: Weak<Inner>, rx: Receiver<PaneEvent>) {
                 PaneEvent::Dirty(pane) => inner.mark_dirty(&pane),
                 PaneEvent::Exited { pane, .. } => {
                     inner.mark_dirty(&pane);
-                    inner.apply(&pane, Signal::Exited);
+                    // Saída de uma sessão já substituída (resume que caiu no fallback)
+                    if !inner.sessions.is_running(&pane) {
+                        inner.apply(&pane, Signal::Exited);
+                    }
                     inner.broadcast_state();
                 }
                 PaneEvent::Warning { message, .. } => inner.send(&DaemonMsg::Notice(message)),
@@ -651,7 +714,7 @@ fn spawn_event_loop(inner: Weak<Inner>, rx: Receiver<PaneEvent>) {
                         .get_mut(&pane)
                         .map(|s| s.scan(&bytes))
                         .unwrap_or_default();
-                    if !notices.is_empty() {
+                    if !notices.is_empty() && !inner.hooked(&pane) {
                         inner.apply(&pane, Signal::NeedsYou);
                     }
                     inner.apply(&pane, Signal::Output);
@@ -669,7 +732,11 @@ fn spawn_event_loop(inner: Weak<Inner>, rx: Receiver<PaneEvent>) {
                         inner.apply(&pane, signal);
                     }
                 }
-                PaneEvent::Bell(pane) => inner.apply(&pane, Signal::NeedsYou),
+                PaneEvent::Bell(pane) => {
+                    if !inner.hooked(&pane) {
+                        inner.apply(&pane, Signal::NeedsYou);
+                    }
+                }
             }
         }
     });

@@ -40,6 +40,8 @@ pub struct Tracker {
     rich: bool,
     /// Houve input do usuário desde a última transição.
     input_pending: bool,
+    /// Agente com hooks (Claude): hooks mandam no estado; teclas, BEL e OSC não.
+    hooks: bool,
 }
 
 impl Tracker {
@@ -49,7 +51,20 @@ impl Tracker {
             running: false,
             rich,
             input_pending: false,
+            hooks: false,
         }
+    }
+
+    /// Rastreador de um agente cujos hooks informam o estado.
+    pub fn with_hooks() -> Self {
+        Tracker {
+            hooks: true,
+            ..Tracker::new(true)
+        }
+    }
+
+    pub fn hooks(&self) -> bool {
+        self.hooks
     }
 
     pub fn state(&self) -> AgentState {

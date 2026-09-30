@@ -59,8 +59,10 @@ pub fn setup() -> Env {
     let bin = root.join("bin");
     std::fs::create_dir_all(&bin).unwrap_or_else(|e| panic!("{e}"));
     // SHELL de teste: `shell -lc SCRIPT agent args...` → executa bin/agent args...
+    // Nome POSIX (`bash`) para a Lisa aceitá-lo como shell de login
+    std::fs::create_dir_all(bin.join("shells")).unwrap_or_else(|e| panic!("{e}"));
     write_exec(
-        &bin.join("fakeshell"),
+        &bin.join("shells/bash"),
         &format!("#!/bin/sh\nshift 2\nexec {}/\"$@\"\n", bin.display()),
     );
     // Agente falso "claude": mostra os argumentos, ecoa linhas e dispara os hooks do
@@ -75,12 +77,14 @@ hook() {
   exe=$(sed -n "s/.*\"command\": \"'\(.*\)' hook $1\".*/\1/p" "$settings" | head -1)
   printf '%s' "$2" | "$exe" hook "$1"
 }
+case " $* " in *" --resume "*) [ -f .fail-resume ] && { echo "no such session"; exit 1; };; esac
 echo "fake-claude-ready args:$*"
 [ -n "$settings" ] && hook SessionStart '{"session_id":"sess-from-hook"}'
 while IFS= read -r line; do
   case "$line" in
     permit) hook Notification '{"notification_type":"permission_prompt"}';;
     finish) hook Stop '{}';;
+    ding) printf '\a';;
     *) echo "echo:$line";;
   esac
 done
@@ -152,7 +156,7 @@ pub fn ui(env: &Env, connector: &Connector) -> Conn {
     let ui_env = vec![
         (
             "SHELL".into(),
-            env.bin.join("fakeshell").display().to_string(),
+            env.bin.join("shells/bash").display().to_string(),
         ),
         (
             "PATH".into(),

@@ -3,7 +3,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -48,21 +48,47 @@ impl RuntimePaths {
         {
             return RuntimePaths::in_dir(PathBuf::from(xdg).join("lisa"));
         }
+        // macOS: o TMPDIR já é por usuário (/var/folders/...), fora do /tmp compartilhado
+        if cfg!(target_os = "macos")
+            && let Some(tmp) = std::env::var_os("TMPDIR")
+        {
+            return RuntimePaths::in_dir(PathBuf::from(tmp).join("lisa"));
+        }
         let uid = rustix::process::getuid().as_raw();
         RuntimePaths::in_dir(PathBuf::from(format!("/tmp/lisa-{uid}")))
     }
 
-    /// Cria o diretório 0700 e confere que pertence ao usuário atual.
+    /// Cria o diretório 0700 e confere, sem seguir symlinks, que é um diretório do
+    /// usuário atual. Um diretório preparado por outro usuário (ou um symlink) é recusado
+    /// antes de qualquer conexão: a UI manda o ambiente e as teclas por este socket.
     pub fn ensure_dir(&self) -> io::Result<()> {
-        std::fs::create_dir_all(&self.dir)?;
-        let meta = std::fs::metadata(&self.dir)?;
-        if meta.uid() != rustix::process::getuid().as_raw() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("{} belongs to another user", self.dir.display()),
-            ));
+        match std::fs::symlink_metadata(&self.dir) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                std::fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(&self.dir)?;
+            }
+            Err(e) => return Err(e),
+            Ok(_) => {}
         }
-        std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o700))
+        let meta = std::fs::symlink_metadata(&self.dir)?;
+        let refuse = |why: &str| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("refusing runtime dir {}: {why}", self.dir.display()),
+            ))
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return refuse("not a real directory");
+        }
+        if meta.uid() != rustix::process::getuid().as_raw() {
+            return refuse("it belongs to another user");
+        }
+        if meta.permissions().mode() & 0o777 != 0o700 {
+            std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(())
     }
 
     /// Lock exclusivo sem bloquear; `None` quando outro processo o segura.

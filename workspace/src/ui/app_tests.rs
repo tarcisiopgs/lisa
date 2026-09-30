@@ -452,3 +452,52 @@ fn cell(ch: char) -> crate::protocol::work::Cell {
         attrs: 0,
     }
 }
+
+#[test]
+fn the_remembered_permission_is_preselected_and_saved_again() {
+    let mut a = app();
+    a.set_default_autonomy(true);
+    a.on_key(ctrl('a'));
+    a.on_key(key(KeyCode::Char('n')));
+    type_text(&mut a, "auto");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(sent(&actions).iter().any(|m| matches!(
+        m,
+        ClientMsg::CreateWorktree {
+            permission: PermissionWire::FullAutonomy,
+            ..
+        }
+    )));
+    assert!(actions.contains(&Action::RememberAutonomy(true)));
+}
+
+#[test]
+fn a_remembered_full_autonomy_is_not_applied_to_an_agent_without_it() {
+    let mut a = app();
+    a.set_default_autonomy(true);
+    a.on_key(ctrl('a'));
+    a.on_key(key(KeyCode::Char('n')));
+    type_text(&mut a, "x");
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Down)); // opencode
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(sent(&actions).iter().any(|m| matches!(
+        m,
+        ClientMsg::CreateWorktree {
+            permission: PermissionWire::Normal,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn reattaching_resends_focus_so_the_pane_keeps_streaming() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    let msgs = a.attach_msgs(Vec::new());
+    assert!(matches!(msgs.first(), Some(ClientMsg::Attach { .. })));
+    assert!(msgs.contains(&ClientMsg::Focus {
+        worktree: Some("api/fix-login".into()),
+        window_focused: true
+    }));
+}

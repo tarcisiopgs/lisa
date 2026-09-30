@@ -31,7 +31,7 @@ fn connect(env: &Env, c: &Connector) -> Ui {
     let env_vars = vec![
         (
             "SHELL".into(),
-            env.bin.join("fakeshell").display().to_string(),
+            env.bin.join("shells/bash").display().to_string(),
         ),
         (
             "PATH".into(),

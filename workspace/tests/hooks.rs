@@ -205,3 +205,138 @@ fn hook_without_a_daemon_exits_zero_quickly() {
     assert!(status.success());
     assert!(started.elapsed() < Duration::from_secs(2));
 }
+
+fn state_of(conn: &mut lisa_workspace::protocol::Conn, id: &str, want: AgentState) {
+    state(conn, |s| {
+        s.worktrees.iter().any(|w| w.id == id && w.state == want)
+    });
+}
+
+/// O estado de `id` depois de `wait`, sem esperar mudança.
+fn settled_state(
+    conn: &mut lisa_workspace::protocol::Conn,
+    id: &str,
+    wait: Duration,
+) -> Option<AgentState> {
+    let deadline = std::time::Instant::now() + wait;
+    let mut last = None;
+    conn.set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap_or_else(|e| panic!("{e}"));
+    while std::time::Instant::now() < deadline {
+        if let Ok(DaemonMsg::State(s)) = conn.recv_daemon() {
+            last = s.worktrees.iter().find(|w| w.id == id).map(|w| w.state);
+        }
+    }
+    conn.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap_or_else(|e| panic!("{e}"));
+    last
+}
+
+#[test]
+fn typing_without_submitting_does_not_count_as_working() {
+    let env = setup();
+    let (c, _rec) = with_recorder(&env);
+    let mut conn = ui(&env, &c);
+    let a = create(&mut conn, &env, "a");
+    input(&mut conn, &a, "finish");
+    state_of(&mut conn, &a, AgentState::Done);
+    conn.send(&ClientMsg::Input {
+        pane: a.clone(),
+        bytes: b"half a prompt".to_vec(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_ne!(
+        settled_state(&mut conn, &a, Duration::from_millis(800)),
+        Some(AgentState::Working)
+    );
+}
+
+#[test]
+fn a_bell_from_a_hooked_agent_does_not_override_its_hook_state() {
+    let env = setup();
+    let (c, rec) = with_recorder(&env);
+    let mut conn = ui(&env, &c);
+    let a = create(&mut conn, &env, "a");
+    input(&mut conn, &a, "finish");
+    state_of(&mut conn, &a, AgentState::Done);
+    assert!(wait_count(&rec, 1));
+    input(&mut conn, &a, "ding");
+    assert_ne!(
+        settled_state(&mut conn, &a, Duration::from_millis(800)),
+        Some(AgentState::NeedsYou)
+    );
+    assert_eq!(rec.count(), 1);
+}
+
+#[test]
+fn an_agent_started_by_the_resume_fallback_is_tracked() {
+    let env = setup();
+    let (c, rec) = with_recorder(&env);
+    let mut conn = ui(&env, &c);
+    let a = create(&mut conn, &env, "a");
+    std::thread::sleep(Duration::from_millis(300));
+    conn.send(&ClientMsg::StopAgent { id: a.clone() })
+        .unwrap_or_else(|e| panic!("{e}"));
+    state(&mut conn, |s| {
+        s.worktrees.iter().any(|w| w.id == a && !w.running)
+    });
+    std::fs::write(env.root.join("workspaces/repo/a/.fail-resume"), "")
+        .unwrap_or_else(|e| panic!("{e}"));
+    conn.send(&ClientMsg::RestartAgent { id: a.clone() })
+        .unwrap_or_else(|e| panic!("{e}"));
+    until(&mut conn, |m| {
+        matches!(m, DaemonMsg::Notice(n) if n.contains("new session")).then_some(())
+    });
+    input(&mut conn, &a, "permit");
+    state_of(&mut conn, &a, AgentState::NeedsYou);
+    assert!(wait_count(&rec, 1));
+}
+
+#[test]
+fn a_slow_git_fetch_does_not_freeze_other_worktrees() {
+    let env = setup();
+    let (c, rec) = with_recorder(&env);
+    let mut conn = ui(&env, &c);
+    let a = create(&mut conn, &env, "a");
+    // Segundo projeto com um remote cujo fetch demora
+    let slow = env.root.join("slow");
+    std::fs::create_dir_all(&slow).unwrap_or_else(|e| panic!("{e}"));
+    git(&slow, &["init", "-q", "-b", "main"]);
+    std::fs::write(slow.join("f"), "x").unwrap_or_else(|e| panic!("{e}"));
+    git(&slow, &["add", "."]);
+    git(&slow, &["commit", "-q", "-m", "x"]);
+    git(&slow, &["config", "protocol.ext.allow", "always"]);
+    let sleeper = env.root.join("slow-remote.sh");
+    write_exec(&sleeper, "#!/bin/sh\nsleep 5\n");
+    git(
+        &slow,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("ext::{}", sleeper.display()),
+        ],
+    );
+    conn.send(&ClientMsg::AddProject {
+        path: slow.display().to_string(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    state(&mut conn, |s| s.projects.iter().any(|p| p.slug == "slow"));
+    conn.send(&ClientMsg::CreateWorktree {
+        project: "slow".into(),
+        name: "late".into(),
+        agent: "claude".into(),
+        permission: lisa_workspace::protocol::work::PermissionWire::Normal,
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    std::thread::sleep(Duration::from_millis(300));
+    let started = std::time::Instant::now();
+    input(&mut conn, &a, "permit");
+    state_of(&mut conn, &a, AgentState::NeedsYou);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "blocked for {:?}",
+        started.elapsed()
+    );
+    assert!(wait_count(&rec, 1));
+}

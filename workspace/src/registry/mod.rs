@@ -52,6 +52,45 @@ pub struct Worktree {
     pub broken: bool,
 }
 
+/// Worktree a criar: decidido com o registro travado, executado sem ele.
+#[derive(Debug, Clone)]
+pub struct WorktreePlan {
+    pub project: Project,
+    pub name: String,
+    pub branch: String,
+    pub dest: PathBuf,
+}
+
+/// Fetch da base e `git worktree add`, sem tocar no registro (pode levar segundos).
+/// Devolve um aviso quando o fetch falhou e a base veio do último ref conhecido.
+pub fn execute_plan(plan: &WorktreePlan, env: &git::Env) -> Result<Option<String>, RegistryError> {
+    let project = &plan.project;
+    let warning = project.remote.as_deref().and_then(|remote| {
+        git::fetch(
+            &project.path,
+            remote,
+            &project.base_branch,
+            env,
+            git::FETCH_TIMEOUT,
+        )
+        .err()
+        .map(|reason| {
+            format!(
+                "could not fetch {remote}/{}; using the last known version ({reason})",
+                project.base_branch
+            )
+        })
+    });
+    git::add_worktree(
+        &project.path,
+        project.remote.as_deref(),
+        &project.base_branch,
+        &plan.branch,
+        &plan.dest,
+    )?;
+    Ok(warning)
+}
+
 #[derive(Debug)]
 pub struct CreateOutcome {
     pub worktree: Worktree,
@@ -185,12 +224,8 @@ impl Registry {
         Ok(())
     }
 
-    pub fn create_worktree(
-        &mut self,
-        slug: &str,
-        name: &str,
-        env: &git::Env,
-    ) -> Result<CreateOutcome, RegistryError> {
+    /// Decide nome da branch e destino. Não executa git.
+    pub fn plan_worktree(&self, slug: &str, name: &str) -> Result<WorktreePlan, RegistryError> {
         let project = self
             .project(slug)
             .cloned()
@@ -200,45 +235,60 @@ impl Registry {
             .worktree_root
             .join(&project.slug)
             .join(branch.replace('/', "-"));
-
-        let warning = project.remote.as_deref().and_then(|remote| {
-            git::fetch(
-                &project.path,
-                remote,
-                &project.base_branch,
-                env,
-                git::FETCH_TIMEOUT,
-            )
-            .err()
-            .map(|reason| {
-                format!(
-                    "could not fetch {remote}/{}; using the last known version ({reason})",
-                    project.base_branch
-                )
-            })
-        });
-
-        git::add_worktree(
-            &project.path,
-            project.remote.as_deref(),
-            &project.base_branch,
-            &branch,
-            &dest,
-        )?;
-
-        let worktree = Worktree {
-            id: format!("{}/{}", project.slug, branch),
-            project: project.slug,
+        Ok(WorktreePlan {
+            project,
             name: name.trim().to_owned(),
             branch,
-            path: dest,
+            dest,
+        })
+    }
+
+    /// Registra um worktree já criado no disco.
+    pub fn add_planned(&mut self, plan: &WorktreePlan) -> Worktree {
+        let worktree = Worktree {
+            id: format!("{}/{}", plan.project.slug, plan.branch),
+            project: plan.project.slug.clone(),
+            name: plan.name.clone(),
+            branch: plan.branch.clone(),
+            path: plan.dest.clone(),
             agent: None,
             permission: None,
             session_id: None,
             broken: false,
         };
         self.worktrees.push(worktree.clone());
+        worktree
+    }
+
+    /// Planeja, executa e registra de uma vez (segura o registro durante o git).
+    pub fn create_worktree(
+        &mut self,
+        slug: &str,
+        name: &str,
+        env: &git::Env,
+    ) -> Result<CreateOutcome, RegistryError> {
+        let plan = self.plan_worktree(slug, name)?;
+        let warning = execute_plan(&plan, env)?;
+        let worktree = self.add_planned(&plan);
         Ok(CreateOutcome { worktree, warning })
+    }
+
+    /// Worktree e projeto para checar e remover sem segurar o registro.
+    pub fn removal_target(&self, id: &str) -> Result<(Worktree, Project), RegistryError> {
+        let wt = self
+            .worktree(id)
+            .cloned()
+            .ok_or_else(|| RegistryError::UnknownWorktree(id.to_owned()))?;
+        let project = self
+            .project(&wt.project)
+            .cloned()
+            .ok_or_else(|| RegistryError::UnknownProject(wt.project.clone()))?;
+        Ok((wt, project))
+    }
+
+    /// Tira o worktree do registro (o git já foi feito).
+    pub fn forget_worktree(&mut self, id: &str) {
+        self.worktrees.retain(|w| w.id != id);
     }
 
     /// O que impede remover sem forçar, se houver.

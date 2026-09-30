@@ -6,8 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::event::{
-    self, DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
-    Event, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    self, EnableBracketedPaste, EnableFocusChange, Event, KeyEventKind, KeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
@@ -18,6 +17,7 @@ use crate::protocol::{ClientKind, Conn, DaemonMsg};
 pub mod app;
 pub mod input;
 pub mod render;
+pub mod terminal;
 
 use app::{Action, App};
 
@@ -47,7 +47,7 @@ fn prompt_swap(live_agents: u32, can_keep: bool) -> io::Result<Swap> {
     }
     writeln!(err, "  r  restart the agents on the new version")?;
     writeln!(err, "  q  quit")?;
-    crossterm::terminal::enable_raw_mode()?;
+    let _raw = terminal::RawModeGuard::enable()?;
     let choice = loop {
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
@@ -60,7 +60,6 @@ fn prompt_swap(live_agents: u32, can_keep: bool) -> io::Result<Swap> {
             }
         }
     };
-    crossterm::terminal::disable_raw_mode()?;
     Ok(choice)
 }
 
@@ -123,10 +122,15 @@ pub fn run() -> anyhow::Result<()> {
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         );
     }
+    // Daqui em diante qualquer saída (inclusive `?` e pânico) restaura o terminal
+    let guard = terminal::TerminalGuard::new(enhanced);
 
     let size = terminal.size()?;
     let mut app = App::new(size.width, size.height);
-    writer.send(&app.attach_msg(ui_env()))?;
+    app.set_default_autonomy(terminal::load_default_autonomy(&terminal::prefs_path()));
+    for msg in app.attach_msgs(ui_env()) {
+        writer.send(&msg)?;
+    }
     let exit_message: Option<String>;
     let mut reconnected = false;
 
@@ -146,7 +150,9 @@ pub fn run() -> anyhow::Result<()> {
                         reconnected = true;
                         writer = conn.try_clone()?;
                         rx = spawn_reader(conn);
-                        writer.send(&app.attach_msg(ui_env()))?;
+                        for msg in app.attach_msgs(ui_env()) {
+                            writer.send(&msg)?;
+                        }
                         continue 'main;
                     }
                     exit_message = Some(format!(
@@ -184,6 +190,9 @@ pub fn run() -> anyhow::Result<()> {
                     let _ = out.write_all(b"\x07");
                     let _ = out.flush();
                 }
+                Action::RememberAutonomy(on) => {
+                    terminal::save_default_autonomy(&terminal::prefs_path(), on)
+                }
                 Action::Quit => {
                     exit_message = app.exit_message().map(str::to_owned);
                     break 'main;
@@ -192,11 +201,7 @@ pub fn run() -> anyhow::Result<()> {
         }
     }
 
-    if enhanced {
-        let _ = execute!(out, PopKeyboardEnhancementFlags);
-    }
-    let _ = execute!(out, DisableBracketedPaste, DisableFocusChange);
-    ratatui::restore();
+    drop(guard);
     if let Some(msg) = exit_message {
         eprintln!("{msg}");
     }
