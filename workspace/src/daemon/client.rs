@@ -166,6 +166,23 @@ impl Connector {
     }
 }
 
+/// Conecta a um daemon já rodando, sem subir outro nem esperar (hooks).
+pub fn connect_existing(paths: &RuntimePaths, build: &BuildInfo, kind: ClientKind) -> Option<Conn> {
+    let stream = UnixStream::connect(&paths.socket).ok()?;
+    let mut conn = Conn::new(stream);
+    conn.set_read_timeout(Some(Duration::from_secs(1))).ok()?;
+    conn.send_hello(&Hello {
+        magic: MAGIC,
+        protocol_version: PROTOCOL_VERSION,
+        binary_version: build.binary_version.clone(),
+        build_id: build.build_id.clone(),
+        client_kind: kind,
+    })
+    .ok()?;
+    let reply = conn.recv_hello_reply().ok()?;
+    (reply.protocol_version == PROTOCOL_VERSION).then_some(conn)
+}
+
 /// Re-executa este binário como daemon, com stdio no arquivo de log.
 pub fn spawn_current_exe(paths: &RuntimePaths) -> io::Result<()> {
     paths.ensure_dir()?;

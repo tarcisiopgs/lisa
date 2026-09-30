@@ -77,6 +77,13 @@ pub enum DaemonMsg {
         id: String,
         reason: String,
     },
+    /// Agente entrou em "precisa de você" ou "terminou" sem o usuário olhar: a UI
+    /// repassa ao terminal hospedeiro (OSC 777/9 e BEL).
+    Alert {
+        pane: String,
+        title: String,
+        body: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

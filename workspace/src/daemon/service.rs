@@ -3,11 +3,13 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use super::notify::{OsNotifier, SystemNotifier};
 use super::{SessionHost, UiSink};
 use crate::agents::{self, AgentId, Permission, SessionMode};
 use crate::git::{self, RemovalBlock};
@@ -16,8 +18,11 @@ use crate::protocol::work::{
     WorkspaceState, WorktreeView,
 };
 use crate::registry::{Registry, RegistryError};
+use crate::session::hooks::write_claude_settings;
 use crate::session::launch::{LaunchRequest, build_launch};
 use crate::session::pty::Launch;
+use crate::session::signals::{OscScanner, TitleKind, classify_title};
+use crate::session::state::{Signal, Tracker, Transition};
 use crate::session::{PaneEvent, SessionManager};
 
 /// Linhas de scrollback por agente (meta de memória da especificação).
@@ -26,6 +31,9 @@ pub const SCROLLBACK: usize = 2_000;
 const FRAME: Duration = Duration::from_millis(25);
 /// Janela em que um resume que falha cai para sessão nova.
 const RESUME_WINDOW: Duration = Duration::from_secs(3);
+/// Silêncio que marca "terminou" em agentes sem outros sinais (KTD12).
+pub const DEFAULT_SILENCE: Duration = Duration::from_secs(20);
+const NOTIFY_TITLE: &str = "Lisa";
 
 const PERMISSION_NORMAL: &str = "normal";
 const PERMISSION_FULL: &str = "full";
@@ -47,13 +55,29 @@ struct Inner {
     /// Última tela enviada por painel, base dos diffs.
     last_sent: Mutex<HashMap<String, Snapshot>>,
     dirty: Mutex<HashSet<String>>,
-    states: Mutex<HashMap<String, AgentState>>,
+    trackers: Mutex<HashMap<String, Tracker>>,
+    scanners: Mutex<HashMap<String, OscScanner>>,
+    last_output: Mutex<HashMap<String, Instant>>,
+    /// Último estado notificado por painel (deduplicação).
+    notified: Mutex<HashMap<String, AgentState>>,
+    ui_attached: AtomicBool,
+    notifier: Mutex<Arc<dyn SystemNotifier>>,
+    silence: Mutex<Duration>,
+    /// Binário chamado pelos hooks dos agentes.
+    hook_exe: Mutex<Option<PathBuf>>,
+    /// Diretório de runtime do daemon, repassado aos hooks.
+    runtime_dir: Mutex<Option<PathBuf>>,
+    hooks_dir: PathBuf,
     /// Aviso a entregar na primeira conexão (ex.: registro corrompido).
     pending_notice: Mutex<Option<String>>,
 }
 
 pub struct Workspace {
     inner: Arc<Inner>,
+}
+
+fn hooks_dir(state_dir: &std::path::Path) -> PathBuf {
+    state_dir.join("hooks")
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -89,6 +113,7 @@ fn new_session_id() -> String {
 impl Workspace {
     pub fn open(state_file: PathBuf, worktree_root: PathBuf) -> Result<Workspace, RegistryError> {
         let loaded = Registry::load(&state_file)?;
+        let state_file_parent = state_file.parent().map(PathBuf::from).unwrap_or_default();
         let (tx, rx) = mpsc::channel();
         let inner = Arc::new(Inner {
             registry: Mutex::new(loaded.registry.with_worktree_root(worktree_root)),
@@ -100,12 +125,45 @@ impl Workspace {
             focus: Mutex::new(Focus::default()),
             last_sent: Mutex::new(HashMap::new()),
             dirty: Mutex::new(HashSet::new()),
-            states: Mutex::new(HashMap::new()),
+            trackers: Mutex::new(HashMap::new()),
+            scanners: Mutex::new(HashMap::new()),
+            last_output: Mutex::new(HashMap::new()),
+            notified: Mutex::new(HashMap::new()),
+            ui_attached: AtomicBool::new(false),
+            notifier: Mutex::new(Arc::new(OsNotifier)),
+            silence: Mutex::new(DEFAULT_SILENCE),
+            hook_exe: Mutex::new(std::env::current_exe().ok()),
+            runtime_dir: Mutex::new(None),
+            hooks_dir: hooks_dir(&state_file_parent),
             pending_notice: Mutex::new(loaded.warning),
         });
         spawn_event_loop(Arc::downgrade(&inner), rx);
         spawn_render_loop(Arc::downgrade(&inner));
+        spawn_silence_loop(Arc::downgrade(&inner));
         Ok(Workspace { inner })
+    }
+
+    /// Binário que os hooks dos agentes chamam (padrão: este executável).
+    pub fn with_hook_exe(self, exe: PathBuf) -> Self {
+        *lock(&self.inner.hook_exe) = Some(exe);
+        self
+    }
+
+    /// Diretório de runtime repassado aos hooks para acharem este daemon.
+    pub fn with_runtime_dir(self, dir: PathBuf) -> Self {
+        *lock(&self.inner.runtime_dir) = Some(dir);
+        self
+    }
+
+    pub fn with_notifier(self, notifier: Arc<dyn SystemNotifier>) -> Self {
+        *lock(&self.inner.notifier) = notifier;
+        self
+    }
+
+    /// Silêncio que marca "terminou" em agentes sem outros sinais.
+    pub fn with_silence(self, silence: Duration) -> Self {
+        *lock(&self.inner.silence) = silence;
+        self
     }
 
     /// Estado atual como a UI o vê.
@@ -142,7 +200,7 @@ impl Inner {
 
     fn state(&self) -> WorkspaceState {
         let registry = lock(&self.registry);
-        let states = lock(&self.states);
+        let trackers = lock(&self.trackers);
         let projects = registry
             .projects()
             .iter()
@@ -166,7 +224,9 @@ impl Inner {
                     agent: w.agent.clone(),
                     autonomy: w.permission.as_deref() == Some(PERMISSION_FULL),
                     state: if running {
-                        states.get(&w.id).copied().unwrap_or(AgentState::Working)
+                        trackers
+                            .get(&w.id)
+                            .map_or(AgentState::Working, Tracker::state)
                     } else {
                         AgentState::Idle
                     },
@@ -217,16 +277,148 @@ impl Inner {
             Permission::Normal
         };
         let (cols, rows) = *lock(&self.size);
-        build_launch(LaunchRequest {
+        let mut env = lock(&self.env).clone();
+        env.retain(|(k, _)| k != "LISA_PANE_ID" && k != "LISA_WORKSPACE_RUNTIME_DIR");
+        env.push(("LISA_PANE_ID".into(), id.to_owned()));
+        if let Some(dir) = lock(&self.runtime_dir).as_ref() {
+            env.push((
+                "LISA_WORKSPACE_RUNTIME_DIR".into(),
+                dir.display().to_string(),
+            ));
+        }
+        let mut launch = build_launch(LaunchRequest {
             agent,
             permission,
             session,
             cwd: &wt.path,
-            env: lock(&self.env).clone(),
+            env,
             cols,
             rows,
         })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        // Claude: hooks por sessão para estados determinísticos (KTD12)
+        if agent == AgentId::Claude
+            && let Some(exe) = lock(&self.hook_exe).as_ref()
+        {
+            match write_claude_settings(&self.hooks_dir, exe) {
+                Ok(path) => {
+                    launch.args.push("--settings".into());
+                    launch.args.push(path.display().to_string());
+                }
+                Err(e) => self.send(&DaemonMsg::Notice(format!("agent hooks unavailable: {e}"))),
+            }
+        }
+        Ok(launch)
+    }
+
+    /// Começa a rastrear o estado de um agente recém-subido.
+    fn track_spawn(&self, id: &str) {
+        let rich = lock(&self.registry)
+            .worktree(id)
+            .and_then(|w| w.agent.as_deref())
+            .and_then(AgentId::from_name)
+            == Some(AgentId::Claude);
+        let mut tracker = Tracker::new(rich);
+        tracker.on(Signal::Spawned);
+        lock(&self.trackers).insert(id.to_owned(), tracker);
+        lock(&self.scanners).insert(id.to_owned(), OscScanner::default());
+        lock(&self.last_output).insert(id.to_owned(), Instant::now());
+        lock(&self.notified).remove(id);
+    }
+
+    fn is_looking(&self, pane: &str) -> bool {
+        let focus = lock(&self.focus);
+        self.ui_attached.load(Ordering::SeqCst)
+            && focus.window_focused
+            && focus.worktree.as_deref() == Some(pane)
+    }
+
+    fn apply(&self, pane: &str, signal: Signal) {
+        let transition = lock(&self.trackers)
+            .get_mut(pane)
+            .and_then(|t| t.on(signal));
+        if let Some(t) = transition {
+            self.on_transition(pane, t);
+        }
+    }
+
+    fn on_transition(&self, pane: &str, t: Transition) {
+        match t.to {
+            AgentState::NeedsYou | AgentState::Done => {
+                if self.is_looking(pane) {
+                    if t.to == AgentState::Done {
+                        self.apply(pane, Signal::Looked);
+                        return;
+                    }
+                } else {
+                    self.notify(pane, t.to);
+                }
+            }
+            AgentState::Working | AgentState::Idle => {
+                lock(&self.notified).remove(pane);
+            }
+        }
+        self.broadcast_state();
+    }
+
+    /// Notifica (R15), sem repetir enquanto o estado não muda.
+    fn notify(&self, pane: &str, state: AgentState) {
+        {
+            let mut notified = lock(&self.notified);
+            if notified.get(pane) == Some(&state) {
+                return;
+            }
+            notified.insert(pane.to_owned(), state);
+        }
+        let (name, agent) = lock(&self.registry)
+            .worktree(pane)
+            .map(|w| {
+                (
+                    w.name.clone(),
+                    w.agent.clone().unwrap_or_else(|| "agent".into()),
+                )
+            })
+            .unwrap_or_else(|| (pane.to_owned(), "agent".into()));
+        let body = match state {
+            AgentState::NeedsYou => format!("{name}: {agent} needs you"),
+            _ => format!("{name}: {agent} finished"),
+        };
+        let notifier = Arc::clone(&lock(&self.notifier));
+        notifier.notify(NOTIFY_TITLE, &body);
+        if self.ui_attached.load(Ordering::SeqCst) {
+            self.send(&DaemonMsg::Alert {
+                pane: pane.to_owned(),
+                title: NOTIFY_TITLE.into(),
+                body,
+            });
+        }
+    }
+
+    fn hook_event(&self, pane: &str, event: &str, payload: &str) {
+        let json: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
+        match event {
+            "Notification" => match json.get("notification_type").and_then(|v| v.as_str()) {
+                Some("permission_prompt" | "elicitation_dialog") => {
+                    self.apply(pane, Signal::NeedsYou)
+                }
+                Some("idle_prompt") => self.apply(pane, Signal::Done),
+                _ => {}
+            },
+            "Stop" => self.apply(pane, Signal::Done),
+            "UserPromptSubmit" => {
+                self.apply(pane, Signal::UserInput);
+                self.apply(pane, Signal::Output);
+            }
+            "SessionStart" => {
+                if let Some(sid) = json.get("session_id").and_then(|v| v.as_str()) {
+                    if let Some(wt) = lock(&self.registry).worktree_mut(pane) {
+                        wt.session_id = Some(sid.to_owned());
+                    }
+                    self.save();
+                }
+            }
+            _ => {}
+        }
     }
 
     fn create_worktree(&self, project: &str, name: &str, agent: &str, permission: PermissionWire) {
@@ -277,10 +469,10 @@ impl Inner {
         self.save();
         match self.launch_for(&id, SessionMode::New { session_id }) {
             Ok(launch) => {
+                self.track_spawn(&id);
                 if let Err(e) = self.sessions.start(&id, launch) {
                     self.error(format!("could not start {agent}: {e}"));
                 }
-                lock(&self.states).insert(id.clone(), AgentState::Working);
             }
             Err(e) => self.error(e),
         }
@@ -304,7 +496,8 @@ impl Inner {
         match result {
             Ok(()) => {
                 self.sessions.forget(id);
-                lock(&self.states).remove(id);
+                lock(&self.trackers).remove(id);
+                lock(&self.notified).remove(id);
                 lock(&self.last_sent).remove(id);
             }
             Err(RegistryError::Blocked(block)) => self.send(&refused(block)),
@@ -332,7 +525,7 @@ impl Inner {
             Ok(l) => l,
             Err(e) => return self.error(e),
         };
-        lock(&self.states).insert(id.to_owned(), AgentState::Working);
+        self.track_spawn(id);
         let inner = Arc::clone(self);
         let id = id.to_owned();
         thread::spawn(move || {
@@ -364,11 +557,14 @@ impl Inner {
             focus.window_focused = window_focused;
             changed
         };
-        if changed && let Some(pane) = worktree {
+        if changed && let Some(pane) = worktree.as_ref() {
             let (cols, rows) = *lock(&self.size);
-            self.sessions.resize(&pane, cols, rows);
-            lock(&self.last_sent).remove(&pane);
-            self.mark_dirty(&pane);
+            self.sessions.resize(pane, cols, rows);
+            lock(&self.last_sent).remove(pane);
+            self.mark_dirty(pane);
+        }
+        if window_focused && let Some(pane) = worktree {
+            self.apply(&pane, Signal::Looked);
         }
     }
 
@@ -376,6 +572,7 @@ impl Inner {
         match msg {
             ClientMsg::Ping | ClientMsg::HookEvent { .. } => {}
             ClientMsg::Attach { cols, rows, env } => {
+                self.ui_attached.store(true, Ordering::SeqCst);
                 *lock(&self.size) = (cols, rows);
                 *lock(&self.env) = env;
                 lock(&self.last_sent).clear();
@@ -392,7 +589,10 @@ impl Inner {
                 worktree,
                 window_focused,
             } => self.set_focus(worktree, window_focused),
-            ClientMsg::Input { pane, bytes } => self.sessions.input(&pane, bytes),
+            ClientMsg::Input { pane, bytes } => {
+                self.apply(&pane, Signal::UserInput);
+                self.sessions.input(&pane, bytes);
+            }
             ClientMsg::Resize { cols, rows } => {
                 *lock(&self.size) = (cols, rows);
                 let focused = lock(&self.focus).worktree.clone();
@@ -440,12 +640,60 @@ fn spawn_event_loop(inner: Weak<Inner>, rx: Receiver<PaneEvent>) {
             match event {
                 PaneEvent::Dirty(pane) => inner.mark_dirty(&pane),
                 PaneEvent::Exited { pane, .. } => {
-                    lock(&inner.states).insert(pane.clone(), AgentState::Idle);
                     inner.mark_dirty(&pane);
+                    inner.apply(&pane, Signal::Exited);
                     inner.broadcast_state();
                 }
                 PaneEvent::Warning { message, .. } => inner.send(&DaemonMsg::Notice(message)),
-                PaneEvent::Title { .. } | PaneEvent::Bell(_) | PaneEvent::Output { .. } => {}
+                PaneEvent::Output { pane, bytes } => {
+                    lock(&inner.last_output).insert(pane.clone(), Instant::now());
+                    let notices = lock(&inner.scanners)
+                        .get_mut(&pane)
+                        .map(|s| s.scan(&bytes))
+                        .unwrap_or_default();
+                    if !notices.is_empty() {
+                        inner.apply(&pane, Signal::NeedsYou);
+                    }
+                    inner.apply(&pane, Signal::Output);
+                }
+                PaneEvent::Title { pane, title } => {
+                    if let Some(kind) = classify_title(&title) {
+                        if let Some(t) = lock(&inner.trackers).get_mut(&pane) {
+                            t.mark_rich();
+                        }
+                        let signal = if kind == TitleKind::Idle {
+                            Signal::TitleIdle
+                        } else {
+                            Signal::TitleWorking
+                        };
+                        inner.apply(&pane, signal);
+                    }
+                }
+                PaneEvent::Bell(pane) => inner.apply(&pane, Signal::NeedsYou),
+            }
+        }
+    });
+}
+
+/// Marca "terminou" em agentes sem sinais que ficaram em silêncio (KTD12).
+fn spawn_silence_loop(inner: Weak<Inner>) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(200));
+            let Some(inner) = inner.upgrade() else { break };
+            let silence = *lock(&inner.silence);
+            let quiet: Vec<String> = {
+                let trackers = lock(&inner.trackers);
+                let last = lock(&inner.last_output);
+                trackers
+                    .iter()
+                    .filter(|(_, t)| t.running() && !t.rich() && t.state() == AgentState::Working)
+                    .filter(|(pane, _)| last.get(*pane).is_some_and(|at| at.elapsed() >= silence))
+                    .map(|(pane, _)| pane.clone())
+                    .collect()
+            };
+            for pane in quiet {
+                inner.apply(&pane, Signal::Silence);
             }
         }
     });
@@ -510,7 +758,12 @@ impl SessionHost for Workspace {
         self.inner.handle(msg);
     }
 
+    fn hook_event(&self, pane: &str, event: &str, payload: &str) {
+        self.inner.hook_event(pane, event, payload);
+    }
+
     fn ui_detached(&self) {
+        self.inner.ui_attached.store(false, Ordering::SeqCst);
         *lock(&self.inner.focus) = Focus::default();
         lock(&self.inner.last_sent).clear();
     }

@@ -16,6 +16,7 @@ use crate::protocol::{
 };
 
 pub mod client;
+pub mod notify;
 pub mod service;
 
 /// Onde ficam socket, lock e log. Caminho curto: `sun_path` do macOS aceita 104 bytes.
