@@ -300,7 +300,7 @@ describe("JiraSource", () => {
 
 			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
 			expect(searchCall).toBeDefined();
-			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			const body = JSON.parse(searchCall?.body ?? "{}") as { jql: string };
 			expect(body.jql).toContain(`project = "ENG"`);
 			expect(body.jql).toContain(`labels = "lisa"`);
 			// Uses numeric status ID instead of quoted name
@@ -340,7 +340,7 @@ describe("JiraSource", () => {
 
 			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
 			expect(searchCall).toBeDefined();
-			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			const body = JSON.parse(searchCall?.body ?? "{}") as { jql: string };
 			// Single quotes are escaped
 			expect(body.jql).toContain(`project = "ENG\\'S"`);
 			// Newlines are replaced with spaces
@@ -375,7 +375,7 @@ describe("JiraSource", () => {
 			});
 
 			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
-			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			const body = JSON.parse(searchCall?.body ?? "{}") as { jql: string };
 			// Double quotes, single quotes, and newlines are all escaped/stripped
 			expect(body.jql).toContain(`status = "It\\'s \\"ready\\" now"`);
 		});
@@ -403,7 +403,7 @@ describe("JiraSource", () => {
 			await source.fetchNextIssue(baseConfig);
 
 			const searchCall = capturedCalls.find((c) => c.url.includes("/search/jql"));
-			const body = JSON.parse(searchCall!.body ?? "{}") as { jql: string };
+			const body = JSON.parse(searchCall?.body ?? "{}") as { jql: string };
 			// Falls back to quoted status name
 			expect(body.jql).toContain(`status = "Backlog"`);
 		});

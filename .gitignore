@@ -21,3 +21,6 @@ docs/
 
 # planejamento local
 .planning/
+
+# Rust (modo Workspace)
+workspace/target/

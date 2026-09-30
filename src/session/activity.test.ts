@@ -52,7 +52,7 @@ describe("parseLastJsonlEntry", () => {
 
 	it("handles file with trailing newlines", () => {
 		const filePath = join(tmpDir, "trailing.jsonl");
-		writeFileSync(filePath, JSON.stringify({ type: "assistant", content: "hello" }) + "\n\n\n");
+		writeFileSync(filePath, `${JSON.stringify({ type: "assistant", content: "hello" })}\n\n\n`);
 
 		const result = parseLastJsonlEntry(filePath);
 		expect(result).not.toBeNull();

@@ -45,9 +45,8 @@ async function pollGitHubCi(branch: string, cwd: string): Promise<CiRun | null> 
 			url: string;
 		}[];
 
-		if (runs.length === 0) return null;
-
-		const run = runs[0]!;
+		const run = runs[0];
+		if (!run) return null;
 		let ciStatus: CiStatus;
 
 		if (run.status === "completed") {
@@ -134,9 +133,9 @@ export async function monitorCi(
 	issue: Issue,
 	models: ModelSpec[],
 	cwd: string,
-	logFile: string,
-	workspace: string,
-	lifecycleEnv: Record<string, string>,
+	_logFile: string,
+	_workspace: string,
+	_lifecycleEnv: Record<string, string>,
 	buildRunOpts: (extra?: Partial<RunOptions>) => RunOptions,
 ): Promise<CiMonitorResult> {
 	const ciConfig = config.ci_monitor;

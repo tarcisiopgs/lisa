@@ -24,7 +24,7 @@ export function parsePlanResponse(raw: string): PlannedIssue[] {
 	let cleaned = raw.trim();
 	const fenceMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
 	if (fenceMatch) {
-		cleaned = fenceMatch[1]!.trim();
+		cleaned = (fenceMatch[1] ?? "").trim();
 	}
 
 	// Try to find JSON object in the output

@@ -10,6 +10,11 @@ export function projectHash(cwd: string): string {
 	return createHash("sha256").update(absolute).digest("hex").slice(0, 12);
 }
 
+/** Diretório global da Lisa (`~/.lisa`), compartilhado com o modo Workspace. */
+export function getLisaHome(): string {
+	return join(homedir(), ".lisa");
+}
+
 export function getCacheDir(cwd: string): string {
 	let base: string;
 	if (process.env.XDG_CACHE_HOME) {

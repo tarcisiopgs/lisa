@@ -85,10 +85,10 @@ describe("parsePlanValidationResponse", () => {
 
 		const result = parsePlanValidationResponse(response);
 		expect(result).not.toBeNull();
-		expect(result!.passed).toBe(true);
-		expect(result!.findings).toHaveLength(1);
-		expect(result!.findings[0]!.dimension).toBe("verification");
-		expect(result!.refinedIssues).toBeUndefined();
+		expect(result?.passed).toBe(true);
+		expect(result?.findings).toHaveLength(1);
+		expect(result?.findings[0]?.dimension).toBe("verification");
+		expect(result?.refinedIssues).toBeUndefined();
 	});
 
 	it("parses a valid failed response with refined plan", () => {
@@ -120,11 +120,11 @@ describe("parsePlanValidationResponse", () => {
 
 		const result = parsePlanValidationResponse(response);
 		expect(result).not.toBeNull();
-		expect(result!.passed).toBe(false);
-		expect(result!.findings).toHaveLength(1);
-		expect(result!.refinedIssues).toHaveLength(1);
-		expect(result!.refinedIssues![0]!.title).toBe("Run migration");
-		expect(result!.refinedIssues![0]!.verifyCommand).toBe("npm run migrate");
+		expect(result?.passed).toBe(false);
+		expect(result?.findings).toHaveLength(1);
+		expect(result?.refinedIssues).toHaveLength(1);
+		expect(result?.refinedIssues?.[0]?.title).toBe("Run migration");
+		expect(result?.refinedIssues?.[0]?.verifyCommand).toBe("npm run migrate");
 	});
 
 	it("handles markdown-fenced JSON", () => {
@@ -140,8 +140,8 @@ describe("parsePlanValidationResponse", () => {
 
 		const result = parsePlanValidationResponse(response);
 		expect(result).not.toBeNull();
-		expect(result!.passed).toBe(true);
-		expect(result!.findings).toHaveLength(0);
+		expect(result?.passed).toBe(true);
+		expect(result?.findings).toHaveLength(0);
 	});
 
 	it("returns null for invalid JSON", () => {
@@ -169,7 +169,7 @@ describe("parsePlanValidationResponse", () => {
 
 		const result = parsePlanValidationResponse(response);
 		expect(result).not.toBeNull();
-		expect(result!.passed).toBe(false);
+		expect(result?.passed).toBe(false);
 	});
 
 	it("handles refined plan with missing optional fields", () => {
@@ -187,9 +187,9 @@ describe("parsePlanValidationResponse", () => {
 		});
 
 		const result = parsePlanValidationResponse(response);
-		expect(result!.refinedIssues).toHaveLength(2);
-		expect(result!.refinedIssues![0]!.acceptanceCriteria).toEqual([]);
-		expect(result!.refinedIssues![0]!.relevantFiles).toEqual([]);
-		expect(result!.refinedIssues![1]!.dependsOn).toEqual([1]);
+		expect(result?.refinedIssues).toHaveLength(2);
+		expect(result?.refinedIssues?.[0]?.acceptanceCriteria).toEqual([]);
+		expect(result?.refinedIssues?.[0]?.relevantFiles).toEqual([]);
+		expect(result?.refinedIssues?.[1]?.dependsOn).toEqual([1]);
 	});
 });

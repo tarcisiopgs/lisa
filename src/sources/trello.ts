@@ -240,11 +240,12 @@ async function resolveLabelsWithWarnings(boardId: string, names: string[]): Prom
 	const failed: string[] = [];
 
 	for (let i = 0; i < results.length; i++) {
-		const result = results[i]!;
+		const result = results[i];
+		if (!result) continue;
 		if (result.status === "fulfilled") {
 			resolved.push(result.value);
 		} else {
-			failed.push(names[i]!);
+			failed.push(names[i] ?? "");
 		}
 	}
 

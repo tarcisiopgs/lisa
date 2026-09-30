@@ -88,7 +88,7 @@ describe("GooseProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).not.toContain("--provider");
 		});
 
@@ -101,7 +101,7 @@ describe("GooseProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--provider gemini-cli");
 		});
 
@@ -113,7 +113,7 @@ describe("GooseProvider", () => {
 				model: "gemini-2.5-pro",
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--model gemini-2.5-pro");
 		});
 
@@ -124,7 +124,7 @@ describe("GooseProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).not.toContain("--model");
 		});
 	});

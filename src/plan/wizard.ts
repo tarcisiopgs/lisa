@@ -17,7 +17,7 @@ import { buildExecutionWaves } from "./waves.js";
  */
 export async function runPlanWizard(
 	plan: PlanResult,
-	planPath: string,
+	_planPath: string,
 	opts: RunPlanOptions,
 ): Promise<boolean> {
 	const workspace = opts.config.workspace;
@@ -85,7 +85,8 @@ function displayPlan(plan: PlanResult): void {
 	const sorted = [...plan.issues].sort((a, b) => a.order - b.order);
 
 	for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
-		const wave = waves[waveIdx]!;
+		const wave = waves[waveIdx];
+		if (!wave) continue;
 		const label = wave.length > 1 ? "parallel" : "sequential";
 		clack.log.info(pc.dim(`  Wave ${waveIdx + 1} (${label}):`));
 
@@ -118,7 +119,7 @@ function displayPlan(plan: PlanResult): void {
 	clack.log.info("");
 }
 
-async function editIssue(plan: PlanResult, workspace: string): Promise<void> {
+async function editIssue(plan: PlanResult, _workspace: string): Promise<void> {
 	if (plan.issues.length === 0) {
 		clack.log.warning("No issues to edit.");
 		return;
@@ -177,7 +178,8 @@ async function deleteIssue(plan: PlanResult, _workspace: string): Promise<void> 
 	const idx = plan.issues.findIndex((i) => i.order === choice);
 	if (idx === -1) return;
 
-	const removed = plan.issues.splice(idx, 1)[0]!;
+	const [removed] = plan.issues.splice(idx, 1);
+	if (!removed) return;
 
 	// Update dependsOn references
 	for (const issue of plan.issues) {
@@ -217,8 +219,8 @@ async function reorderIssues(plan: PlanResult, _workspace: string): Promise<void
 
 	// Build mapping: old order → new order
 	const oldToNew = new Map<number, number>();
-	for (let i = 0; i < newOrder.length; i++) {
-		oldToNew.set(newOrder[i]!, i + 1);
+	for (const [i, order] of newOrder.entries()) {
+		oldToNew.set(order, i + 1);
 	}
 
 	// Reassign orders and remap dependsOn references
@@ -332,7 +334,7 @@ export function markdownToIssue(content: string, original: PlannedIssue): Partia
 	const relevantFiles: string[] = [];
 	if (filesIdx > 0) {
 		for (let i = filesIdx + 1; i < lines.length; i++) {
-			const line = lines[i]!.trim();
+			const line = (lines[i] ?? "").trim();
 			if (line.startsWith("- ")) {
 				relevantFiles.push(line.replace(/^- /, ""));
 			} else if (line.startsWith("#")) {

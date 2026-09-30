@@ -1,5 +1,5 @@
 import type { PlannedIssue } from "../types/index.js";
-import { PlanParseError, parsePlanResponse } from "./parser.js";
+import { parsePlanResponse } from "./parser.js";
 
 export type StructuredPlanOutput =
 	| { type: "question"; text: string }
@@ -64,7 +64,7 @@ function extractStructuredJson(text: string): RawStructuredOutput | null {
 	// First try: look for JSON in markdown fences
 	const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
 	if (fenceMatch) {
-		const result = tryParseStructured(fenceMatch[1]!.trim());
+		const result = tryParseStructured((fenceMatch[1] ?? "").trim());
 		if (result) return result;
 	}
 

@@ -42,8 +42,8 @@ describe("persistence", () => {
 
 		const loaded = loadPlan(path);
 		expect(loaded).not.toBeNull();
-		expect(loaded!.goal).toBe("Add rate limiting");
-		expect(loaded!.issues).toHaveLength(1);
+		expect(loaded?.goal).toBe("Add rate limiting");
+		expect(loaded?.issues).toHaveLength(1);
 	});
 
 	it("returns null for non-existent file", () => {
@@ -56,7 +56,7 @@ describe("persistence", () => {
 
 		const result = loadLatestPlan(tmpDir);
 		expect(result).not.toBeNull();
-		expect(result![0].createdAt).toBe("2026-03-19T11:00:00.000Z");
+		expect(result?.[0].createdAt).toBe("2026-03-19T11:00:00.000Z");
 	});
 
 	it("loadLatestPlan returns null when all plans are created", () => {

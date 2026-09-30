@@ -88,8 +88,9 @@ function parsePrNumber(prUrl: string): string {
 function parseOwnerRepo(prUrl: string): { owner: string; repo: string } | null {
 	// Matches both https://github.com/owner/repo/pull/123 and similar patterns
 	const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\//);
-	if (!match) return null;
-	return { owner: match[1]!, repo: match[2]! };
+	const [, owner, repo] = match ?? [];
+	if (!owner || !repo) return null;
+	return { owner, repo };
 }
 
 async function fetchReviewDecision(prUrl: string, cwd: string): Promise<string | undefined> {
@@ -169,9 +170,9 @@ export async function monitorReview(
 	issue: Issue,
 	models: ModelSpec[],
 	cwd: string,
-	logFile: string,
+	_logFile: string,
 	workspace: string,
-	lifecycleEnv: Record<string, string>,
+	_lifecycleEnv: Record<string, string>,
 	buildRunOpts: (extra?: Partial<RunOptions>) => RunOptions,
 ): Promise<ReviewMonitorResult> {
 	const reviewConfig = config.review_monitor;

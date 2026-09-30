@@ -43,7 +43,8 @@ function makeConfig(overrides?: Partial<LisaConfig>): LisaConfig {
 
 // Helper to invoke the plan command's run function with typed args
 async function runPlanCommand(args: Record<string, unknown>) {
-	const run = plan.run!;
+	const run = plan.run;
+	if (!run) throw new Error("plan command has no run");
 	return run({ args: { _: [], ...args } as never, rawArgs: [], cmd: {} as never });
 }
 

@@ -38,7 +38,8 @@ export const runArgs = {
 	issue: { type: "string", description: "Run a specific issue by identifier or URL" },
 	provider: {
 		type: "string",
-		description: "AI provider (claude, gemini, opencode, copilot, cursor, goose, aider, codex)",
+		description:
+			"AI provider (claude, gemini, opencode, copilot, cursor, goose, aider, codex, kilo, mimo)",
 	},
 	source: {
 		type: "string",
@@ -88,7 +89,11 @@ export async function executeRun(args: Record<string, unknown>): Promise<void> {
 		"-h",
 	]);
 	for (const arg of argv) {
-		if (arg.startsWith("-") && !arg.startsWith("--no-") && !knownFlags.has(arg.split("=")[0]!)) {
+		if (
+			arg.startsWith("-") &&
+			!arg.startsWith("--no-") &&
+			!knownFlags.has(arg.split("=")[0] ?? arg)
+		) {
 			console.error(pc.red(`Unknown flag: ${arg}`));
 			console.error(pc.dim("Run `lisa --help` to see available options."));
 			throw new CliError(`Unknown flag: ${arg}`);

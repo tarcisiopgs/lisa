@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                            No projects yet                            │                            "
+"                                                                       │                            "
+"              p  add a project (path to a git repository)              │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                               ⏎ open · n new · p project · d remove · r restart · ? help · q quit  "

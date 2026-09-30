@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../types/index.js";
 import { CodexProvider } from "./codex.js";
 import { spawnWithPty } from "./pty.js";
-import { isCommandAvailable, resetAvailabilityCache } from "./run-provider.js";
+import { isCommandAvailable } from "./run-provider.js";
 
 vi.mock("./pty.js", () => ({
 	spawnWithPty: vi.fn(),
@@ -85,7 +85,7 @@ describe("CodexProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--dangerously-bypass-approvals-and-sandbox");
 			expect(command).toContain("--ephemeral");
 		});
@@ -98,7 +98,7 @@ describe("CodexProvider", () => {
 				model: "o4-mini",
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--model o4-mini");
 		});
 
@@ -109,7 +109,7 @@ describe("CodexProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).not.toContain("--model");
 		});
 	});

@@ -172,7 +172,8 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 
 	async function handleMergeRequest(card: KanbanCard) {
 		const { checkPrCiStatus } = await import("../git/merge.js");
-		const prUrl = card.prUrls[0]!;
+		const prUrl = card.prUrls[0];
+		if (!prUrl) return;
 		const ciStatus = await checkPrCiStatus(prUrl);
 		if (ciStatus === "passing" || ciStatus === "unknown") {
 			doMerge(card.id);
@@ -344,7 +345,7 @@ export function KanbanApp({ config, initialCards = [] }: KanbanAppProps) {
 			if (mergeConfirm === selectedCardId) {
 				if (input === "y") {
 					setMergeConfirm(null);
-					doMerge(selectedCardId!);
+					if (selectedCardId) doMerge(selectedCardId);
 					return;
 				}
 				if (input === "n" || key.escape) {

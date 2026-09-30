@@ -349,7 +349,7 @@ async function resolveUserIds(
 
 	// Individual resolution for misses
 	const stillMissing = uncached.filter((u) => !result.has(u));
-	const resolutions = await Promise.allSettled(
+	await Promise.allSettled(
 		stillMissing.map(async (username) => {
 			const res = await fetch(`${apiBase}/users?username=${encodeURIComponent(username)}`, {
 				headers: { "PRIVATE-TOKEN": token },

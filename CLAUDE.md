@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A deterministic autonomous issue resolver that connects project trackers (Linear, Trello, Plane, Shortcut, GitLab Issues, GitHub Issues, Jira) to AI coding agents (Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Cursor Agent, Goose, Aider, Codex, Kilo Code, MiMo Code) and delivers pull requests via GitHub, GitLab, or Bitbucket. Structured pipeline: fetch issue → activate → implement → validate → PR → update status.
 
+Lisa has two modes. **Autonomous** (TypeScript, `src/`) is the issue loop above. **Workspace** (Rust, `workspace/`) is a terminal UI where the user maps projects, creates git worktrees from a project's base branch and works interactively with any supported agent. A background daemon owns the agent terminals. `lisa` without arguments in an interactive terminal asks which mode to use.
+
 ## Language
 
 - All code, comments, documentation, git commits, PR titles, and PR descriptions must be in English.
@@ -26,6 +28,13 @@ pnpm run test:watch    # vitest (watch mode)
 pnpm run test:coverage # vitest run --coverage
 pnpm run ci            # lint + typecheck + test in parallel (concurrently)
 npm link               # Install `lisa` CLI globally
+
+# Workspace mode (Rust crate in workspace/)
+cd workspace && cargo test --locked                              # unit + integration tests
+cd workspace && cargo clippy --all-targets --locked -- -D warnings
+cd workspace && cargo fmt --check
+cd workspace && cargo build --release                            # target/release/lisa-workspace
+LISA_WORKSPACE_BIN=workspace/target/release/lisa-workspace lisa workspace  # run a local build
 
 # Run a single test file
 pnpm vitest run src/config.test.ts
@@ -163,6 +172,17 @@ src/
     ├── gitlab-issues.ts   # GitLab Issues REST API
     ├── github-issues.ts   # GitHub Issues REST API
     └── jira.ts            # Jira REST API
+
+workspace/                # Workspace mode (Rust crate `lisa-workspace`, one binary: daemon | ui | hook)
+└── src/
+    ├── main.rs           # clap subcommands: `daemon`, `ui`, `hook <event>`
+    ├── agents/           # Per-agent catalog: interactive command, full-autonomy flag, resume args
+    ├── git/              # Base branch detection, fetch, non-destructive worktree add/remove, removal checks
+    ├── registry/         # Projects + worktrees in ~/.lisa/workspace/state.json (atomic writes, daemon-only)
+    ├── protocol/         # u32-LE framed postcard messages; frozen control layer (Hello/HelloReply/Shutdown)
+    ├── daemon/           # Lifecycle (flock, socket, generation swap), service (registry+sessions+UI stream), notify
+    ├── session/          # PTY (portable-pty), daemon-side screen (alacritty_terminal), state tracker, signals, hooks
+    └── ui/               # ratatui client: app logic, input encoding, render (insta snapshots)
 ```
 
 ## Key Flows
@@ -172,9 +192,9 @@ src/
 Fetches issues from source, runs provider with fallback chain, creates PRs, updates issue status. On startup, recovers orphan issues stuck in `in_progress` from interrupted runs. Two session modes:
 
 - **Worktree** (`runWorktreeSession`): creates isolated `.worktrees/<branch>` per issue, auto-cleanup after PR.
-  - Single-repo: uses native worktree (Claude Code `--worktree` flag) if the primary provider supports it (`supportsNativeWorktree = true`), otherwise manages the worktree manually.
+  - Single-repo: Lisa manages the worktree itself. `Provider.supportsNativeWorktree` still exists, but no provider enables it: `ClaudeProvider` sets it to `false` because `--worktree` needs a TTY and hangs in non-interactive mode.
   - Multi-repo (`repos.length > 1`): two-phase — planning agent produces `.lisa-plan.json` with ordered steps, then sequential execution creates one worktree and one PR per repo.
-- **Branch** (`runBranchSession`): agent creates a branch in the current checkout. After implementation, reads `.lisa-manifest.json` for the branch name; falls back to `detectFeatureBranches()` heuristic.
+- **Branch** (`runBranchSession`): agent creates a branch in the current checkout. After implementation, reads `.lisa-manifest.json` for the branch name; falls back to `findBranchByIssueId()`.
 
 ### Provider model resolution (`loop/models.ts`)
 
@@ -203,7 +223,7 @@ If `git push` fails due to pre-push hooks (husky, lint, typecheck), Lisa re-invo
 
 ### Multi-repo (`git/worktree.ts`)
 
-`detectFeatureBranches()` uses 3-pass detection (issue ID in branch name → branch differs from base → git history search) to find all repos touched, creating one PR per repo.
+`determineRepoPath()` routes an issue to a repo (by `match` prefix) and `findBranchByIssueId()` finds the branch the agent created, creating one PR per repo.
 
 ### Session State (`session/state.ts`)
 
@@ -221,6 +241,22 @@ Configurable actions dispatched on session events. Default reactions: CI failure
 
 Reads Claude Code's JSONL session files (`~/.claude/projects/<encoded-path>/*.jsonl`) to detect agent activity state. Complements the git-status-based overseer — prevents false stuck kills when the agent is actively reading/analyzing code but hasn't produced git changes yet.
 
+### Workspace mode (`workspace/`)
+
+- **Entry:** `lisa workspace` (`src/cli/commands/workspace.ts`) resolves the `@tarcisiopgs/lisa-workspace-<os>-<arch>` binary. `LISA_WORKSPACE_BIN` wins, for development. It then runs `lisa-workspace ui`.
+- **Mode selector:** bare `lisa` shows it only with stdin+stdout TTY, outside CI and without `LISA_MODE` (`src/cli/mode-selector.ts`).
+- **Daemon:** the UI connects over a Unix socket in `/tmp/lisa-<uid>/` (macOS) or `$XDG_RUNTIME_DIR/lisa/` (Linux). When none is running, it re-execs the binary as `daemon` with `setsid`. The daemon holds a `flock` for its whole life, and only the lock holder touches the socket. A daemon from a different binary is replaced silently when no agents run; otherwise the UI asks whether to keep it or restart the agents.
+- **Protocol:** the control layer (`Hello`, `HelloReply`, `Shutdown`) is frozen forever, and `protocol/tests.rs` pins its bytes. Work messages evolve with `PROTOCOL_VERSION`. Only one `ui` client is attached at a time; `hook`/`cli` connections never evict it.
+- **Sessions:** agents run through the user's login shell with the UI's environment. The daemon emulates each screen and streams the focused pane as snapshots and row diffs (coalesced to ~25 ms). Scrollback is 2,000 lines per agent. Stopping kills the whole process group.
+- **States:** four per agent (working, needs you, done, idle), fed by:
+  - Claude Code hooks injected per session with `--settings`, calling `lisa-workspace hook`
+  - OSC 777/9 notifications and title classification
+  - the bell
+  - output silence, only for agents without better signals
+- **Notifications:** every transition into "needs you" or "done" sends a system notification, unless the UI reports that the user is looking at that worktree with the window focused.
+- **Worktrees:** created with `--no-track` outside the repo (`~/.lisa/workspaces/<project>/<name>`) and never delete on collision. Removal is refused while there are uncommitted changes or commits on no remote, unless forced.
+- **Tests:** `workspace/tests/` spins up real daemons in temp dirs with a fake `SHELL` that execs fake agents, so no test hooks live in production code.
+
 ### Lineage Context (`plan/lineage.ts`)
 
 When `lisa plan` creates multiple issues, lineage context is saved to `.lisa/lineage/{planId}.json`. During execution, each issue's prompt is enriched with its position in the plan hierarchy and sibling task descriptions, preventing duplicate work in concurrent mode.
@@ -229,7 +265,7 @@ When `lisa plan` creates multiple issues, lineage context is saved to `.lisa/lin
 
 All providers use `child_process.spawn` with `sh -c` — NOT execa (stdout pipe issues in v9). Prompts are written to a temp file and passed via `$(cat 'file')` to avoid argument length limits. Critical settings: `stdin: 'ignore'` (open stdin blocks Claude Code) and unset `CLAUDECODE` env var (allows nested execution).
 
-Only `ClaudeProvider` sets `supportsNativeWorktree = true`, which enables the `--worktree` flag and delegates worktree management to Claude Code itself.
+No provider currently sets `supportsNativeWorktree = true` (see Main loop).
 
 ## Linear GraphQL Type Rules
 
@@ -304,7 +340,13 @@ Follow [Semantic Versioning](https://semver.org/):
 - **Minor** (`0.X.0`): New features, new providers/sources, new CLI flags — backward-compatible.
 - **Patch** (`0.0.X`): Bug fixes, documentation updates, internal refactors — no behavior change.
 
-Release process: bump `version` in `package.json`, commit as `chore: bump version to X.Y.Z`, tag `vX.Y.Z`, build, publish to npm, create GitHub release.
+Release process:
+
+1. Bump `version` in both `package.json` and `workspace/Cargo.toml` (they must match).
+2. Commit as `chore: bump version to X.Y.Z` and merge.
+3. Create the release from `main`'s tip with `gh release create vX.Y.Z --generate-notes`.
+
+`.github/workflows/publish.yml` does the rest. It verifies that the tag matches both manifests, builds `lisa-workspace` for darwin arm64/x64 and linux musl x64/arm64, publishes the four `@tarcisiopgs/lisa-workspace-<os>-<arch>` packages, and then publishes the main package with `optionalDependencies` injected at publish time. Every publish is idempotent. npm trusts that workflow by file name; do not rename it.
 
 <!-- gitnexus:start -->
 # GitNexus MCP

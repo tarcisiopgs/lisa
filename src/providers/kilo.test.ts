@@ -78,8 +78,8 @@ describe("KiloProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--auto");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--auto");
 		});
 
 		it("uses kilo run in command", async () => {
@@ -90,8 +90,8 @@ describe("KiloProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("kilo run");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("kilo run");
 		});
 
 		it("returns failure result when run throws", async () => {

@@ -109,8 +109,9 @@ const CONFIG_FILE_PATTERNS: string[] = [
 export function detectConfigFiles(cwd: string): string[] {
 	return CONFIG_FILE_PATTERNS.filter((pattern) => {
 		const parts = pattern.split("/");
-		if (parts.length === 2) {
-			return existsSync(join(cwd, parts[0]!, parts[1]!));
+		const [dir, file] = parts;
+		if (parts.length === 2 && dir && file) {
+			return existsSync(join(cwd, dir, file));
 		}
 		return existsSync(join(cwd, pattern));
 	});

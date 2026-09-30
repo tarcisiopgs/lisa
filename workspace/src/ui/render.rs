@@ -1,0 +1,661 @@
+//! Desenho da UI: agente à esquerda ocupando a tela, lateral estreita à direita,
+//! uma linha de rodapé. Cores ANSI nomeadas, como o kanban da Lisa e o devsweep.
+
+use ratatui::Frame;
+use ratatui::layout::{Position, Rect};
+use ratatui::style::{Color as TuiColor, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+
+use super::app::{
+    App, Dialog, Field, MIN_COLS, MIN_ROWS, NoticeKind, RAIL_WIDTH, Row, SIDEBAR_WIDTH, Zone,
+};
+use crate::protocol::work::{
+    ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
+    ATTR_WIDE_SPACER, AgentState, Color, Snapshot, WorktreeView,
+};
+
+const SELECT_BAR: &str = "▐";
+
+fn dim() -> Style {
+    Style::default().add_modifier(Modifier::DIM)
+}
+
+fn bold() -> Style {
+    Style::default().add_modifier(Modifier::BOLD)
+}
+
+/// Glifo e estilo do estado (forma distinta, não só cor).
+pub fn state_glyph(w: &WorktreeView) -> (&'static str, Style) {
+    if w.broken {
+        return ("⊘", dim());
+    }
+    if !w.running {
+        return match w.exit_code {
+            Some(code) if code != 0 => (
+                "✖",
+                Style::default()
+                    .fg(TuiColor::Red)
+                    .add_modifier(Modifier::DIM),
+            ),
+            _ => ("○", dim()),
+        };
+    }
+    match w.state {
+        AgentState::Working => ("◉", Style::default().fg(TuiColor::Yellow)),
+        AgentState::NeedsYou => (
+            "◆",
+            Style::default()
+                .fg(TuiColor::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        AgentState::Done => ("✔", Style::default().fg(TuiColor::Green)),
+        AgentState::Idle => ("○", dim()),
+    }
+}
+
+fn truncate(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_owned();
+    }
+    let mut out: String = text.chars().take(width.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    Rect {
+        x: area.x + (area.width - w) / 2,
+        y: area.y + (area.height - h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
+pub fn render(f: &mut Frame, app: &App) {
+    let area = f.area();
+    if area.width < MIN_COLS || area.height < MIN_ROWS {
+        let msg = format!("Terminal too small (need {MIN_COLS}×{MIN_ROWS})");
+        let rect = centered(
+            area,
+            u16::try_from(msg.chars().count()).unwrap_or(area.width),
+            1,
+        );
+        f.render_widget(Paragraph::new(msg).style(dim()), rect);
+        return;
+    }
+
+    let body_h = area.height - 1;
+    let side_w = if app.wide() {
+        SIDEBAR_WIDTH
+    } else {
+        RAIL_WIDTH
+    };
+    let pane = Rect {
+        x: 0,
+        y: 0,
+        width: area.width - side_w - 1,
+        height: body_h,
+    };
+    let sep = Rect {
+        x: pane.width,
+        y: 0,
+        width: 1,
+        height: body_h,
+    };
+    let side = Rect {
+        x: pane.width + 1,
+        y: 0,
+        width: side_w,
+        height: body_h,
+    };
+    let footer = Rect {
+        x: 0,
+        y: body_h,
+        width: area.width,
+        height: 1,
+    };
+
+    render_pane(f, app, pane);
+    f.render_widget(
+        Paragraph::new(vec![Line::from("│"); usize::from(body_h)]).style(dim()),
+        sep,
+    );
+    if app.wide() {
+        render_sidebar(f, app, side);
+    } else if app.zone() == Zone::Sidebar {
+        // Terminal estreito: a lateral completa aparece por cima do painel enquanto navega
+        let overlay = Rect {
+            x: area.width - SIDEBAR_WIDTH - 1,
+            y: 0,
+            width: SIDEBAR_WIDTH + 1,
+            height: body_h,
+        };
+        f.render_widget(Clear, overlay);
+        f.render_widget(
+            Paragraph::new(vec![Line::from("│"); usize::from(body_h)]).style(dim()),
+            Rect {
+                width: 1,
+                ..overlay
+            },
+        );
+        render_sidebar(
+            f,
+            app,
+            Rect {
+                x: overlay.x + 1,
+                width: SIDEBAR_WIDTH,
+                ..overlay
+            },
+        );
+    } else {
+        render_rail(f, app, side);
+    }
+    render_footer(f, app, footer);
+
+    if let Some(dialog) = app.dialog() {
+        // Centralizado no painel: a lateral continua legível atrás do diálogo
+        render_dialog(f, app, dialog, pane);
+    } else if app.zone() == Zone::Pane
+        && let Some(screen) = app.screen()
+        && screen.cursor.visible
+        && screen.cursor.col < pane.width
+        && screen.cursor.row < pane.height
+    {
+        f.set_cursor_position(Position {
+            x: pane.x + screen.cursor.col,
+            y: pane.y + screen.cursor.row,
+        });
+    }
+}
+
+fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
+    if app.workspace().projects.is_empty() {
+        let lines = vec![
+            Line::styled("No projects yet", bold()),
+            Line::default(),
+            Line::from(vec![
+                Span::styled("p", bold()),
+                Span::styled("  add a project (path to a git repository)", dim()),
+            ]),
+        ];
+        f.render_widget(Paragraph::new(lines).centered(), centered(pane, 48, 3));
+        return;
+    }
+    let Some(view) = app.focused_view() else {
+        if app.dialog().is_none() {
+            let hint = if app.zone() == Zone::Sidebar {
+                "⏎ opens the selected worktree"
+            } else {
+                "^a then ⏎ to open a worktree"
+            };
+            f.render_widget(
+                Paragraph::new(hint).style(dim()).centered(),
+                centered(pane, 40, 1),
+            );
+        }
+        return;
+    };
+    if view.broken {
+        let lines = vec![
+            Line::styled("Worktree missing on disk", bold()),
+            Line::styled("d remove from list", dim()),
+        ];
+        f.render_widget(Paragraph::new(lines).centered(), centered(pane, 40, 2));
+        return;
+    }
+    if let Some(screen) = app.screen() {
+        draw_screen(f, screen, pane, !view.running);
+    }
+    if !view.running {
+        let code = view
+            .exit_code
+            .map_or_else(String::new, |c| format!(" (code {c})"));
+        let banner = Line::from(vec![
+            Span::styled(
+                format!(" agent exited{code} "),
+                Style::default().fg(TuiColor::Red),
+            ),
+            Span::styled("· ", dim()),
+            Span::styled("r", bold()),
+            Span::styled(" restart ", dim()),
+        ]);
+        let row = Rect {
+            y: pane.y + pane.height - 1,
+            height: 1,
+            ..pane
+        };
+        f.render_widget(Clear, row);
+        f.render_widget(Paragraph::new(banner), row);
+    }
+}
+
+fn to_color(c: Color) -> TuiColor {
+    match c {
+        Color::Default => TuiColor::Reset,
+        Color::Indexed(i) => TuiColor::Indexed(i),
+        Color::Rgb(r, g, b) => TuiColor::Rgb(r, g, b),
+    }
+}
+
+/// Pinta a tela do agente célula a célula.
+fn draw_screen(f: &mut Frame, screen: &Snapshot, pane: Rect, faded: bool) {
+    let buf = f.buffer_mut();
+    for (r, line) in screen
+        .lines
+        .iter()
+        .enumerate()
+        .take(usize::from(pane.height))
+    {
+        let y = pane.y + u16::try_from(r).unwrap_or(0);
+        for (c, cell) in line.cells.iter().enumerate().take(usize::from(pane.width)) {
+            let x = pane.x + u16::try_from(c).unwrap_or(0);
+            let Some(slot) = buf.cell_mut((x, y)) else {
+                continue;
+            };
+            if cell.attrs & ATTR_WIDE_SPACER != 0 {
+                slot.set_diff_option(ratatui::buffer::CellDiffOption::Skip);
+                continue;
+            }
+            let mut modifier = Modifier::empty();
+            for (attr, m) in [
+                (ATTR_BOLD, Modifier::BOLD),
+                (ATTR_ITALIC, Modifier::ITALIC),
+                (ATTR_UNDERLINE, Modifier::UNDERLINED),
+                (ATTR_INVERSE, Modifier::REVERSED),
+                (ATTR_DIM, Modifier::DIM),
+                (ATTR_STRIKE, Modifier::CROSSED_OUT),
+                (ATTR_HIDDEN, Modifier::HIDDEN),
+            ] {
+                if cell.attrs & attr != 0 {
+                    modifier |= m;
+                }
+            }
+            if faded {
+                modifier |= Modifier::DIM;
+            }
+            slot.set_char(cell.ch).set_style(
+                Style::default()
+                    .fg(to_color(cell.fg))
+                    .bg(to_color(cell.bg))
+                    .add_modifier(modifier),
+            );
+        }
+    }
+}
+
+fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
+    let rows = app.rows();
+    let height = usize::from(side.height.saturating_sub(1));
+    let offset = app.selected().saturating_sub(height.saturating_sub(1));
+    let width = usize::from(side.width);
+    let mut lines = vec![Line::styled(
+        " PROJECTS",
+        dim().add_modifier(Modifier::BOLD),
+    )];
+    for (i, row) in rows.iter().enumerate().skip(offset).take(height) {
+        let selected = i == app.selected();
+        let bar = if selected {
+            let style = if app.zone() == Zone::Sidebar {
+                Style::default().fg(TuiColor::Yellow)
+            } else {
+                dim()
+            };
+            Span::styled(SELECT_BAR, style)
+        } else {
+            Span::raw(" ")
+        };
+        let line = match row {
+            Row::Project { slug } => {
+                let name = app
+                    .workspace()
+                    .projects
+                    .iter()
+                    .find(|p| p.slug == *slug)
+                    .map_or(slug.as_str(), |p| p.name.as_str());
+                let arrow = if app.is_collapsed(slug) {
+                    "▸ "
+                } else {
+                    "▾ "
+                };
+                Line::from(vec![
+                    bar,
+                    Span::raw(arrow),
+                    Span::styled(truncate(name, width.saturating_sub(4)), bold()),
+                ])
+            }
+            Row::Worktree { id } => {
+                let Some(w) = app.worktree(id) else { continue };
+                let (glyph, style) = state_glyph(w);
+                let open = app.focused() == Some(id.as_str());
+                let name_style = if w.broken {
+                    dim()
+                } else if open {
+                    bold()
+                } else {
+                    Style::default()
+                };
+                Line::from(vec![
+                    bar,
+                    Span::raw("  "),
+                    Span::styled(glyph, style),
+                    Span::raw(" "),
+                    Span::styled(truncate(&w.name, width.saturating_sub(6)), name_style),
+                ])
+            }
+            Row::Empty { .. } => Line::from(vec![bar, Span::styled("  no worktrees · n", dim())]),
+        };
+        lines.push(line);
+    }
+    f.render_widget(Paragraph::new(lines), side);
+}
+
+fn render_rail(f: &mut Frame, app: &App, side: Rect) {
+    let rows = app.rows();
+    let height = usize::from(side.height.saturating_sub(1));
+    let offset = app.selected().saturating_sub(height.saturating_sub(1));
+    let mut lines = vec![Line::default()];
+    for (i, row) in rows.iter().enumerate().skip(offset).take(height) {
+        let bar = if i == app.selected() {
+            Span::styled(SELECT_BAR, dim())
+        } else {
+            Span::raw(" ")
+        };
+        lines.push(match row {
+            Row::Worktree { id } => match app.worktree(id) {
+                Some(w) => {
+                    let (glyph, style) = state_glyph(w);
+                    Line::from(vec![bar, Span::styled(glyph, style)])
+                }
+                None => Line::default(),
+            },
+            _ => Line::from(vec![bar, Span::styled("·", dim())]),
+        });
+    }
+    f.render_widget(Paragraph::new(lines), side);
+}
+
+fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
+    if let Some(notice) = app.notice() {
+        let style = match notice.kind {
+            NoticeKind::Info => Style::default(),
+            NoticeKind::Warn => Style::default().fg(TuiColor::Yellow),
+            NoticeKind::Error => Style::default().fg(TuiColor::Red),
+        };
+        f.render_widget(
+            Paragraph::new(format!(" {}", notice.text)).style(style),
+            footer,
+        );
+        return;
+    }
+    let mut left = vec![Span::raw(" ")];
+    if let Some(w) = app.focused_view() {
+        left.push(Span::raw(format!("{}/{}", w.project, w.name)));
+        if let Some(agent) = &w.agent {
+            left.push(Span::styled(format!(" · {agent}"), dim()));
+        }
+        if w.autonomy {
+            left.push(Span::styled(
+                " · full autonomy",
+                Style::default().fg(TuiColor::Yellow),
+            ));
+        }
+    }
+    let used: usize = left.iter().map(|s| s.content.chars().count()).sum();
+    let hints: &[&str] = match (app.dialog().is_some(), app.zone()) {
+        (true, _) => &[],
+        (false, Zone::Pane) => &["^a menu"],
+        (false, Zone::Sidebar) => &[
+            "⏎ open",
+            "n new",
+            "p project",
+            "d remove",
+            "r restart",
+            "? help",
+            "q quit",
+        ],
+    };
+    let room = usize::from(footer.width).saturating_sub(used + 2);
+    let mut text = String::new();
+    for hint in hints {
+        let next = if text.is_empty() {
+            (*hint).to_owned()
+        } else {
+            format!("{text} · {hint}")
+        };
+        if next.chars().count() > room {
+            break;
+        }
+        text = next;
+    }
+    let pad = room.saturating_sub(text.chars().count());
+    left.push(Span::raw(" ".repeat(pad)));
+    left.push(Span::styled(text, dim()));
+    f.render_widget(Paragraph::new(Line::from(left)), footer);
+}
+
+fn dialog_block(title: &str) -> Block<'_> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default()
+                .fg(TuiColor::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+}
+
+fn field_label(label: &str, active: bool) -> Vec<Span<'static>> {
+    let marker = if active {
+        Span::styled("› ", Style::default().fg(TuiColor::Yellow))
+    } else {
+        Span::raw("  ")
+    };
+    vec![
+        marker,
+        Span::styled(format!("{label:<8}"), if active { bold() } else { dim() }),
+    ]
+}
+
+fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
+    let (title, lines): (String, Vec<Line>) = match dialog {
+        Dialog::Help => (
+            "Keys".into(),
+            [
+                ("^a", "switch between the agent and the sidebar"),
+                ("^a ^a", "send ctrl-a to the agent"),
+                ("↑↓ j k", "move"),
+                ("⏎", "open worktree / fold project"),
+                ("tab", "next worktree that needs you"),
+                ("n", "new worktree in this project"),
+                ("p", "add project"),
+                ("b", "change base branch"),
+                ("d", "remove worktree"),
+                ("r / s", "restart / stop agent"),
+                ("q", "detach (agents keep running)"),
+            ]
+            .iter()
+            .map(|(k, v)| {
+                Line::from(vec![
+                    Span::styled(format!("  {k:<8}"), bold()),
+                    Span::styled(*v, dim()),
+                ])
+            })
+            .collect(),
+        ),
+        Dialog::AddProject { path } => (
+            "Add project".into(),
+            vec![
+                Line::styled("  Path to a git repository", dim()),
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::raw(path.clone()),
+                    Span::styled("▏", Style::default().fg(TuiColor::Yellow)),
+                ]),
+                Line::default(),
+                Line::styled("  ⏎ add · esc cancel", dim()),
+            ],
+        ),
+        Dialog::BaseBranch { project, value } => (
+            format!("Base branch for {project}"),
+            vec![
+                Line::styled("  New worktrees start from this branch", dim()),
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::raw(value.clone()),
+                    Span::styled("▏", Style::default().fg(TuiColor::Yellow)),
+                ]),
+                Line::default(),
+                Line::styled("  ⏎ save · esc cancel", dim()),
+            ],
+        ),
+        Dialog::ConfirmRemove { id, sent, refused } => {
+            let w = app.worktree(id);
+            let name = w.map_or(id.as_str(), |w| w.name.as_str());
+            let branch = w.map_or(id.as_str(), |w| w.branch.as_str());
+            let mut lines = vec![
+                Line::from(vec![
+                    Span::raw("  Remove "),
+                    Span::styled(name.to_owned(), bold()),
+                    Span::raw("?"),
+                ]),
+                Line::styled(
+                    format!("  Deletes the worktree and the local branch {branch}."),
+                    dim(),
+                ),
+                Line::styled("  The remote branch is kept.", dim()),
+                Line::default(),
+            ];
+            match (sent, refused) {
+                (_, Some(reason)) => {
+                    lines.push(Line::styled(
+                        format!("  Refused: {reason}"),
+                        Style::default().fg(TuiColor::Red),
+                    ));
+                    lines.push(Line::styled("  f force · esc cancel", dim()));
+                }
+                (true, None) => lines.push(Line::styled(
+                    "  removing…",
+                    Style::default().fg(TuiColor::Yellow),
+                )),
+                (false, None) => lines.push(Line::styled("  y remove · n cancel", dim())),
+            }
+            ("Remove worktree".into(), lines)
+        }
+        Dialog::NewWorktree(d) => {
+            let project = app
+                .workspace()
+                .projects
+                .iter()
+                .find(|p| p.slug == d.project);
+            let base = project.map_or("main", |p| p.base_branch.as_str());
+            let mut lines = Vec::new();
+            let mut name = field_label("Name", d.field == Field::Name);
+            name.push(Span::raw(d.name.clone()));
+            if d.field == Field::Name {
+                name.push(Span::styled("▏", Style::default().fg(TuiColor::Yellow)));
+            }
+            lines.push(Line::from(name));
+            let preview = crate::git::sanitize_branch(&d.name).unwrap_or_default();
+            lines.push(Line::styled(
+                format!(
+                    "          branch: {}",
+                    if preview.is_empty() {
+                        "—"
+                    } else {
+                        preview.as_str()
+                    }
+                ),
+                dim(),
+            ));
+            lines.push(Line::default());
+            for (i, agent) in app.workspace().agents.iter().enumerate() {
+                let mut spans = if i == 0 {
+                    field_label("Agent", d.field == Field::Agent)
+                } else {
+                    vec![Span::raw("          ")]
+                };
+                let chosen = i == d.agent;
+                spans.push(Span::styled(
+                    if chosen { "● " } else { "○ " },
+                    if chosen {
+                        Style::default().fg(TuiColor::Yellow)
+                    } else {
+                        dim()
+                    },
+                ));
+                let style = if !agent.available {
+                    dim()
+                } else if chosen {
+                    bold()
+                } else {
+                    Style::default()
+                };
+                spans.push(Span::styled(agent.name.clone(), style));
+                if !agent.available {
+                    spans.push(Span::styled("  not installed", dim()));
+                } else if !agent.autonomy_supported {
+                    spans.push(Span::styled("  no full autonomy", dim()));
+                }
+                lines.push(Line::from(spans));
+            }
+            lines.push(Line::default());
+            let supported = app
+                .workspace()
+                .agents
+                .get(d.agent)
+                .is_some_and(|a| a.autonomy_supported);
+            let mut mode = field_label("Mode", d.field == Field::Permission);
+            let radio = |on: bool| if on { "(•) " } else { "( ) " };
+            mode.push(Span::raw(format!("{}normal   ", radio(!d.autonomy))));
+            let full = format!("{}full autonomy", radio(d.autonomy));
+            mode.push(if supported {
+                Span::raw(full)
+            } else {
+                Span::styled(full, dim())
+            });
+            lines.push(Line::from(mode));
+            lines.push(Line::default());
+            if d.pending {
+                lines.push(Line::styled(
+                    format!("  creating… fetching {base}"),
+                    Style::default().fg(TuiColor::Yellow),
+                ));
+            } else if let Some(err) = &d.error {
+                lines.push(Line::styled(
+                    format!("  {err}"),
+                    Style::default().fg(TuiColor::Red),
+                ));
+            } else {
+                lines.push(Line::styled(
+                    "  ⏎ create · tab next field · esc cancel",
+                    dim(),
+                ));
+            }
+            (
+                format!(
+                    "New worktree in {}",
+                    project.map_or(d.project.as_str(), |p| p.name.as_str())
+                ),
+                lines,
+            )
+        }
+    };
+    let width = 56.min(body.width.saturating_sub(4));
+    let height = u16::try_from(lines.len()).unwrap_or(0) + 2;
+    let rect = centered(body, width, height);
+    f.render_widget(Clear, rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(dialog_block(&title)),
+        rect,
+    );
+}
+
+#[cfg(test)]
+#[path = "render_tests.rs"]
+mod tests;

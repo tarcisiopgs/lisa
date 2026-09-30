@@ -27,17 +27,17 @@ describe("detectDependencyCycles", () => {
 		const issues = [makeIssue(1, [2]), makeIssue(2, [1])];
 		const result = detectDependencyCycles(issues);
 		expect(result).not.toBeNull();
-		expect(result!.length).toBeGreaterThan(0);
-		expect(result![0]).toContain("#1");
-		expect(result![0]).toContain("#2");
+		expect(result?.length).toBeGreaterThan(0);
+		expect(result?.[0]).toContain("#1");
+		expect(result?.[0]).toContain("#2");
 	});
 
 	it("detects a self-reference (A -> A)", () => {
 		const issues = [makeIssue(1, [1]), makeIssue(2)];
 		const result = detectDependencyCycles(issues);
 		expect(result).not.toBeNull();
-		expect(result!.length).toBeGreaterThan(0);
-		expect(result![0]).toContain("#1");
+		expect(result?.length).toBeGreaterThan(0);
+		expect(result?.[0]).toContain("#1");
 	});
 
 	it("returns null for diamond dependencies (no cycle)", () => {
@@ -57,10 +57,10 @@ describe("detectDependencyCycles", () => {
 		];
 		const result = detectDependencyCycles(issues);
 		expect(result).not.toBeNull();
-		expect(result!.length).toBeGreaterThan(0);
-		expect(result![0]).toContain("#2");
-		expect(result![0]).toContain("#3");
-		expect(result![0]).toContain("#4");
+		expect(result?.length).toBeGreaterThan(0);
+		expect(result?.[0]).toContain("#2");
+		expect(result?.[0]).toContain("#3");
+		expect(result?.[0]).toContain("#4");
 	});
 
 	it("returns null for issues with no dependencies", () => {

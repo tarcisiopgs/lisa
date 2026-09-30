@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"                                                                       │ ▾ api                      "
+"       ┌ Remove worktree ─────────────────────────────────────┐        │▐  ◉ fix-login              "
+"       │  Remove fix-login?                                   │        │   ◆ rate-limit             "
+"       │  Deletes the worktree and the local branch fix-login.│        │   ○ docs-update            "
+"       │  The remote branch is kept.                          │        │ ▾ web                      "
+"       │                                                      │        │   ✔ new-checkout           "
+"       │  Refused: 2 uncommitted change(s)                    │        │ ▾ lisa                     "
+"       │  f force · esc cancel                                │        │   no worktrees · n         "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                                                    "

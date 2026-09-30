@@ -62,7 +62,7 @@ describe("parseStructuredOutput", () => {
 			expect(result.type).toBe("issues");
 			if (result.type === "issues") {
 				expect(result.issues).toHaveLength(1);
-				expect(result.issues[0]!.title).toBe("Add rate limiter");
+				expect(result.issues[0]?.title).toBe("Add rate limiter");
 			}
 		});
 

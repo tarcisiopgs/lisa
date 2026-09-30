@@ -7,7 +7,6 @@ import {
 	isShuttingDown,
 	killProviderForIssue,
 	providerPausedSet,
-	reconciliationSet,
 	setShuttingDown,
 	setUserQuitFromWatchPrompt,
 	setupEventListeners,
