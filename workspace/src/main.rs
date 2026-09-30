@@ -1,8 +1,5 @@
 //! lisa-workspace: binário do modo Workspace da Lisa (daemon, UI e hooks).
 
-#[expect(dead_code, reason = "consumed by the daemon starting at U5")]
-mod agents;
-
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
