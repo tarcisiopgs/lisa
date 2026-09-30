@@ -192,7 +192,7 @@ describe("CursorProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--output-format stream-json");
 			expect(command).toContain("--force");
 		});

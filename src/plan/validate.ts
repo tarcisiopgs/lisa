@@ -23,7 +23,7 @@ export function detectDependencyCycles(issues: PlannedIssue[]): string[] | null 
 	for (const issue of issues) {
 		for (const dep of issue.dependsOn) {
 			if (!adjacency.has(dep)) continue; // skip unknown dependencies
-			adjacency.get(dep)!.push(issue.order);
+			adjacency.get(dep)?.push(issue.order);
 			inDegree.set(issue.order, (inDegree.get(issue.order) ?? 0) + 1);
 		}
 	}
@@ -36,7 +36,8 @@ export function detectDependencyCycles(issues: PlannedIssue[]): string[] | null 
 
 	const sorted: number[] = [];
 	while (queue.length > 0) {
-		const node = queue.shift()!;
+		const node = queue.shift();
+		if (node === undefined) break;
 		sorted.push(node);
 		for (const neighbor of adjacency.get(node) ?? []) {
 			const newDegree = (inDegree.get(neighbor) ?? 1) - 1;

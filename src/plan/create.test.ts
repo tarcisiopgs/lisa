@@ -94,7 +94,7 @@ describe("createPlanIssues", () => {
 
 		await createPlanIssues(source, config, plan);
 
-		const call = createIssue.mock.calls[0]![0];
+		const call = createIssue.mock.calls[0]?.[0];
 		expect(call.description).toContain("## Acceptance Criteria");
 		expect(call.description).toContain("- [ ] tests pass");
 		expect(call.description).toContain("- [ ] lint clean");
@@ -121,7 +121,7 @@ describe("createPlanIssues", () => {
 
 		await createPlanIssues(source, config, plan);
 
-		const call = createIssue.mock.calls[0]![0];
+		const call = createIssue.mock.calls[0]?.[0];
 		expect(call.description).not.toContain("## Acceptance Criteria");
 		expect(call.description).toBe("Description\n\n- [ ] existing checklist item");
 	});

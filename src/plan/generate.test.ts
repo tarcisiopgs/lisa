@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CliError } from "../cli/error.js";
 import type { LisaConfig, PlannedIssue, RunResult } from "../types/index.js";
-import { PlanParseError } from "./parser.js";
 
 const validIssues: PlannedIssue[] = [
 	{
@@ -86,7 +85,7 @@ describe("generatePlan", () => {
 		const issues = await generatePlan("Add rate limiting", makeConfig());
 
 		expect(issues).toHaveLength(1);
-		expect(issues[0]!.title).toBe("Add rate limiter");
+		expect(issues[0]?.title).toBe("Add rate limiter");
 		expect(runWithFallback).toHaveBeenCalledOnce();
 	});
 
@@ -110,7 +109,7 @@ describe("generatePlan", () => {
 		const issues = await generatePlan("goal", makeConfig());
 
 		expect(issues).toHaveLength(1);
-		expect(issues[0]!.title).toBe("Add rate limiter");
+		expect(issues[0]?.title).toBe("Add rate limiter");
 		// First call for initial attempt, second for retry
 		expect(runWithFallback).toHaveBeenCalledTimes(2);
 	});
@@ -132,7 +131,7 @@ describe("generatePlan", () => {
 		const { generatePlan } = await import("./generate.js");
 		await generatePlan("goal", makeConfig(), { feedback: "Make issues smaller" });
 
-		const calledPrompt = runWithFallback.mock.calls[0]![1] as string;
+		const calledPrompt = runWithFallback.mock.calls[0]?.[1] as string;
 		expect(calledPrompt).toContain("Regeneration Feedback");
 		expect(calledPrompt).toContain("Make issues smaller");
 	});
@@ -146,7 +145,7 @@ describe("generatePlan", () => {
 			previousTitles: ["Add rate limiter", "Wire to routes"],
 		});
 
-		const calledPrompt = runWithFallback.mock.calls[0]![1] as string;
+		const calledPrompt = runWithFallback.mock.calls[0]?.[1] as string;
 		expect(calledPrompt).toContain("previous plan had 2 issues");
 		expect(calledPrompt).toContain("Add rate limiter, Wire to routes");
 	});

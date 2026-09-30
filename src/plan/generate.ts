@@ -57,7 +57,7 @@ export async function generatePlan(
 			if (attempt === 0) {
 				return parsePlanResponse(result.output);
 			}
-			const retryPrompt = `${prompt}\n\n## Previous Attempt Failed\n\nYour previous response could not be parsed: ${lastError!.message}\n\nPlease output ONLY valid JSON with the exact structure specified above.`;
+			const retryPrompt = `${prompt}\n\n## Previous Attempt Failed\n\nYour previous response could not be parsed: ${lastError?.message ?? "unknown error"}\n\nPlease output ONLY valid JSON with the exact structure specified above.`;
 			const retryResult = await runWithFallback(models, retryPrompt, {
 				logFile,
 				cwd: resolve(config.workspace),

@@ -179,7 +179,9 @@ async function reviewAndCreate(
 
 	logger.ok(`${createdIds.length} issue${createdIds.length !== 1 ? "s" : ""} created.`);
 	for (let i = 0; i < createdIds.length; i++) {
-		logger.log(`  ${plan.issues[i]!.order}. ${createdIds[i]}: ${plan.issues[i]!.title}`);
+		const issue = plan.issues[i];
+		if (!issue) continue;
+		logger.log(`  ${issue.order}. ${createdIds[i]}: ${issue.title}`);
 	}
 
 	// Handoff prompt

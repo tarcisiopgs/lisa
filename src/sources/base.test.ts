@@ -167,7 +167,8 @@ describe("createApiClient", () => {
 		const client = createApiClient("https://api.example.com", () => ({}), "Test");
 		await client.get("/test");
 
-		const call = mockFetch.mock.calls[0]!;
+		const call = mockFetch.mock.calls[0];
+		if (!call) throw new Error("fetch was not called");
 		const signal = call[1].signal as AbortSignal;
 		expect(signal).toBeInstanceOf(AbortSignal);
 		// Verify REQUEST_TIMEOUT_MS constant is 30000

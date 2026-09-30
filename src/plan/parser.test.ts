@@ -27,11 +27,11 @@ describe("parsePlanResponse", () => {
 	it("parses valid JSON response", () => {
 		const issues = parsePlanResponse(validJson);
 		expect(issues).toHaveLength(2);
-		expect(issues[0]!.title).toBe("Add rate limiter");
-		expect(issues[0]!.order).toBe(1);
-		expect(issues[0]!.dependsOn).toEqual([]);
-		expect(issues[1]!.dependsOn).toEqual([1]);
-		expect(issues[1]!.repo).toBe("api");
+		expect(issues[0]?.title).toBe("Add rate limiter");
+		expect(issues[0]?.order).toBe(1);
+		expect(issues[0]?.dependsOn).toEqual([]);
+		expect(issues[1]?.dependsOn).toEqual([1]);
+		expect(issues[1]?.repo).toBe("api");
 	});
 
 	it("strips markdown code fences", () => {
@@ -85,8 +85,8 @@ describe("parsePlanResponse", () => {
 			],
 		};
 		const issues = parsePlanResponse(JSON.stringify(noOrder));
-		expect(issues[0]!.order).toBe(1);
-		expect(issues[1]!.order).toBe(2);
+		expect(issues[0]?.order).toBe(1);
+		expect(issues[1]?.order).toBe(2);
 	});
 
 	it("filters non-string values from arrays", () => {
@@ -103,8 +103,8 @@ describe("parsePlanResponse", () => {
 			],
 		};
 		const issues = parsePlanResponse(JSON.stringify(mixed));
-		expect(issues[0]!.acceptanceCriteria).toEqual(["valid"]);
-		expect(issues[0]!.relevantFiles).toEqual(["file.ts"]);
-		expect(issues[0]!.dependsOn).toEqual([1]);
+		expect(issues[0]?.acceptanceCriteria).toEqual(["valid"]);
+		expect(issues[0]?.relevantFiles).toEqual(["file.ts"]);
+		expect(issues[0]?.dependsOn).toEqual([1]);
 	});
 });

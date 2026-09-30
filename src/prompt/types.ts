@@ -1,5 +1,5 @@
 import type { ProjectContext } from "../context.js";
-import type { DependencyContext, Issue, LisaConfig, PlanStep, PRPlatform } from "../types/index.js";
+import type { Issue, LisaConfig, PlanStep, PRPlatform } from "../types/index.js";
 
 export type TestRunner = "vitest" | "jest" | null;
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";

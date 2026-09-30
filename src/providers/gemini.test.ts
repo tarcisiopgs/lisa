@@ -78,8 +78,8 @@ describe("GeminiProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--yolo");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--yolo");
 		});
 
 		it("includes --model flag when model is specified", async () => {
@@ -91,8 +91,8 @@ describe("GeminiProvider", () => {
 				model: "gemini-2.5-pro",
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--model gemini-2.5-pro");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--model gemini-2.5-pro");
 		});
 
 		it("omits --model flag when no model specified", async () => {
@@ -103,8 +103,8 @@ describe("GeminiProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).not.toContain("--model");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).not.toContain("--model");
 		});
 
 		it("returns failure result when run throws", async () => {

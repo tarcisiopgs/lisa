@@ -78,9 +78,9 @@ describe("ClaudeProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("-p");
-			expect(config.logLine).toContain("--dangerously-skip-permissions");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("-p");
+			expect(config?.logLine).toContain("--dangerously-skip-permissions");
 		});
 
 		it("includes --model flag when model is specified", async () => {
@@ -92,8 +92,8 @@ describe("ClaudeProvider", () => {
 				model: "claude-sonnet-4-6",
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--model claude-sonnet-4-6");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--model claude-sonnet-4-6");
 		});
 
 		it("omits --model flag when no model specified", async () => {
@@ -104,8 +104,8 @@ describe("ClaudeProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).not.toContain("--model");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).not.toContain("--model");
 		});
 
 		it("includes --effort flag when providerOptions.effort is set", async () => {
@@ -117,8 +117,8 @@ describe("ClaudeProvider", () => {
 				providerOptions: { effort: "low" },
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--effort low");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--effort low");
 		});
 
 		it("omits --effort flag when providerOptions.effort is not set", async () => {
@@ -129,8 +129,8 @@ describe("ClaudeProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).not.toContain("--effort");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).not.toContain("--effort");
 		});
 
 		it("sets CLAUDECODE to undefined in extraEnv", async () => {
@@ -141,8 +141,8 @@ describe("ClaudeProvider", () => {
 				env: {},
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.extraEnv).toEqual({ CLAUDECODE: undefined });
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.extraEnv).toEqual({ CLAUDECODE: undefined });
 		});
 
 		it("returns failure result when run throws", async () => {

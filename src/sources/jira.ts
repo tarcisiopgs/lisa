@@ -56,10 +56,6 @@ function jiraPut<T>(path: string, body?: unknown): Promise<T> {
 	return api().put<T>(path, body);
 }
 
-async function jiraSearchJql<T>(jql: string, fields: string, maxResults: number): Promise<T> {
-	return jiraPost<T>("/search/jql", { jql, fields: fields.split(","), maxResults });
-}
-
 interface JiraIssueLink {
 	type: { name: string; inward: string; outward: string };
 	inwardIssue?: {
@@ -84,30 +80,6 @@ interface JiraIssue {
 		labels: string[];
 		issuelinks?: JiraIssueLink[];
 	};
-}
-
-interface JiraSearchResult {
-	issues: JiraIssue[];
-	total: number;
-}
-
-interface JiraStatus {
-	id: string;
-	name: string;
-}
-
-interface JiraIssueTypeStatuses {
-	statuses: JiraStatus[];
-}
-
-interface JiraTransition {
-	id: string;
-	name: string;
-	to: { id: string; name: string };
-}
-
-interface JiraTransitionsResult {
-	transitions: JiraTransition[];
 }
 
 function priorityRank(issue: JiraIssue): number {

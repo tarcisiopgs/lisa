@@ -315,7 +315,7 @@ async function resolveAccountIds(usernames: string[]): Promise<Map<string, strin
 
 	if (uncached.length === 0) return result;
 
-	const resolutions = await Promise.allSettled(
+	await Promise.allSettled(
 		uncached.map(async (username) => {
 			const res = await fetch(`${API_URL}/users/${encodeURIComponent(username)}`, {
 				headers: { Authorization: getAuthHeader() },

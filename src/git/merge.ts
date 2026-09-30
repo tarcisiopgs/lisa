@@ -43,16 +43,15 @@ async function checkGitLabPrCi(prUrl: string): Promise<CiCheckStatus> {
 	try {
 		// Parse GitLab MR URL: https://gitlab.com/namespace/project/-/merge_requests/123
 		const match = prUrl.match(/gitlab[^/]*\/(.+)\/-\/merge_requests\/(\d+)/);
-		if (!match) return "unknown";
-		const projectPath = match[1];
-		const mrIid = match[2];
+		const [, projectPath, mrIid] = match ?? [];
+		if (!projectPath || !mrIid) return "unknown";
 		const token = process.env.GITLAB_TOKEN;
 		if (!token) return "unknown";
 		// Extract host from URL
 		const hostMatch = prUrl.match(/https?:\/\/([^/]+)/);
 		const host = hostMatch ? hostMatch[1] : "gitlab.com";
 		const res = await fetch(
-			`https://${host}/api/v4/projects/${encodeURIComponent(projectPath!)}/merge_requests/${mrIid}`,
+			`https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/merge_requests/${mrIid}`,
 			{
 				headers: { "PRIVATE-TOKEN": token },
 				signal: AbortSignal.timeout(15_000),
@@ -99,15 +98,14 @@ async function mergeGitHubPr(prUrl: string): Promise<MergeResult> {
 async function mergeGitLabPr(prUrl: string): Promise<MergeResult> {
 	try {
 		const match = prUrl.match(/gitlab[^/]*\/(.+)\/-\/merge_requests\/(\d+)/);
-		if (!match) return { success: false, error: "Cannot parse GitLab MR URL" };
-		const projectPath = match[1];
-		const mrIid = match[2];
+		const [, projectPath, mrIid] = match ?? [];
+		if (!projectPath || !mrIid) return { success: false, error: "Cannot parse GitLab MR URL" };
 		const token = process.env.GITLAB_TOKEN;
 		if (!token) return { success: false, error: "GITLAB_TOKEN is not set" };
 		const hostMatch = prUrl.match(/https?:\/\/([^/]+)/);
 		const host = hostMatch ? hostMatch[1] : "gitlab.com";
 		const res = await fetch(
-			`https://${host}/api/v4/projects/${encodeURIComponent(projectPath!)}/merge_requests/${mrIid}/merge`,
+			`https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/merge_requests/${mrIid}/merge`,
 			{
 				method: "PUT",
 				headers: {

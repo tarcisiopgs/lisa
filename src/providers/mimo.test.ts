@@ -68,9 +68,9 @@ describe("MimoProvider", () => {
 			mockRunProvider.mockResolvedValue(mockSuccess());
 			await new MimoProvider().run("do something", opts);
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("mimo run");
-			expect(config.logLine).toContain("--dangerously-skip-permissions");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("mimo run");
+			expect(config?.logLine).toContain("--dangerously-skip-permissions");
 		});
 
 		it("passes the model flag when a model is set", async () => {
@@ -80,8 +80,8 @@ describe("MimoProvider", () => {
 				model: "anthropic/claude-sonnet-4-6",
 			});
 
-			const config = mockRunProvider.mock.calls[0]![0];
-			expect(config.logLine).toContain("--model anthropic/claude-sonnet-4-6");
+			const config = mockRunProvider.mock.calls[0]?.[0];
+			expect(config?.logLine).toContain("--model anthropic/claude-sonnet-4-6");
 		});
 
 		it("rejects a model with unsafe shell characters before spawning", async () => {

@@ -459,7 +459,9 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		project = "";
 	} else {
 		project = (await selectOrInput({
-			listFn: sourceInstance.listProjects ? () => sourceInstance.listProjects!(scope) : undefined,
+			listFn: sourceInstance.listProjects
+				? () => sourceInstance.listProjects?.(scope) ?? Promise.resolve([])
+				: undefined,
 			message:
 				sourceKey === "linear"
 					? "Which Linear project? (leave empty for all team issues)"
@@ -478,7 +480,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 		: "";
 	const labelValue = await selectOrInput({
 		listFn: sourceInstance.listLabels
-			? () => sourceInstance.listLabels!(scope, project)
+			? () => sourceInstance.listLabels?.(scope, project) ?? Promise.resolve([])
 			: undefined,
 		message: "Which label(s) mark issues as ready?",
 		multi: true,
@@ -510,7 +512,7 @@ export async function runConfigWizard(existing?: LisaConfig): Promise<void> {
 	// Statuses
 	const isLabelBasedSource = sourceKey === "github-issues" || sourceKey === "gitlab-issues";
 	const statusListFn = sourceInstance.listStatuses
-		? () => sourceInstance.listStatuses!(scope, project)
+		? () => sourceInstance.listStatuses?.(scope, project) ?? Promise.resolve([])
 		: undefined;
 
 	let pickFrom: string;

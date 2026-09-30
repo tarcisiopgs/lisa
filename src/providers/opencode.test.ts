@@ -87,7 +87,7 @@ describe("OpenCodeProvider", () => {
 				env: {},
 			});
 
-			const spawnOpts = vi.mocked(spawnWithPty).mock.calls[0]![1] as { cwd: string };
+			const spawnOpts = vi.mocked(spawnWithPty).mock.calls[0]?.[1] as { cwd: string };
 			expect(spawnOpts.cwd).toBe(cwdWithSpaces);
 		});
 	});

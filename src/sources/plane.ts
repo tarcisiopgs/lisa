@@ -50,10 +50,6 @@ function planePatch<T>(path: string, body?: unknown): Promise<T> {
 	return api().patch<T>(path, body);
 }
 
-function planeDelete(path: string): Promise<void> {
-	return api().delete(path);
-}
-
 interface PlanePage<T> {
 	count: number;
 	next: string | null;

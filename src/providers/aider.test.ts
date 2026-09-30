@@ -103,7 +103,7 @@ describe("AiderProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--message-file");
 			expect(command).not.toContain("$(cat");
 		});
@@ -117,7 +117,7 @@ describe("AiderProvider", () => {
 				env: {},
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).not.toContain("--model");
 		});
 
@@ -131,7 +131,7 @@ describe("AiderProvider", () => {
 				model: "gpt-4o",
 			});
 
-			const command = vi.mocked(spawnWithPty).mock.calls[0]![0] as string;
+			const command = vi.mocked(spawnWithPty).mock.calls[0]?.[0] as string;
 			expect(command).toContain("--model gpt-4o");
 		});
 	});

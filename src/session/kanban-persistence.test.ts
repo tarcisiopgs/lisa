@@ -1,15 +1,7 @@
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCacheDir, getKanbanStatePath } from "../paths.js";
 import { kanbanEmitter } from "../ui/state.js";
 import { createKanbanPersistence } from "./kanban-persistence.js";
@@ -131,7 +123,8 @@ describe("KanbanPersistence.load()", () => {
 			}),
 		);
 		const cards = p.load();
-		const card = cards.find((c) => c.id === "D")!;
+		const card = cards.find((c) => c.id === "D");
+		if (!card) throw new Error("card D not loaded");
 		expect(card.column).toBe("backlog");
 		expect(card.startedAt).toBeUndefined();
 		expect(card.hasError).toBe(false);
@@ -179,7 +172,8 @@ describe("KanbanPersistence.load()", () => {
 			}),
 		);
 		const cards = p.load();
-		const card = cards.find((c) => c.id === "F")!;
+		const card = cards.find((c) => c.id === "F");
+		if (!card) throw new Error("card F not loaded");
 		expect(card.column).toBe("backlog");
 		expect(card.skipped).toBe(false);
 	});
