@@ -16,5 +16,12 @@
 			"quoteStyle": "double",
 			"semicolons": "always"
 		}
+	},
+	"files": {
+		"includes": [
+			"src/**",
+			"*.json",
+			"*.ts"
+		]
 	}
 }

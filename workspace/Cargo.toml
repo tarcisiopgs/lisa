@@ -1,0 +1,34 @@
+[package]
+name = "lisa-workspace"
+version = "1.42.0"
+edition = "2024"
+description = "Workspace mode for Lisa: projects, git worktrees and interactive coding agents in one terminal UI."
+license = "MIT"
+repository = "https://github.com/tarcisiopgs/lisa"
+publish = false
+
+[[bin]]
+name = "lisa-workspace"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+thiserror = "2.0.17"
+
+[dev-dependencies]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+redundant_clone = "warn"
+needless_collect = "warn"
+large_enum_variant = "warn"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
