@@ -12,8 +12,10 @@ name = "lisa-workspace"
 path = "src/main.rs"
 
 [dependencies]
+alacritty_terminal = "0.26"
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
+portable-pty = "0.9"
 postcard = { version = "1.1.3", features = ["use-std"] }
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }

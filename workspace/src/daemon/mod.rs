@@ -16,6 +16,7 @@ use crate::protocol::{
 };
 
 pub mod client;
+pub mod service;
 
 /// Onde ficam socket, lock e log. Caminho curto: `sun_path` do macOS aceita 104 bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +117,32 @@ pub trait SessionHost: Send + Sync {
     /// Encerra todos os agentes (grupos de processo).
     fn stop_all(&self);
     fn hook_event(&self, _pane: &str, _event: &str, _payload: &str) {}
+    /// Canal para mandar mensagens à UI conectada; entregue uma vez, quando o daemon sobe.
+    fn set_ui_sink(&self, _sink: UiSink) {}
+    /// Mensagem de trabalho vinda da UI.
+    fn handle(&self, _msg: ClientMsg) {}
+    /// A UI conectada saiu (ou caiu).
+    fn ui_detached(&self) {}
+}
+
+/// Escreve na UI conectada, se houver. Serializa as escritas com o resto do daemon.
+#[derive(Clone)]
+pub struct UiSink {
+    shared: std::sync::Weak<Shared>,
+}
+
+impl UiSink {
+    /// `false` quando não há UI conectada ou a escrita falhou.
+    pub fn send(&self, msg: &DaemonMsg) -> bool {
+        let Some(shared) = self.shared.upgrade() else {
+            return false;
+        };
+        let mut ui = shared.ui.lock().unwrap_or_else(PoisonError::into_inner);
+        match ui.as_mut() {
+            Some((_, conn)) => conn.send_daemon(msg).is_ok(),
+            None => false,
+        }
+    }
 }
 
 /// Host sem sessões, usado até as sessões existirem.
@@ -170,6 +197,9 @@ impl Daemon {
         let Some(guard) = self.paths.try_lock()? else {
             return Ok(RunOutcome::AlreadyRunning);
         };
+        self.shared.host.set_ui_sink(UiSink {
+            shared: Arc::downgrade(&self.shared),
+        });
         remove_socket(&self.paths.socket)?;
         let listener = UnixListener::bind(&self.paths.socket)?;
 
@@ -236,7 +266,15 @@ fn handle(shared: Arc<Shared>, stream: UnixStream) {
                 break;
             }
             ClientIncoming::Work(ClientMsg::Ping) => {
-                if conn.send_daemon(&DaemonMsg::Pong).is_err() {
+                let sent = if hello.client_kind == ClientKind::Ui {
+                    UiSink {
+                        shared: Arc::downgrade(&shared),
+                    }
+                    .send(&DaemonMsg::Pong)
+                } else {
+                    conn.send_daemon(&DaemonMsg::Pong).is_ok()
+                };
+                if !sent {
                     break;
                 }
             }
@@ -247,11 +285,23 @@ fn handle(shared: Arc<Shared>, stream: UnixStream) {
             }) => {
                 shared.host.hook_event(&pane, &event, &payload);
             }
+            ClientIncoming::Work(other) => {
+                if hello.client_kind == ClientKind::Ui {
+                    shared.host.handle(other);
+                }
+            }
         }
     }
 
-    let mut ui = shared.ui.lock().unwrap_or_else(PoisonError::into_inner);
-    if ui.as_ref().is_some_and(|(current, _)| *current == id) {
-        *ui = None;
+    let was_current = {
+        let mut ui = shared.ui.lock().unwrap_or_else(PoisonError::into_inner);
+        let current = ui.as_ref().is_some_and(|(current, _)| *current == id);
+        if current {
+            *ui = None;
+        }
+        current
+    };
+    if was_current {
+        shared.host.ui_detached();
     }
 }

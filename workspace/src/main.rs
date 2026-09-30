@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use lisa_workspace::daemon::{BuildInfo, Daemon, NoSessions, RuntimePaths};
+use lisa_workspace::daemon::service::Workspace;
+use lisa_workspace::daemon::{BuildInfo, Daemon, RuntimePaths};
+use lisa_workspace::registry::{default_worktree_root, lisa_home};
 
 #[derive(Parser)]
 #[command(name = "lisa-workspace", version, about = "Lisa Workspace mode")]
@@ -31,10 +33,14 @@ fn main() -> anyhow::Result<()> {
         Command::Daemon => {
             // Sessão própria: fechar o terminal que abriu a UI não derruba o daemon
             let _ = rustix::process::setsid();
+            let workspace = Workspace::open(
+                lisa_home().join("workspace").join("state.json"),
+                default_worktree_root(),
+            )?;
             let daemon = Daemon::new(
                 RuntimePaths::resolve(),
                 BuildInfo::current(),
-                Arc::new(NoSessions),
+                Arc::new(workspace),
             );
             daemon.run()?;
             Ok(())

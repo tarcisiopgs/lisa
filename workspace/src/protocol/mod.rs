@@ -120,6 +120,10 @@ impl Conn {
         })
     }
 
+    pub fn set_read_timeout(&self, timeout: Option<std::time::Duration>) -> io::Result<()> {
+        self.stream.set_read_timeout(timeout)
+    }
+
     pub fn shutdown(&self) {
         let _ = self.stream.shutdown(std::net::Shutdown::Both);
     }
