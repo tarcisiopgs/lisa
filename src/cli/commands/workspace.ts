@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
+import { chmodSync, existsSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { CliError } from "../error.js";
@@ -9,21 +11,27 @@ const SUPPORTED: Record<string, readonly string[]> = {
 	linux: ["arm64", "x64"],
 };
 
-/** Pacote npm com o binário do Workspace para a plataforma, ou `null` se não há suporte. */
-export function platformPackage(platform: string, arch: string): string | null {
-	return SUPPORTED[platform]?.includes(arch)
-		? `@tarcisiopgs/lisa-workspace-${platform}-${arch}`
-		: null;
+/** Diretório do binário do Workspace para a plataforma, ou `null` se não há suporte. */
+export function platformDir(platform: string, arch: string): string | null {
+	return SUPPORTED[platform]?.includes(arch) ? `${platform}-${arch}` : null;
+}
+
+/** Raiz do pacote instalado (`dist/index.js` → `..`). */
+function packageRoot(): string {
+	return join(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
 interface ResolveOptions {
 	platform: string;
 	arch: string;
 	env: NodeJS.ProcessEnv;
-	resolve?: (id: string) => string;
+	root?: string;
 }
 
-/** Caminho do binário `lisa-workspace`; `LISA_WORKSPACE_BIN` vence (desenvolvimento). */
+/**
+ * Caminho do binário `lisa-workspace` que vem dentro do pacote, em
+ * `bin/workspace/<os>-<arch>/`. `LISA_WORKSPACE_BIN` vence (desenvolvimento).
+ */
 export function resolveWorkspaceBinary(opts: ResolveOptions): string {
 	if (opts.env.LISA_WORKSPACE_BIN) return opts.env.LISA_WORKSPACE_BIN;
 	if (opts.platform === "win32") {
@@ -31,18 +39,25 @@ export function resolveWorkspaceBinary(opts: ResolveOptions): string {
 			"Workspace mode is not supported on Windows. Autonomous mode (`lisa run`) still works.",
 		);
 	}
-	const pkg = platformPackage(opts.platform, opts.arch);
-	if (!pkg) {
+	const dir = platformDir(opts.platform, opts.arch);
+	if (!dir) {
 		throw new CliError(`Workspace mode is not available for ${opts.platform}/${opts.arch}.`);
 	}
-	const resolve = opts.resolve ?? createRequire(import.meta.url).resolve;
-	try {
-		return resolve(`${pkg}/bin/lisa-workspace`);
-	} catch {
+	const bin = join(opts.root ?? packageRoot(), "bin", "workspace", dir, "lisa-workspace");
+	if (!existsSync(bin)) {
 		throw new CliError(
-			`Workspace mode needs the ${pkg} package, which was not installed (optional dependencies skipped?). Reinstall Lisa without --omit=optional.`,
+			`This Lisa installation has no Workspace binary for ${dir} (${bin}). Reinstall Lisa.`,
 		);
 	}
+	// Alguns gerenciadores de pacote perdem o bit de execução ao extrair
+	if ((statSync(bin).mode & 0o111) === 0) {
+		try {
+			chmodSync(bin, 0o755);
+		} catch {
+			// Sem permissão: o spawn vai falhar com uma mensagem clara
+		}
+	}
+	return bin;
 }
 
 /** Entrega o terminal ao binário e propaga o código de saída. */

@@ -1,8 +1,8 @@
 name: Publish
 
 # Publishing a GitHub Release (`gh release create vX.Y.Z --generate-notes`) checks
-# versions, builds the Workspace binaries per platform, publishes the platform
-# packages and then the main package through trusted publishing (OIDC).
+# versions, builds the Workspace binary for each platform, bundles all of them in
+# the main package and publishes it through trusted publishing (OIDC).
 # npm trusts this workflow by file name: do not rename it.
 on:
   release:
@@ -135,34 +135,23 @@ jobs:
         with:
           path: binaries
 
-      - name: Publish packages
+      - name: Bundle the binaries
         run: |
           set -euo pipefail
-          VERSION="${TAG#v}"
-          # Re-running a release must not fail on versions already on npm
-          publish() {
-            local name version
-            name=$(node -p "require('./package.json').name")
-            version=$(node -p "require('./package.json').version")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "$name@$version already published, skipping"
-            else
-              npm publish --provenance --access public
-            fi
-          }
-          deps=()
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            OS="${platform%%-*}"; ARCH="${platform#*-}"
-            dir="pkg-$platform"
-            mkdir -p "$dir/bin"
-            cp "binaries/lisa-workspace-$platform/lisa-workspace" "$dir/bin/lisa-workspace"
-            chmod +x "$dir/bin/lisa-workspace"
-            OS="$OS" ARCH="$ARCH" VERSION="$VERSION" envsubst < npm/platform/package.json.tmpl > "$dir/package.json"
-            cp LICENSE "$dir/"
-            (cd "$dir" && publish)
-            deps+=("optionalDependencies.@tarcisiopgs/lisa-workspace-$platform=$VERSION")
+            mkdir -p "bin/workspace/$platform"
+            cp "binaries/lisa-workspace-$platform/lisa-workspace" "bin/workspace/$platform/lisa-workspace"
+            chmod +x "bin/workspace/$platform/lisa-workspace"
           done
-          # O pacote principal referencia os binários só no publish: o manifesto commitado não
-          # aponta para versões que ainda não existem no npm
-          npm pkg set "${deps[@]}"
-          publish
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          # Re-running a release must not fail on a version already on npm
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version already published, skipping"
+          else
+            npm publish --provenance --access public
+          fi

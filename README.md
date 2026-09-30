@@ -394,7 +394,7 @@ Acceptance criteria:
 
 Supported agents in Workspace mode: Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Goose, Aider, Codex, Kilo Code and MiMo Code. Cursor Agent is hidden until its interactive mode is verified. Full autonomy is not offered for OpenCode, Goose and MiMo Code, which have no interactive flag for it.
 
-Workspace mode runs on macOS (arm64, x64) and Linux (x64, arm64). It supports Ghostty, iTerm2, kitty and WezTerm; Terminal.app cannot tell Shift+Enter from Enter. It ships as a small native binary installed with Lisa as an optional dependency. Autonomous mode keeps working when that binary is missing.
+Workspace mode runs on macOS (arm64, x64) and Linux (x64, arm64). It supports Ghostty, iTerm2, kitty and WezTerm; Terminal.app cannot tell Shift+Enter from Enter. It ships as a small native binary (about 1.7 MB per platform) bundled inside the Lisa package, so there is nothing else to install.
 
 ## TUI
 
