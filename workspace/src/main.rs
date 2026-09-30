@@ -1,6 +1,9 @@
 //! lisa-workspace: binário do modo Workspace da Lisa (daemon, UI e hooks).
 
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
+use lisa_workspace::daemon::{BuildInfo, Daemon, NoSessions, RuntimePaths};
 
 #[derive(Parser)]
 #[command(name = "lisa-workspace", version, about = "Lisa Workspace mode")]
@@ -25,8 +28,17 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Daemon | Command::Ui | Command::Hook { .. } => {
-            anyhow::bail!("not implemented yet")
+        Command::Daemon => {
+            // Sessão própria: fechar o terminal que abriu a UI não derruba o daemon
+            let _ = rustix::process::setsid();
+            let daemon = Daemon::new(
+                RuntimePaths::resolve(),
+                BuildInfo::current(),
+                Arc::new(NoSessions),
+            );
+            daemon.run()?;
+            Ok(())
         }
+        Command::Ui | Command::Hook { .. } => anyhow::bail!("not implemented yet"),
     }
 }
