@@ -1,0 +1,20 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"       ┌ New worktree in api ─────────────────────────────────┐        │▐▾ api                      "
+"       │› Name    Fix Login!▏                                 │        │   ◉ fix-login              "
+"       │          branch: fix-login                           │        │   ◆ rate-limit             "
+"       │                                                      │        │   ○ docs-update            "
+"       │  Agent   ● claude                                    │        │ ▾ web                      "
+"       │          ○ opencode  no full autonomy                │        │   ✔ new-checkout           "
+"       │          ○ gemini  not installed                     │        │ ▾ lisa                     "
+"       │                                                      │        │   no worktrees · n         "
+"       │  Mode    (•) normal   ( ) full autonomy              │        │                            "
+"       │                                                      │        │                            "
+"       │  ⏎ create · tab next field · esc cancel              │        │                            "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                                                    "

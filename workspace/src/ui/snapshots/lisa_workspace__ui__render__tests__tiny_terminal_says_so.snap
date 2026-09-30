@@ -1,0 +1,14 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"         Terminal too small (need 60×12)          "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "

@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
             hook(event);
             Ok(())
         }
-        Command::Ui => anyhow::bail!("not implemented yet"),
+        Command::Ui => lisa_workspace::ui::run(),
     }
 }
 
