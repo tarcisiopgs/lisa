@@ -38,7 +38,8 @@ export const runArgs = {
 	issue: { type: "string", description: "Run a specific issue by identifier or URL" },
 	provider: {
 		type: "string",
-		description: "AI provider (claude, gemini, opencode, copilot, cursor, goose, aider, codex)",
+		description:
+			"AI provider (claude, gemini, opencode, copilot, cursor, goose, aider, codex, kilo, mimo)",
 	},
 	source: {
 		type: "string",

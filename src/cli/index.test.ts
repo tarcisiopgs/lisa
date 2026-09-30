@@ -3,6 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const executeRun = vi.fn();
 const statusRun = vi.fn();
+const runWorkspace = vi.fn();
+const selectMode = vi.fn();
+const shouldShowSelector = vi.fn(() => false);
+
+vi.mock("./mode-selector.js", async (importOriginal) => {
+	const original = await importOriginal<typeof import("./mode-selector.js")>();
+	return { ...original, selectMode, shouldShowSelector };
+});
+
+vi.mock("./commands/workspace.js", async (importOriginal) => {
+	const original = await importOriginal<typeof import("./commands/workspace.js")>();
+	return {
+		...original,
+		runWorkspace,
+		workspace: defineCommand({ meta: { name: "workspace" }, run: runWorkspace }),
+	};
+});
 
 vi.mock("./commands/run.js", async (importOriginal) => {
 	const original = await importOriginal<typeof import("./commands/run.js")>();
@@ -29,6 +46,11 @@ describe("root command dispatch", () => {
 	beforeEach(() => {
 		executeRun.mockReset();
 		statusRun.mockReset();
+		runWorkspace.mockReset();
+		selectMode.mockReset();
+		shouldShowSelector.mockReset();
+		shouldShowSelector.mockReturnValue(false);
+		delete process.env.LISA_MODE;
 	});
 
 	it("does not start the loop after a subcommand ran", async () => {
@@ -60,5 +82,47 @@ describe("root command dispatch", () => {
 		await runCommand(main, { rawArgs: ["--issue", "status"] });
 
 		expect(executeRun).toHaveBeenCalledTimes(1);
+	});
+
+	it("opens the workspace when the selector picks it", async () => {
+		shouldShowSelector.mockReturnValue(true);
+		selectMode.mockResolvedValue("workspace");
+		await runCommand(main, { rawArgs: [] });
+
+		expect(runWorkspace).toHaveBeenCalledTimes(1);
+		expect(executeRun).not.toHaveBeenCalled();
+	});
+
+	it("runs the loop when the selector picks autonomous", async () => {
+		shouldShowSelector.mockReturnValue(true);
+		selectMode.mockResolvedValue("autonomous");
+		await runCommand(main, { rawArgs: [] });
+
+		expect(executeRun).toHaveBeenCalledTimes(1);
+		expect(runWorkspace).not.toHaveBeenCalled();
+	});
+
+	it("does nothing when the selector is cancelled", async () => {
+		shouldShowSelector.mockReturnValue(true);
+		selectMode.mockResolvedValue(null);
+		await runCommand(main, { rawArgs: [] });
+
+		expect(executeRun).not.toHaveBeenCalled();
+		expect(runWorkspace).not.toHaveBeenCalled();
+	});
+
+	it("opens the workspace directly when LISA_MODE=workspace", async () => {
+		process.env.LISA_MODE = "workspace";
+		await runCommand(main, { rawArgs: [] });
+
+		expect(selectMode).not.toHaveBeenCalled();
+		expect(runWorkspace).toHaveBeenCalledTimes(1);
+	});
+
+	it("runs the workspace subcommand without the loop", async () => {
+		await runCommand(main, { rawArgs: ["workspace"] });
+
+		expect(runWorkspace).toHaveBeenCalledTimes(1);
+		expect(executeRun).not.toHaveBeenCalled();
 	});
 });
