@@ -15,14 +15,29 @@
   <img src="assets/demo.gif" alt="Lisa demo" />
 </p>
 
-Lisa connects your issue tracker to an AI coding agent and delivers pull requests — autonomously. Describe a goal, Lisa decomposes it into issues, picks them up, implements each one, opens PRs, and updates your board. No babysitting.
+Lisa has two modes:
+
+- **Autonomous** connects your issue tracker to an AI coding agent and delivers pull requests on its own. Describe a goal, and Lisa decomposes it into issues, picks them up, implements each one, opens PRs and updates your board. No babysitting.
+- **Workspace** keeps your projects in a sidebar. It spins up a git worktree from a project's base branch whenever you want and runs any supported agent interactively inside it, in the same terminal. A background daemon keeps agents working when you close the UI. Lisa notifies you when one needs you or finishes.
 
 ## Quickstart
 
 ```bash
 npm install -g @tarcisiopgs/lisa
-lisa init    # interactive setup wizard
-lisa         # start the agent loop
+lisa            # choose a mode (Autonomous or Workspace)
+```
+
+Autonomous mode:
+
+```bash
+lisa init       # interactive setup wizard
+lisa run        # start the agent loop
+```
+
+Workspace mode:
+
+```bash
+lisa workspace  # open the Workspace (or pick it in the `lisa` selector)
 ```
 
 ## How It Works
@@ -95,7 +110,9 @@ provider_options:
 ## Commands
 
 ```bash
-lisa                        # start the agent loop (Kanban TUI)
+lisa                        # choose a mode (interactive terminal only)
+lisa run                    # start the agent loop (Kanban TUI)
+lisa workspace              # open Workspace mode
 lisa --once                 # process a single issue
 lisa --once --dry-run       # preview config without executing
 lisa --watch                # poll for new issues after queue empties
@@ -119,6 +136,8 @@ lisa sessions               # list active session states (supports --json)
 ```
 
 Append `--json` to any command for machine-readable output. Use `--verbose` / `--quiet` to control log verbosity.
+
+`lisa` without arguments shows the mode selector only when both stdin and stdout are terminals, outside CI and without `LISA_MODE`. Any flag, pipe or CI run keeps the autonomous loop. `LISA_MODE=autonomous|workspace` picks a mode without asking. Scripts should call `lisa run`.
 
 ## Configuration
 
@@ -340,6 +359,42 @@ Acceptance criteria:
 - [ ] Rate limit state stored in Redis (use src/lib/redis.ts)
 - [ ] Existing tests still pass
 ```
+
+## Workspace
+
+`lisa workspace` opens a terminal UI. The agent you are working with fills the left of the screen, and a narrow sidebar on the right lists your projects and their worktrees:
+
+- **Projects:** add a project once, from any git repository path. Every new worktree starts from the project's base branch after a fetch, and you can change the base branch later.
+- **Worktrees:** worktrees live in `~/.lisa/workspaces/<project>/<name>`, outside your repository. Each one runs one agent, launched through your login shell, so your PATH and tools resolve as usual.
+- **Permissions:** you choose them per worktree. Normal mode lets the agent ask; full autonomy uses the agent's skip-permissions flag.
+- **One state per worktree:**
+
+  | Glyph | State |
+  |---|---|
+  | `◉` | working |
+  | `◆` | needs you |
+  | `✔` | done |
+  | `○` | idle |
+  | `✖` | exited with an error |
+
+- **Notifications:** every time an agent needs you or finishes, Lisa sends a system notification and rings the terminal bell, unless you are looking at that worktree with the terminal focused.
+- **Background daemon:** closing the UI (or the terminal) detaches, and agents keep running. After a reboot your projects and worktrees come back and restarting an agent resumes its previous conversation where the agent supports it.
+- **Safe removal:** removing a worktree is refused while it has uncommitted changes or commits that are not on any remote, unless you force it. Remote branches are never deleted.
+
+| Keys | Action |
+|---|---|
+| `Ctrl-a` | switch between the agent and the sidebar (`Ctrl-a Ctrl-a` sends Ctrl-a to the agent) |
+| `↑↓` / `j k` | move in the sidebar |
+| `⏎` | open the selected worktree / fold a project |
+| `Tab` | jump to the next worktree that needs you or is done |
+| `n` / `p` / `b` | new worktree / add project / change base branch |
+| `d` | remove worktree |
+| `r` / `s` | restart / stop the agent |
+| `?` / `q` | help / detach |
+
+Supported agents in Workspace mode: Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Goose, Aider, Codex, Kilo Code and MiMo Code. Cursor Agent is hidden until its interactive mode is verified. Full autonomy is not offered for OpenCode, Goose and MiMo Code, which have no interactive flag for it.
+
+Workspace mode runs on macOS (arm64, x64) and Linux (x64, arm64). It supports Ghostty, iTerm2, kitty and WezTerm; Terminal.app cannot tell Shift+Enter from Enter. It ships as a small native binary installed with Lisa as an optional dependency. Autonomous mode keeps working when that binary is missing.
 
 ## TUI
 
