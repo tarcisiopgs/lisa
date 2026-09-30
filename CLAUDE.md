@@ -243,7 +243,7 @@ Reads Claude Code's JSONL session files (`~/.claude/projects/<encoded-path>/*.js
 
 ### Workspace mode (`workspace/`)
 
-- **Entry:** `lisa workspace` (`src/cli/commands/workspace.ts`) resolves the `@tarcisiopgs/lisa-workspace-<os>-<arch>` binary. `LISA_WORKSPACE_BIN` wins, for development. It then runs `lisa-workspace ui`.
+- **Entry:** `lisa workspace` (`src/cli/commands/workspace.ts`) resolves the binary bundled in the package at `bin/workspace/<os>-<arch>/lisa-workspace`. `LISA_WORKSPACE_BIN` wins, for development. It then runs `lisa-workspace ui`.
 - **Mode selector:** bare `lisa` shows it only with stdin+stdout TTY, outside CI and without `LISA_MODE` (`src/cli/mode-selector.ts`).
 - **Daemon:** the UI connects over a Unix socket in `/tmp/lisa-<uid>/` (macOS) or `$XDG_RUNTIME_DIR/lisa/` (Linux). When none is running, it re-execs the binary as `daemon` with `setsid`. The daemon holds a `flock` for its whole life, and only the lock holder touches the socket. A daemon from a different binary is replaced silently when no agents run; otherwise the UI asks whether to keep it or restart the agents.
 - **Protocol:** the control layer (`Hello`, `HelloReply`, `Shutdown`) is frozen forever, and `protocol/tests.rs` pins its bytes. Work messages evolve with `PROTOCOL_VERSION`. Only one `ui` client is attached at a time; `hook`/`cli` connections never evict it.
@@ -346,7 +346,7 @@ Release process:
 2. Commit as `chore: bump version to X.Y.Z` and merge.
 3. Create the release from `main`'s tip with `gh release create vX.Y.Z --generate-notes`.
 
-`.github/workflows/publish.yml` does the rest. It verifies that the tag matches both manifests, builds `lisa-workspace` for darwin arm64/x64 and linux musl x64/arm64, publishes the four `@tarcisiopgs/lisa-workspace-<os>-<arch>` packages, and then publishes the main package with `optionalDependencies` injected at publish time. Every publish is idempotent. npm trusts that workflow by file name; do not rename it.
+`.github/workflows/publish.yml` does the rest. It verifies that the tag matches both manifests, builds `lisa-workspace` for darwin arm64/x64 and linux musl x64/arm64, bundles the four binaries under `bin/workspace/<os>-<arch>/`, and publishes the main package. The publish is idempotent. npm trusts that workflow by file name; do not rename it.
 
 <!-- gitnexus:start -->
 # GitNexus MCP

@@ -24,3 +24,4 @@ docs/
 
 # Rust (modo Workspace)
 workspace/target/
+bin/workspace/
