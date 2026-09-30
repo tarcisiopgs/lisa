@@ -1,19 +1,35 @@
 name: Publish
 
+# Publishing a GitHub Release (`gh release create vX.Y.Z --generate-notes`) checks
+# versions, builds the Workspace binaries per platform, publishes the platform
+# packages and then the main package through trusted publishing (OIDC).
+# npm trusts this workflow by file name: do not rename it.
 on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
-  publish:
-    name: Publish to npm
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Check the tag matches package.json and Cargo.toml
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          cargo=$(grep -m1 '^version' workspace/Cargo.toml | cut -d '"' -f2)
+          if [ "v$pkg" != "$TAG" ] || [ "v$cargo" != "$TAG" ]; then
+            echo "::error::Release tag $TAG must match package.json ($pkg) and workspace/Cargo.toml ($cargo)"
+            exit 1
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -22,7 +38,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: pnpm install
@@ -36,8 +51,118 @@ jobs:
       - name: Test
         run: pnpm test
 
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: darwin, arch: arm64, runner: macos-14, target: aarch64-apple-darwin }
+          - { os: darwin, arch: x64, runner: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: linux, arch: x64, runner: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: linux, arch: arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+    defaults:
+      run:
+        working-directory: workspace
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test the binary
+        run: |
+          bin="target/${{ matrix.target }}/release/lisa-workspace"
+          "$bin" --version
+          # Um hook sem daemon precisa sair com 0, rápido
+          LISA_PANE_ID=smoke LISA_WORKSPACE_RUNTIME_DIR="$(mktemp -d)" "$bin" hook Stop < /dev/null
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-workspace-${{ matrix.os }}-${{ matrix.arch }}
+          path: workspace/target/${{ matrix.target }}/release/lisa-workspace
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing needs npm 11.5 or newer; no token is stored anywhere.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install
+
       - name: Build
         run: pnpm build
 
-      - name: Publish
-        run: pnpm publish --provenance --no-git-checks
+      - name: Download the binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+
+      - name: Publish packages
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          # Re-running a release must not fail on versions already on npm
+          publish() {
+            local name version
+            name=$(node -p "require('./package.json').name")
+            version=$(node -p "require('./package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version already published, skipping"
+            else
+              npm publish --provenance --access public
+            fi
+          }
+          deps=()
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            OS="${platform%%-*}"; ARCH="${platform#*-}"
+            dir="pkg-$platform"
+            mkdir -p "$dir/bin"
+            cp "binaries/lisa-workspace-$platform/lisa-workspace" "$dir/bin/lisa-workspace"
+            chmod +x "$dir/bin/lisa-workspace"
+            OS="$OS" ARCH="$ARCH" VERSION="$VERSION" envsubst < npm/platform/package.json.tmpl > "$dir/package.json"
+            cp LICENSE "$dir/"
+            (cd "$dir" && publish)
+            deps+=("optionalDependencies.@tarcisiopgs/lisa-workspace-$platform=$VERSION")
+          done
+          # O pacote principal referencia os binários só no publish: o manifesto commitado não
+          # aponta para versões que ainda não existem no npm
+          npm pkg set "${deps[@]}"
+          publish
