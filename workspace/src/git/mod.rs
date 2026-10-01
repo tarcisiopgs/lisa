@@ -156,6 +156,16 @@ pub fn branch_exists(top: &Path, remote: Option<&str>, branch: &str) -> bool {
         || remote.is_some_and(|r| ref_exists(top, &format!("refs/remotes/{r}/{branch}")))
 }
 
+/// A branch existe no remote, pelo último fetch.
+pub fn remote_branch_exists(top: &Path, remote: &str, branch: &str) -> bool {
+    ref_exists(top, &format!("refs/remotes/{remote}/{branch}"))
+}
+
+/// Renomeia a branch local; o worktree que a tem em checkout acompanha.
+pub fn rename_branch(top: &Path, old: &str, new: &str) -> Result<(), GitError> {
+    checked(top, &Env::default(), &["branch", "-m", old, new]).map(|_| ())
+}
+
 /// Nome digitado pelo usuário → nome de branch seguro.
 pub fn sanitize_branch(name: &str) -> Result<String, GitError> {
     let mut out = String::new();

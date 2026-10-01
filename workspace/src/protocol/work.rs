@@ -68,6 +68,19 @@ pub enum ClientMsg {
     DissolveGroup {
         group: String,
     },
+    /// Novo nome: apelido do projeto, nome do grupo, ou nome e branch do worktree.
+    Rename {
+        target: RenameTarget,
+        name: String,
+    },
+}
+
+/// O que um `Rename` renomeia, pelo slug ou id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RenameTarget {
+    Project(String),
+    Group(String),
+    Worktree(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

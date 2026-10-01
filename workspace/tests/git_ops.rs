@@ -529,3 +529,171 @@ fn repositories_with_the_same_name_get_distinct_tags() {
     seen.dedup();
     assert_eq!(seen.len(), 2, "{tags:?}");
 }
+
+// ---- Apelido e renomear ----
+
+fn branch_exists(repo: &Path, branch: &str) -> bool {
+    git::branch_exists(repo, None, branch)
+}
+
+#[test]
+fn an_alias_changes_the_shown_name_and_nothing_else() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    reg.add_group("Acme", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let slug = reg.projects()[0].slug.clone();
+    let tag_before = reg.tags().get(&slug).cloned();
+
+    reg.set_alias(&slug, "  Site  ")
+        .unwrap_or_else(|e| panic!("{e}"));
+    let project = reg.project(&slug).unwrap_or_else(|| panic!("project"));
+    assert_eq!(project.display_name(), "Site");
+    assert_eq!(project.name, "repo");
+    assert_eq!(project.slug, slug);
+    assert_eq!(reg.tags().get(&slug).cloned(), tag_before);
+
+    reg.set_alias(&slug, " ").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        reg.project(&slug).map(|p| p.display_name().to_owned()),
+        Some("repo".to_owned())
+    );
+    assert!(matches!(
+        reg.set_alias("nope", "x"),
+        Err(RegistryError::UnknownProject(_))
+    ));
+}
+
+#[test]
+fn renaming_a_group_keeps_its_slug_and_refuses_a_taken_name() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let other = local_repo(&fx, "other");
+    let mut reg = registry(&fx);
+    let a = reg
+        .add_group("A", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    reg.add_group("B", &[other], &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    reg.rename_group(&a, "Alpha")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(reg.groups()[0].name, "Alpha");
+    assert_eq!(reg.groups()[0].slug, a);
+    assert_eq!(reg.projects()[0].group.as_deref(), Some(a.as_str()));
+    // O próprio nome, com outra caixa, não é conflito
+    reg.rename_group(&a, "ALPHA")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(matches!(
+        reg.rename_group(&a, "b"),
+        Err(RegistryError::GroupExists(_))
+    ));
+    assert!(matches!(
+        reg.rename_group(&a, "  "),
+        Err(RegistryError::UnnamedGroup)
+    ));
+}
+
+#[test]
+fn renaming_a_worktree_renames_its_local_branch_and_keeps_id_and_folder() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    let slug = reg
+        .add_project(&fx.repo, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let wt = reg
+        .create_worktree(&slug, "feature", &env)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .worktree;
+
+    let notice = reg
+        .rename_worktree(&wt.id, "Better Name")
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    assert_eq!(notice, None);
+    let renamed = reg.worktree(&wt.id).unwrap_or_else(|| panic!("worktree"));
+    assert_eq!(renamed.name, "Better Name");
+    assert_eq!(renamed.branch, "better-name");
+    assert_eq!(renamed.path, wt.path);
+    assert!(branch_exists(&fx.repo, "better-name"));
+    assert!(!branch_exists(&fx.repo, "feature"));
+    // O checkout do worktree acompanha a branch
+    let head = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&wt.path)
+        .output()
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(String::from_utf8_lossy(&head.stdout).trim(), "better-name");
+
+    // O nome antigo fica livre; o id novo não colide com o do worktree renomeado
+    let again = reg
+        .create_worktree(&slug, "feature", &env)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .worktree;
+    assert_ne!(again.id, wt.id);
+    assert_eq!(reg.worktrees().len(), 2);
+}
+
+#[test]
+fn renaming_to_an_existing_branch_is_refused_and_changes_nothing() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    let slug = reg
+        .add_project(&fx.repo, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let a = reg
+        .create_worktree(&slug, "one", &env)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .worktree;
+    reg.create_worktree(&slug, "two", &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    let err = reg.rename_worktree(&a.id, "two");
+    assert!(matches!(
+        err,
+        Err(RegistryError::Git(GitError::BranchExists(_)))
+    ));
+    assert_eq!(reg.worktree(&a.id).map(|w| w.branch.as_str()), Some("one"));
+    assert!(matches!(
+        reg.rename_worktree(&a.id, "///"),
+        Err(RegistryError::Git(GitError::InvalidName(_)))
+    ));
+}
+
+#[test]
+fn renaming_a_pushed_branch_says_the_remote_keeps_the_old_name() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    let slug = reg
+        .add_project(&fx.repo, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let wt = reg
+        .create_worktree(&slug, "shipped", &env)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .worktree;
+    run(&wt.path, &["push", "-q", "origin", "shipped"]);
+
+    let notice = reg
+        .rename_worktree(&wt.id, "shipped-v2")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        notice
+            .as_deref()
+            .is_some_and(|n| n.contains("origin/shipped")),
+        "{notice:?}"
+    );
+    // Só o nome mostrado muda quando a branch resultante é a mesma
+    let notice = reg
+        .rename_worktree(&wt.id, "Shipped V2")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(notice, None);
+    assert_eq!(
+        reg.worktree(&wt.id)
+            .map(|w| (w.name.as_str(), w.branch.as_str())),
+        Some(("Shipped V2", "shipped-v2"))
+    );
+}

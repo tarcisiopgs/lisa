@@ -16,7 +16,7 @@ pub use work::{ClientMsg, DaemonMsg};
 
 pub const MAGIC: [u8; 4] = *b"LISA";
 /// Versão das mensagens de trabalho. A camada de controle não muda com ela.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 
 /// Primeiro byte de cada frame depois do handshake.

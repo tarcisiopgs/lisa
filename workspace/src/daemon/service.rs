@@ -15,7 +15,7 @@ use crate::agents::{self, AgentId, Effort, LaunchOptions, Permission, SessionMod
 use crate::git::{self, RemovalBlock};
 use crate::protocol::work::{
     AgentOption, AgentState, ClientMsg, DaemonMsg, GroupView, PermissionWire, ProjectView,
-    Snapshot, WorkspaceState, WorktreeView,
+    RenameTarget, Snapshot, WorkspaceState, WorktreeView,
 };
 use crate::registry::{Registry, RegistryError, execute_plan};
 use crate::session::hooks::write_claude_settings;
@@ -237,7 +237,7 @@ impl Inner {
             .iter()
             .map(|p| ProjectView {
                 slug: p.slug.clone(),
-                name: p.name.clone(),
+                name: p.display_name().to_owned(),
                 path: p.path.display().to_string(),
                 base_branch: p.base_branch.clone(),
                 group: p.group.clone(),
@@ -775,6 +775,30 @@ impl Inner {
                 let result = lock(&self.registry).dissolve_group(&group);
                 match result {
                     Ok(()) => self.save(),
+                    Err(e) => self.error(e),
+                }
+                self.broadcast_state();
+            }
+            ClientMsg::Rename { target, name } => {
+                let result = {
+                    let mut registry = lock(&self.registry);
+                    match &target {
+                        RenameTarget::Project(slug) => {
+                            registry.set_alias(slug, &name).map(|()| None)
+                        }
+                        RenameTarget::Group(slug) => {
+                            registry.rename_group(slug, &name).map(|()| None)
+                        }
+                        RenameTarget::Worktree(id) => registry.rename_worktree(id, &name),
+                    }
+                };
+                match result {
+                    Ok(notice) => {
+                        self.save();
+                        if let Some(notice) = notice {
+                            self.send(&DaemonMsg::Notice(notice));
+                        }
+                    }
                     Err(e) => self.error(e),
                 }
                 self.broadcast_state();

@@ -8,13 +8,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{
-    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row, Zone,
-    cost_note, effort_options, group_key, model_options, task_delivered,
+    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row, Stage,
+    Zone, cost_note, effort_options, group_key, model_options, task_delivered,
 };
 use super::picker::{Mode, Picker};
 use crate::protocol::work::{
     ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
-    ATTR_WIDE_SPACER, AgentState, Color, Snapshot, WorktreeView,
+    ATTR_WIDE_SPACER, AgentState, Color, RenameTarget, Snapshot, WorktreeView,
 };
 
 const SELECT_BAR: &str = "▐";
@@ -526,6 +526,7 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
             "⏎ open",
             "n new",
             "p project",
+            "e rename",
             if on_group { "d ungroup" } else { "d remove" },
             "r restart",
             "? help",
@@ -708,6 +709,19 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
         "New worktree in {}",
         group.unwrap_or(project.map_or(d.project.as_str(), |p| p.name.as_str()))
     );
+    // Com o roteador disponível, a tarefa vem antes de tudo
+    if d.stage == Stage::Ask {
+        let text_width = usize::from(DIALOG_WIDTH).saturating_sub(2 + LABEL_WIDTH);
+        let mut lines = task_lines(d, text_width, TASK_ROWS);
+        lines.push(Line::default());
+        lines.push(match &d.error {
+            Some(err) => Line::styled(format!("  {err}"), Style::default().fg(TuiColor::Red)),
+            // Sem tarefa, o ⏎ só passa adiante: o agente sobe vazio
+            None if d.task.trim().is_empty() => Line::styled("  ⏎ skip · esc cancel", dim()),
+            None => Line::styled("  ⏎ continue · esc cancel", dim()),
+        });
+        return (title, lines);
+    }
     let agents = app.workspace().agents.len();
     let max = usize::from(max_lines);
     let mut layouts = vec![
@@ -769,12 +783,14 @@ fn new_worktree_lines(
     let preview = crate::git::sanitize_branch(&d.name).unwrap_or_default();
     lines.push(Line::styled(
         format!(
-            "          branch: {}",
+            "          branch: {}{}",
             if preview.is_empty() {
                 "—"
             } else {
                 preview.as_str()
-            }
+            },
+            // Nome gerado: digitar o substitui
+            if d.name_auto { " · auto" } else { "" }
         ),
         dim(),
     ));
@@ -1062,6 +1078,7 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
                 ("tab", "next worktree that needs you"),
                 ("n", "new worktree in this project or group"),
                 ("p", "add project or group"),
+                ("e", "rename project, group or worktree"),
                 ("b", "change base branch"),
                 ("d", "remove worktree / ungroup"),
                 ("r / s", "restart / stop agent"),
@@ -1077,6 +1094,37 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             })
             .collect(),
         ),
+        Dialog::Rename { target, value } => {
+            let (title, note) = match target {
+                RenameTarget::Project(_) => (
+                    "Rename project",
+                    "  Sidebar name only; empty restores the folder name".to_owned(),
+                ),
+                RenameTarget::Group(_) => ("Rename group", String::new()),
+                RenameTarget::Worktree(_) => (
+                    "Rename worktree",
+                    format!(
+                        "          branch: {}",
+                        crate::git::sanitize_branch(value).unwrap_or_else(|_| "—".to_owned())
+                    ),
+                ),
+            };
+            let mut name = field_label("Name", true);
+            name.push(Span::raw(truncate_left(
+                value,
+                usize::from(width).saturating_sub(4 + LABEL_WIDTH),
+            )));
+            name.push(cursor());
+            (
+                title.into(),
+                vec![
+                    Line::from(name),
+                    Line::styled(note, dim()),
+                    Line::default(),
+                    Line::styled("  ⏎ rename · esc cancel", dim()),
+                ],
+            )
+        }
         Dialog::ConfirmDissolve { group } => {
             let name = app
                 .workspace()

@@ -9,7 +9,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::input::{encode_key, encode_paste};
 use super::picker::{Outcome, Picker};
 use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
-use crate::protocol::work::AgentOption;
+use crate::naming;
+use crate::protocol::work::{AgentOption, RenameTarget};
 use crate::protocol::work::{
     AgentState, ClientMsg, Color, CursorPos, DaemonMsg, GroupView, Line, Modes, PermissionWire,
     ProjectView, Snapshot, WorkspaceState, WorktreeView,
@@ -98,6 +99,15 @@ pub enum Field {
     Permission,
 }
 
+/// Etapa do diálogo de novo worktree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// Só a tarefa: com o roteador disponível, ela vem antes de tudo.
+    Ask,
+    /// O diálogo completo, já preenchido.
+    Review,
+}
+
 /// Situação da sugestão do roteador para a tarefa digitada.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
@@ -119,7 +129,12 @@ pub struct NewWorktree {
     /// Grupo de onde o diálogo foi aberto; `None` em projeto solto.
     pub group: Option<String>,
     pub project: String,
+    pub stage: Stage,
+    /// Campo que recebe o foco quando a etapa da tarefa termina.
+    review_field: Field,
     pub name: String,
+    /// O nome foi gerado e ainda não foi editado: a primeira tecla o substitui.
+    pub name_auto: bool,
     /// Tarefa inicial; em branco, o agente sobe vazio como antes.
     pub task: String,
     pub agent: usize,
@@ -175,6 +190,9 @@ fn selected_model(agent: &str, index: usize) -> Option<&'static agents::ModelSpe
 
 /// Campos por onde o Tab passa, na ordem, para o agente e o modelo selecionados.
 fn fields(d: &NewWorktree, agents: &[AgentOption]) -> Vec<Field> {
+    if d.stage == Stage::Ask {
+        return vec![Field::Task];
+    }
     let agent = agents.get(d.agent).map_or("", |a| a.name.as_str());
     let mut order = Vec::new();
     if d.group.is_some() {
@@ -245,6 +263,11 @@ pub enum Dialog {
     ConfirmDissolve {
         group: String,
     },
+    /// Apelido do projeto, nome do grupo, ou nome e branch do worktree.
+    Rename {
+        target: RenameTarget,
+        value: String,
+    },
     Help,
 }
 
@@ -282,6 +305,8 @@ pub struct App {
     sidebar_pref: u16,
     /// Slug do grupo → último projeto em que um worktree foi criado por ele.
     last_repos: BTreeMap<String, String>,
+    /// Há chave do roteador: o diálogo de novo worktree começa pela tarefa.
+    router_ready: bool,
     router: RouterConfig,
     /// Id da última consulta ao roteador; respostas com outro id são descartadas.
     route_seq: u64,
@@ -308,6 +333,7 @@ impl App {
             default_autonomy: false,
             sidebar_pref: SIDEBAR_DEFAULT,
             last_repos: BTreeMap::new(),
+            router_ready: false,
             router: RouterConfig::default(),
             route_seq: 0,
             start_dir: PathBuf::from("/"),
@@ -319,6 +345,20 @@ impl App {
     pub fn set_dirs(&mut self, start: PathBuf, home: Option<PathBuf>) {
         self.start_dir = start;
         self.home = home;
+    }
+
+    pub fn set_router_ready(&mut self, ready: bool) {
+        self.router_ready = ready;
+    }
+
+    /// Nomes e branches já usados no projeto: um nome automático não os repete.
+    fn taken(&self, project: &str) -> Vec<String> {
+        self.workspace
+            .worktrees
+            .iter()
+            .filter(|w| w.project == project)
+            .flat_map(|w| [w.name.clone(), w.branch.clone()])
+            .collect()
     }
 
     pub fn set_last_repos(&mut self, last: BTreeMap<String, String>) {
@@ -1013,6 +1053,29 @@ impl App {
                     });
                 }
             }
+            KeyCode::Char('e') => {
+                let rename = match self.selected_row() {
+                    Some(Row::Project { slug } | Row::Empty { project: slug }) => self
+                        .workspace
+                        .projects
+                        .iter()
+                        .find(|p| p.slug == slug)
+                        .map(|p| (RenameTarget::Project(slug), p.name.clone())),
+                    Some(Row::Group { slug } | Row::EmptyGroup { group: slug }) => self
+                        .workspace
+                        .groups
+                        .iter()
+                        .find(|g| g.slug == slug)
+                        .map(|g| (RenameTarget::Group(slug), g.name.clone())),
+                    Some(Row::Worktree { id }) => self
+                        .worktree(&id)
+                        .map(|w| (RenameTarget::Worktree(id.clone()), w.name.clone())),
+                    None => None,
+                };
+                if let Some((target, value)) = rename {
+                    self.dialog = Some(Dialog::Rename { target, value });
+                }
+            }
             KeyCode::Char('r') => {
                 if let Some(w) = self.selected_worktree() {
                     if w.running {
@@ -1089,16 +1152,31 @@ impl App {
             .agents
             .get(agent)
             .is_some_and(|a| a.autonomy_supported);
+        let taken = self.taken(&project);
+        let taken: Vec<&str> = taken.iter().map(String::as_str).collect();
+        let name = naming::word_name(&project, &taken);
+        let stage = if self.router_ready {
+            Stage::Ask
+        } else {
+            Stage::Review
+        };
         self.dialog = Some(Dialog::NewWorktree(NewWorktree {
             group,
             project,
-            name: String::new(),
+            stage,
+            review_field: field,
+            name,
+            name_auto: true,
             task: String::new(),
             agent,
             model: 0,
             effort: None,
             autonomy: self.default_autonomy && supported,
-            field,
+            field: if stage == Stage::Ask {
+                Field::Task
+            } else {
+                field
+            },
             pending: false,
             error: None,
             route: Route::Idle,
@@ -1125,6 +1203,19 @@ impl App {
                 .unwrap_or_default(),
             _ => Vec::new(),
         };
+        // Nomes em uso por projeto, para o nome automático acompanhar o repositório
+        let taken: BTreeMap<String, Vec<String>> = match &self.dialog {
+            Some(Dialog::NewWorktree(d)) => repos
+                .iter()
+                .map(|(slug, _)| slug.clone())
+                .chain([d.project.clone()])
+                .map(|slug| {
+                    let names = self.taken(&slug);
+                    (slug, names)
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        };
         let Some(dialog) = self.dialog.as_mut() else {
             return Vec::new();
         };
@@ -1138,6 +1229,20 @@ impl App {
         match dialog {
             Dialog::Help => {
                 self.dialog = None;
+                Vec::new()
+            }
+            Dialog::Rename { target, value } => {
+                if key.code == KeyCode::Enter {
+                    let name = value.trim().to_owned();
+                    // Só o apelido do projeto pode ficar em branco: volta ao nome da pasta
+                    if name.is_empty() && !matches!(target, RenameTarget::Project(_)) {
+                        return Vec::new();
+                    }
+                    let target = target.clone();
+                    self.dialog = None;
+                    return vec![Action::Send(ClientMsg::Rename { target, name })];
+                }
+                edit_text(value, key);
                 Vec::new()
             }
             Dialog::ConfirmDissolve { group } => {
@@ -1200,6 +1305,27 @@ impl App {
                     return Vec::new();
                 }
                 let agent_name = agents.get(d.agent).map_or("", |a| a.name.as_str());
+                let in_use = |project: &str| -> Vec<&str> {
+                    taken
+                        .get(project)
+                        .map(|names| names.iter().map(String::as_str).collect())
+                        .unwrap_or_default()
+                };
+                if d.stage == Stage::Ask {
+                    if key.code == KeyCode::Enter {
+                        if d.task.len() > MAX_PROMPT_BYTES {
+                            d.error = Some("task is too long (max 100,000 bytes)".into());
+                            return Vec::new();
+                        }
+                        d.error = None;
+                        d.stage = Stage::Review;
+                        d.field = d.review_field;
+                        rename_from_task(d, &in_use(&d.project));
+                        return route_request(d, &mut self.route_seq).into_iter().collect();
+                    }
+                    edit_text(&mut d.task, key);
+                    return Vec::new();
+                }
                 match (d.field, key.code) {
                     (_, KeyCode::Tab | KeyCode::BackTab) => {
                         let leaving_task = d.field == Field::Task;
@@ -1212,6 +1338,7 @@ impl App {
                         };
                         d.field = order[next];
                         if leaving_task {
+                            rename_from_task(d, &in_use(&d.project));
                             return route_request(d, &mut self.route_seq).into_iter().collect();
                         }
                     }
@@ -1226,6 +1353,7 @@ impl App {
                                 (here + slugs.len() - 1) % slugs.len()
                             };
                             d.project = slugs[next].to_owned();
+                            rename_from_task(d, &in_use(&d.project));
                         }
                     }
                     // Uma letra pula para o próximo repositório cuja marca começa com ela
@@ -1247,7 +1375,14 @@ impl App {
                                 });
                         if let Some(i) = hit {
                             d.project = repos[i].0.clone();
+                            rename_from_task(d, &in_use(&d.project));
                         }
+                    }
+                    // Nome gerado: a primeira tecla o substitui, como texto selecionado
+                    (Field::Name, KeyCode::Char(_) | KeyCode::Backspace) if d.name_auto => {
+                        d.name.clear();
+                        d.name_auto = false;
+                        edit_text(&mut d.name, key);
                     }
                     (Field::Name, _) if edit_text(&mut d.name, key) => {}
                     (Field::Task, _) if edit_text(&mut d.task, key) => {}
@@ -1371,12 +1506,31 @@ fn fix_autonomy(d: &mut NewWorktree, agents: &[AgentOption]) {
     }
 }
 
+/// Enquanto o nome é automático, ele acompanha a tarefa e o repositório: sai das primeiras
+/// palavras da tarefa ou, sem tarefa, da lista de palavras.
+fn rename_from_task(d: &mut NewWorktree, taken: &[&str]) {
+    if !d.name_auto {
+        return;
+    }
+    d.name = match naming::task_name(&d.task) {
+        Some(name) => naming::unique(&name, taken),
+        None => naming::word_name(&d.project, taken),
+    };
+}
+
 /// Campo de texto do diálogo, se houver.
 fn dialog_text(dialog: &mut Dialog) -> Option<&mut String> {
     match dialog {
-        Dialog::BaseBranch { value, .. } => Some(value),
+        Dialog::BaseBranch { value, .. } | Dialog::Rename { value, .. } => Some(value),
         Dialog::NewWorktree(d) if !d.pending => match d.field {
-            Field::Name => Some(&mut d.name),
+            Field::Name => {
+                // Colar sobre um nome gerado o substitui
+                if d.name_auto {
+                    d.name.clear();
+                    d.name_auto = false;
+                }
+                Some(&mut d.name)
+            }
             Field::Task => Some(&mut d.task),
             _ => None,
         },

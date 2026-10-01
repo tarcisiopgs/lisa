@@ -149,6 +149,8 @@ pub fn run() -> anyhow::Result<()> {
     app.set_default_autonomy(prefs.default_autonomy);
     app.set_sidebar_width(prefs.sidebar_width);
     app.set_last_repos(prefs.last_repo.clone());
+    let has_key = std::env::var(crate::router::jev::KEY_VAR).is_ok_and(|k| !k.trim().is_empty());
+    app.set_router_ready(has_key);
     let (router_config, config_warning) = config::load(&config::config_path());
     app.set_router_config(router_config);
     if let Some(warning) = config_warning {

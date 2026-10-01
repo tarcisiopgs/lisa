@@ -4,8 +4,8 @@ expression: t.backend()
 ---
 " PROJE┌ New worktree in B-Metric ────────────────────────┐  "
 "▐▾ B-M│› Repo    ‹ api ›  1 of 3                         │  "
-"   ◉ f│  Name                                            │  "
-"   ◆ d│          branch: —                               │  "
+"   ◉ f│  Name    piano                                   │  "
+"   ◆ d│          branch: piano · auto                    │  "
 " ▾ blo│  Task    what should the agent do? (optional)    │  "
 "   no │  Agent   ● claude                                │  "
 " ▾ lis│          ○ opencode  no full autonomy            │  "
