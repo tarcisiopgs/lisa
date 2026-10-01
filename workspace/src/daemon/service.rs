@@ -326,31 +326,33 @@ impl Inner {
                 dir.display().to_string(),
             ));
         }
-        let mut launch = build_launch(LaunchRequest {
+        // Claude: hooks por sessão para estados determinísticos (KTD12)
+        let mut extra_args = Vec::new();
+        if agent == AgentId::Claude
+            && let Some(exe) = lock(&self.hook_exe).as_ref()
+        {
+            match write_claude_settings(&self.hooks_dir, exe) {
+                Ok(path) => {
+                    extra_args.push("--settings".to_owned());
+                    extra_args.push(path.display().to_string());
+                }
+                Err(e) => self.send(&DaemonMsg::Notice(format!("agent hooks unavailable: {e}"))),
+            }
+        }
+        let launch = build_launch(LaunchRequest {
             agent,
             permission,
             session,
             model,
             effort,
             prompt,
+            extra_args,
             cwd: &wt.path,
             env,
             cols,
             rows,
         })
         .map_err(|e| e.to_string())?;
-        // Claude: hooks por sessão para estados determinísticos (KTD12)
-        if agent == AgentId::Claude
-            && let Some(exe) = lock(&self.hook_exe).as_ref()
-        {
-            match write_claude_settings(&self.hooks_dir, exe) {
-                Ok(path) => {
-                    launch.args.push("--settings".into());
-                    launch.args.push(path.display().to_string());
-                }
-                Err(e) => self.send(&DaemonMsg::Notice(format!("agent hooks unavailable: {e}"))),
-            }
-        }
         Ok(launch)
     }
 

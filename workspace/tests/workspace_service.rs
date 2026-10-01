@@ -182,8 +182,11 @@ fn chosen_model_effort_and_prompt_reach_the_agent() {
         Some(TASK),
     );
     let args = argv(&env, "routed");
-    let tail = &args[args.len() - 6..];
-    assert_eq!(tail, ["--model", "opus", "--effort", "high", "--", TASK]);
+    let joined = args.join(" ");
+    assert!(joined.contains("--model opus --effort high"), "{joined}");
+    // A tarefa fecha a linha de comando: nada do daemon pode vir depois do `--`
+    assert_eq!(&args[args.len() - 2..], ["--", TASK]);
+    assert!(args.iter().any(|a| a == "--settings"), "{joined}");
 }
 
 #[test]

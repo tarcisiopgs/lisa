@@ -396,27 +396,33 @@ pub fn launch_args(
         args.extend(flags.iter().map(|a| (*a).to_owned()));
     }
 
-    // O prompt é sempre o último argumento, e só em sessão nova
-    let new_session = matches!(session, SessionMode::New { .. });
-    if let Some(prompt) = opts.prompt {
-        let form = catalog(id)
-            .and_then(|c| c.prompt)
-            .ok_or(LaunchError::PromptUnsupported(id))?;
-        if prompt.len() > MAX_PROMPT_BYTES {
-            return Err(LaunchError::PromptTooLarge);
-        }
-        if new_session {
-            match form {
-                PromptArg::Positional => {
-                    args.push("--".to_owned());
-                    args.push(prompt.to_owned());
-                }
-                PromptArg::Flag(flag) => args.push(format!("{flag}={prompt}")),
-            }
-        }
-    }
-
+    args.extend(prompt_args(id, session, opts.prompt)?);
     Ok(args)
+}
+
+/// Argumentos do prompt inicial: sempre os últimos da linha de comando (nada pode vir
+/// depois do `--`), e só em sessão nova.
+pub fn prompt_args(
+    id: AgentId,
+    session: &SessionMode,
+    prompt: Option<&str>,
+) -> Result<Vec<String>, LaunchError> {
+    let Some(prompt) = prompt else {
+        return Ok(Vec::new());
+    };
+    let form = catalog(id)
+        .and_then(|c| c.prompt)
+        .ok_or(LaunchError::PromptUnsupported(id))?;
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return Err(LaunchError::PromptTooLarge);
+    }
+    if !matches!(session, SessionMode::New { .. }) {
+        return Ok(Vec::new());
+    }
+    Ok(match form {
+        PromptArg::Positional => vec!["--".to_owned(), prompt.to_owned()],
+        PromptArg::Flag(flag) => vec![format!("{flag}={prompt}")],
+    })
 }
 
 /// Argumentos de modelo e effort, conferidos contra o catálogo.

@@ -17,6 +17,8 @@ pub struct LaunchRequest<'a> {
     pub effort: Option<Effort>,
     /// Tarefa inicial; só entra em sessão nova.
     pub prompt: Option<String>,
+    /// Argumentos do daemon (ex.: `--settings` dos hooks); entram antes do prompt.
+    pub extra_args: Vec<String>,
     pub cwd: &'a Path,
     pub env: Vec<(String, String)>,
     pub cols: u16,
@@ -52,8 +54,14 @@ pub fn build_launch(req: LaunchRequest<'_>) -> Result<Launch, LaunchError> {
         &LaunchOptions {
             model: req.model.as_deref(),
             effort: req.effort,
-            prompt: req.prompt.as_deref(),
+            prompt: None,
         },
+    )?);
+    args.extend(req.extra_args);
+    args.extend(agents::prompt_args(
+        req.agent,
+        &req.session,
+        req.prompt.as_deref(),
     )?);
     Ok(Launch {
         program: login_shell(&req.env),
@@ -79,6 +87,7 @@ mod tests {
             model: None,
             effort: None,
             prompt: None,
+            extra_args: Vec::new(),
             cwd: Path::new("/tmp"),
             env,
             cols: 80,
@@ -105,6 +114,16 @@ mod tests {
         let launch = build_launch(req).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(launch.args[1], EXEC_SCRIPT);
         assert_eq!(launch.args.last().map(String::as_str), Some(prompt));
+    }
+
+    #[test]
+    fn daemon_arguments_come_before_the_prompt_separator() {
+        let mut req = request(Vec::new());
+        req.prompt = Some("do it".to_owned());
+        req.extra_args = vec!["--settings".to_owned(), "/s.json".to_owned()];
+        let launch = build_launch(req).unwrap_or_else(|e| panic!("{e}"));
+        let tail = &launch.args[launch.args.len() - 4..];
+        assert_eq!(tail, ["--settings", "/s.json", "--", "do it"]);
     }
 
     #[test]
