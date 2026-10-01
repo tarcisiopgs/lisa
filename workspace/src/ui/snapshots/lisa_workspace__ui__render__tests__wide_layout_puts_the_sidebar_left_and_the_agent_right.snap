@@ -15,4 +15,4 @@ expression: draw(&a).backend()
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
-" api/fix-login · claude        ⏎ open · n new · p project · d remove · r restart · ? help · q quit  "
+" api/fix-login · claude                                                                    ^a menu  "
