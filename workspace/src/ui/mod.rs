@@ -145,7 +145,9 @@ pub fn run() -> anyhow::Result<()> {
     if let Ok(cwd) = std::env::current_dir() {
         app.set_dirs(cwd, std::env::var_os("HOME").map(std::path::PathBuf::from));
     }
-    app.set_default_autonomy(terminal::load_default_autonomy(&terminal::prefs_path()));
+    let mut prefs = terminal::Prefs::load(&terminal::prefs_path());
+    app.set_default_autonomy(prefs.default_autonomy);
+    app.set_sidebar_width(prefs.sidebar_width);
     let (router_config, config_warning) = config::load(&config::config_path());
     app.set_router_config(router_config);
     if let Some(warning) = config_warning {
@@ -223,7 +225,12 @@ pub fn run() -> anyhow::Result<()> {
                     let _ = out.flush();
                 }
                 Action::RememberAutonomy(on) => {
-                    terminal::save_default_autonomy(&terminal::prefs_path(), on)
+                    prefs.default_autonomy = on;
+                    prefs.save(&terminal::prefs_path());
+                }
+                Action::RememberSidebarWidth(width) => {
+                    prefs.sidebar_width = Some(width);
+                    prefs.save(&terminal::prefs_path());
                 }
                 Action::Quit => {
                     exit_message = app.exit_message().map(str::to_owned);

@@ -1,10 +1,12 @@
 //! Estado do terminal hospedeiro e preferências da UI.
 
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{DisableBracketedPaste, DisableFocusChange, PopKeyboardEnhancementFlags};
 use crossterm::queue;
+use serde::{Deserialize, Serialize};
 
 /// Sequências que desfazem tudo o que a UI ligou no terminal hospedeiro.
 pub fn restore_bytes(enhanced: bool) -> Vec<u8> {
@@ -69,26 +71,37 @@ pub fn prefs_path() -> PathBuf {
         .join("prefs.json")
 }
 
-pub fn load_default_autonomy(path: &Path) -> bool {
-    std::fs::read(path)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .and_then(|v| {
-            v.get("default_autonomy")
-                .and_then(serde_json::Value::as_bool)
-        })
-        .unwrap_or(false)
+/// Preferências da UI nesta máquina. Lidas e gravadas inteiras, para uma não apagar a outra.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Prefs {
+    pub default_autonomy: bool,
+    pub sidebar_width: Option<u16>,
+    /// Slug do grupo → slug do último projeto em que um worktree foi criado.
+    pub last_repo: BTreeMap<String, String>,
 }
 
-/// Falha silenciosa: é uma conveniência, não pode derrubar a UI.
-pub fn save_default_autonomy(path: &Path, on: bool) {
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
+impl Prefs {
+    /// Arquivo ausente ou ilegível vira o padrão.
+    pub fn load(path: &Path) -> Prefs {
+        std::fs::read(path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
     }
-    let body = serde_json::json!({ "default_autonomy": on }).to_string();
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, body).is_ok() {
-        let _ = std::fs::rename(&tmp, path);
+
+    /// Falha silenciosa: é uma conveniência, não pode derrubar a UI.
+    pub fn save(&self, path: &Path) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let Ok(body) = serde_json::to_vec(self) else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, body).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
     }
 }
 
@@ -119,12 +132,57 @@ mod tests {
         assert!(!bytes.contains("\x1b[<1u"));
     }
 
-    #[test]
-    fn default_autonomy_round_trips_and_defaults_to_normal() {
+    fn prefs_file() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
         let path = dir.path().join("prefs.json");
-        assert!(!load_default_autonomy(&path));
-        save_default_autonomy(&path, true);
-        assert!(load_default_autonomy(&path));
+        (dir, path)
+    }
+
+    #[test]
+    fn prefs_round_trip_and_default_when_missing() {
+        let (_dir, path) = prefs_file();
+        assert_eq!(Prefs::load(&path), Prefs::default());
+        let prefs = Prefs {
+            default_autonomy: true,
+            sidebar_width: Some(34),
+            last_repo: BTreeMap::from([("acme".to_owned(), "acme-api".to_owned())]),
+        };
+        prefs.save(&path);
+        assert_eq!(Prefs::load(&path), prefs);
+    }
+
+    #[test]
+    fn a_prefs_file_from_the_previous_version_keeps_its_autonomy() {
+        let (_dir, path) = prefs_file();
+        std::fs::write(&path, r#"{"default_autonomy":true}"#).unwrap_or_else(|e| panic!("{e}"));
+        let prefs = Prefs::load(&path);
+        assert!(prefs.default_autonomy);
+        assert_eq!(prefs.sidebar_width, None);
+        assert!(prefs.last_repo.is_empty());
+    }
+
+    #[test]
+    fn saving_one_preference_keeps_the_others() {
+        let (_dir, path) = prefs_file();
+        Prefs {
+            default_autonomy: true,
+            sidebar_width: None,
+            last_repo: BTreeMap::from([("acme".to_owned(), "acme-api".to_owned())]),
+        }
+        .save(&path);
+        let mut prefs = Prefs::load(&path);
+        prefs.sidebar_width = Some(40);
+        prefs.save(&path);
+        let again = Prefs::load(&path);
+        assert!(again.default_autonomy);
+        assert_eq!(again.sidebar_width, Some(40));
+        assert_eq!(again.last_repo.len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_prefs_file_falls_back_to_the_defaults() {
+        let (_dir, path) = prefs_file();
+        std::fs::write(&path, "not json").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(Prefs::load(&path), Prefs::default());
     }
 }

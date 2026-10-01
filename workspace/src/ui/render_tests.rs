@@ -676,3 +676,29 @@ fn a_tag_never_reaches_the_separator_and_wide_characters_do_not_panic() {
     assert!(line.contains('…'), "{line}");
     assert!(line.trim_end().ends_with("consumer"), "{line}");
 }
+
+// ---- Largura da lateral ----
+
+#[test]
+fn sidebar_at_its_narrowest_keeps_the_tag_whole() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/dev-2368-atividades-do-projeto",
+        AgentState::Working,
+        true,
+    ));
+    let mut a = grouped(100, 14, ws);
+    a.set_sidebar_width(Some(20));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 3, 21), "   ◉ dev-… consumer │");
+}
+
+#[test]
+fn sidebar_at_its_widest() {
+    let mut a = grouped(120, 14, grouped_workspace());
+    a.set_sidebar_width(Some(48));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(a.pane_size(), (71, 13));
+}

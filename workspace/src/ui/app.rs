@@ -16,7 +16,11 @@ use crate::protocol::work::{
 use crate::router::{self, Answers, RouteError, RouterConfig, Size};
 
 /// Largura da lateral completa, sem o separador.
-pub const SIDEBAR_WIDTH: u16 = 28;
+pub const SIDEBAR_DEFAULT: u16 = 28;
+pub const SIDEBAR_MIN: u16 = 20;
+pub const SIDEBAR_MAX: u16 = 48;
+/// Colunas que o painel do agente mantém, qualquer que seja a largura da lateral.
+pub const PANE_MIN: u16 = 40;
 /// Largura do trilho de glifos em terminais estreitos, sem o separador.
 pub const RAIL_WIDTH: u16 = 3;
 /// Abaixo desta largura a lateral vira trilho.
@@ -45,6 +49,8 @@ pub enum Action {
     Bell,
     /// Guarda a permissão escolhida como padrão para os próximos worktrees (R9).
     RememberAutonomy(bool),
+    /// Guarda a largura da lateral para a próxima abertura.
+    RememberSidebarWidth(u16),
     Quit,
 }
 
@@ -254,6 +260,8 @@ pub struct App {
     exit_message: Option<String>,
     /// Permissão pré-selecionada ao criar um worktree (R9).
     default_autonomy: bool,
+    /// Largura preferida da lateral; a efetiva sai de `sidebar_width`.
+    sidebar_pref: u16,
     router: RouterConfig,
     /// Id da última consulta ao roteador; respostas com outro id são descartadas.
     route_seq: u64,
@@ -278,6 +286,7 @@ impl App {
             window_focused: false,
             exit_message: None,
             default_autonomy: false,
+            sidebar_pref: SIDEBAR_DEFAULT,
             router: RouterConfig::default(),
             route_seq: 0,
             start_dir: PathBuf::from("/"),
@@ -289,6 +298,47 @@ impl App {
     pub fn set_dirs(&mut self, start: PathBuf, home: Option<PathBuf>) {
         self.start_dir = start;
         self.home = home;
+    }
+
+    /// Largura guardada nas preferências; `None` volta ao padrão.
+    pub fn set_sidebar_width(&mut self, width: Option<u16>) {
+        self.sidebar_pref = width.unwrap_or(SIDEBAR_DEFAULT);
+    }
+
+    /// Largura da lateral completa: a preferida, dentro dos limites e sem deixar o painel
+    /// do agente com menos de `PANE_MIN` colunas.
+    pub fn sidebar_width(&self) -> u16 {
+        let ceiling = if self.wide() {
+            SIDEBAR_MAX
+                .min(self.cols.saturating_sub(PANE_MIN + 1))
+                .max(SIDEBAR_MIN)
+        } else {
+            SIDEBAR_MAX
+        };
+        self.sidebar_pref.clamp(SIDEBAR_MIN, ceiling)
+    }
+
+    /// `<` e `>`: uma coluna por toque. No limite, nada acontece.
+    fn resize_sidebar(&mut self, wider: bool) -> Vec<Action> {
+        let before = self.sidebar_width();
+        self.sidebar_pref = if wider {
+            before.saturating_add(1)
+        } else {
+            before.saturating_sub(1)
+        };
+        let after = self.sidebar_width();
+        self.sidebar_pref = after;
+        if after == before {
+            return Vec::new();
+        }
+        let mut actions = Vec::new();
+        // Em terminal estreito a lateral é uma sobreposição: o painel não muda de tamanho
+        if self.wide() {
+            let (cols, rows) = self.pane_size();
+            actions.push(Action::Send(ClientMsg::Resize { cols, rows }));
+        }
+        actions.push(Action::RememberSidebarWidth(after));
+        actions
     }
 
     pub fn set_default_autonomy(&mut self, autonomy: bool) {
@@ -369,7 +419,7 @@ impl App {
     /// Tamanho do painel do agente.
     pub fn pane_size(&self) -> (u16, u16) {
         let side = if self.wide() {
-            SIDEBAR_WIDTH
+            self.sidebar_width()
         } else {
             RAIL_WIDTH
         } + 1;
@@ -887,6 +937,8 @@ impl App {
                     return vec![Action::Send(ClientMsg::StopAgent { id: w.id })];
                 }
             }
+            KeyCode::Char('<') => return self.resize_sidebar(false),
+            KeyCode::Char('>') => return self.resize_sidebar(true),
             KeyCode::Char('?') => self.dialog = Some(Dialog::Help),
             KeyCode::Char('q') => return vec![Action::Quit],
             _ => {}

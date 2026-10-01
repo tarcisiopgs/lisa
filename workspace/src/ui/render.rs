@@ -8,8 +8,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{
-    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row,
-    SIDEBAR_WIDTH, Zone, cost_note, effort_options, group_key, model_options, task_delivered,
+    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row, Zone,
+    cost_note, effort_options, group_key, model_options, task_delivered,
 };
 use super::picker::Picker;
 use crate::protocol::work::{
@@ -133,7 +133,7 @@ pub fn render(f: &mut Frame, app: &App) {
 
     let body_h = area.height - 1;
     let side_w = if app.wide() {
-        SIDEBAR_WIDTH
+        app.sidebar_width()
     } else {
         RAIL_WIDTH
     };
@@ -171,17 +171,18 @@ pub fn render(f: &mut Frame, app: &App) {
         render_sidebar(f, app, side);
     } else if app.zone() == Zone::Sidebar {
         // Terminal estreito: a lateral completa aparece por cima do painel enquanto navega
+        let full = app.sidebar_width();
         let overlay = Rect {
             x: 0,
             y: 0,
-            width: SIDEBAR_WIDTH + 1,
+            width: full + 1,
             height: body_h,
         };
         f.render_widget(Clear, overlay);
         f.render_widget(
             Paragraph::new(vec![Line::from("│"); usize::from(body_h)]).style(dim()),
             Rect {
-                x: SIDEBAR_WIDTH,
+                x: full,
                 width: 1,
                 ..overlay
             },
@@ -190,7 +191,7 @@ pub fn render(f: &mut Frame, app: &App) {
             f,
             app,
             Rect {
-                width: SIDEBAR_WIDTH,
+                width: full,
                 ..overlay
             },
         );

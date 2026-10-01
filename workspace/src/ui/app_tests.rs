@@ -1277,3 +1277,97 @@ fn a_project_whose_group_is_gone_is_listed_standalone() {
     let w = wt("b-metric-api/ingest", AgentState::Working, true);
     assert_eq!(a.tag(&w), None);
 }
+
+// ---- Largura da lateral ----
+
+fn ch(c: char) -> KeyEvent {
+    key(KeyCode::Char(c))
+}
+
+#[test]
+fn angle_keys_resize_the_sidebar_one_column_and_resize_the_pane() {
+    let mut a = app();
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+    let actions = a.on_key(ch('>'));
+    assert_eq!(a.sidebar_width(), 29);
+    assert_eq!(
+        actions,
+        [
+            Action::Send(ClientMsg::Resize { cols: 90, rows: 29 }),
+            Action::RememberSidebarWidth(29),
+        ]
+    );
+    let actions = a.on_key(ch('<'));
+    assert_eq!(a.sidebar_width(), 28);
+    assert_eq!(
+        actions,
+        [
+            Action::Send(ClientMsg::Resize { cols: 91, rows: 29 }),
+            Action::RememberSidebarWidth(28),
+        ]
+    );
+}
+
+#[test]
+fn the_sidebar_width_stops_at_its_limits() {
+    let mut a = app();
+    for _ in 0..48 {
+        a.on_key(ch('>'));
+    }
+    assert_eq!(a.sidebar_width(), SIDEBAR_MAX);
+    assert!(a.on_key(ch('>')).is_empty());
+    for _ in 0..48 {
+        a.on_key(ch('<'));
+    }
+    assert_eq!(a.sidebar_width(), SIDEBAR_MIN);
+    assert!(a.on_key(ch('<')).is_empty());
+}
+
+#[test]
+fn a_stored_width_outside_the_limits_is_clamped() {
+    let mut a = app();
+    a.set_sidebar_width(Some(200));
+    assert_eq!(a.sidebar_width(), SIDEBAR_MAX);
+    a.set_sidebar_width(Some(3));
+    assert_eq!(a.sidebar_width(), SIDEBAR_MIN);
+    a.set_sidebar_width(None);
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+}
+
+#[test]
+fn the_pane_never_gets_narrower_than_its_minimum() {
+    let mut a = App::new(100, 30);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace()));
+    a.set_sidebar_width(Some(SIDEBAR_MAX));
+    let (cols, _) = a.pane_size();
+    assert!(cols >= PANE_MIN, "{cols}");
+}
+
+#[test]
+fn angle_keys_send_nothing_to_the_agent_and_do_nothing_under_a_dialog() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    // No painel, a tecla é do agente
+    let actions = a.on_key(ch('>'));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::Input { .. }]
+    ));
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+    a.on_key(ctrl('a'));
+    a.on_key(ch('?'));
+    assert!(a.on_key(ch('>')).is_empty());
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+}
+
+#[test]
+fn in_a_narrow_terminal_the_overlay_resizes_without_resizing_the_pane() {
+    let mut a = App::new(80, 20);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace()));
+    let before = a.pane_size();
+    let actions = a.on_key(ch('>'));
+    assert_eq!(actions, [Action::RememberSidebarWidth(29)]);
+    assert_eq!(a.pane_size(), before);
+}

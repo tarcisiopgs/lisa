@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                                       │                                                                       "
+"▐▾ B-Metric                                     │                                                                       "
+"   ◉ fix-ingest-lag                         api │                                                                       "
+"   ◆ dashboard-filter                       web │                                                                       "
+" ▾ bloom                                        │                                                                       "
+"   no worktrees · n                             │                                                                       "
+" ▾ lisa                                         │                     ⏎ opens the selected worktree                     "
+"   ✔ sidebar-groups                             │                                                                       "
+"                                                │                                                                       "
+"                                                │                                                                       "
+"                                                │                                                                       "
+"                                                │                                                                       "
+"                                                │                                                                       "
+"                                                   ⏎ open · n new · p project · d remove · r restart · ? help · q quit  "
