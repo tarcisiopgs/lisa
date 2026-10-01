@@ -1515,10 +1515,7 @@ fn the_welcome_screen_shows_the_wordmark_next_steps_and_the_agents() {
         screen.contains("1 needs you · 1 working · 1 done"),
         "{screen}"
     );
-    assert!(
-        screen.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))),
-        "{screen}"
-    );
+    assert!(screen.contains("v0.0.0"), "{screen}");
     insta::assert_snapshot!(t.backend());
 }
 

@@ -248,6 +248,12 @@ const WORDMARK: [&str; 5] = [
     "███████ ██  ███████  ██   ██",
 ];
 const TAGLINE: &str = "Map projects. Run agents. Stay in the terminal.";
+/// Versão mostrada na tela de entrada. Fixa nos testes, para um bump não mexer nos snapshots.
+const VERSION: &str = if cfg!(test) {
+    "0.0.0"
+} else {
+    env!("CARGO_PKG_VERSION")
+};
 /// Largura do bloco da tela de entrada: a da frase, a linha mais longa.
 const WELCOME_WIDTH: u16 = 47;
 
@@ -343,7 +349,7 @@ fn render_welcome(f: &mut Frame, app: &App, area: Rect) {
         summary.push(Span::styled(text, style));
         used += more;
     }
-    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let version = format!("v{VERSION}");
     let room = usize::from(width).saturating_sub(used);
     if room > cols(&version) + 1 || (used == 0 && room >= cols(&version)) {
         summary.push(Span::raw(" ".repeat(room - cols(&version))));

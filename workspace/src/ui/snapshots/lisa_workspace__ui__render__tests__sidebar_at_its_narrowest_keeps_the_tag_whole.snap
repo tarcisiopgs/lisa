@@ -12,7 +12,7 @@ expression: t.backend()
 " ▾ lisa             │                p  adds a project or a group                                   "
 "   ✔ sidebar-groups │                ?  shows every key                                             "
 "                    │                                                                               "
-"                    │                1 needs you · 2 working · 1 done         v2.7.0                "
+"                    │                1 needs you · 2 working · 1 done         v0.0.0                "
 "                    │                                                                               "
 "                    │                                                                               "
 " ⏎ fold · n new · e rename · d ungroup · ? keys                                                     "
