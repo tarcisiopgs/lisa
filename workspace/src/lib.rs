@@ -5,5 +5,6 @@ pub mod daemon;
 pub mod git;
 pub mod protocol;
 pub mod registry;
+pub mod router;
 pub mod session;
 pub mod ui;
