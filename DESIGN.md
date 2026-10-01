@@ -75,7 +75,7 @@ The typeface, size and line height are the user's terminal's. Hierarchy comes fr
 - **Minimum:** 60×12. Smaller terminals show a single dim line asking for more room.
 - **Sidebar rows:** the first column is reserved for the selection bar and the last one stays empty. A project or group row is the bar, a `▾`/`▸` arrow and the name. A worktree row is the bar, two spaces of indent, the glyph and the name. An empty project or group shows a dim hint in the worktree position.
 - **Order:** groups and standalone projects share one alphabetical list. Under a group, agents are ordered by repository tag.
-- **Footer:** the current `project/worktree · agent` on the left, key hints on the right, both dim.
+- **Footer:** key hints sit under the zone they act on. With the agent focused, the open `project/worktree · agent` is on the left and `^a menu` on the right. With the sidebar focused, the sidebar keys start at the left edge, under the sidebar, and the open worktree moves to the right.
 - **Dialogs:** 56 columns wide, centered in the pane, with a label column of 10 cells. They drop optional rows before they drop the focused field and the hints.
 - **Truncation:** names are cut to the available width, never wrapped. Only the task text in a dialog wraps. When a name and a repository tag compete, the name is cut and the tag stays whole.
 
@@ -126,6 +126,10 @@ Working is yellow `◉`; needs you is bold red `◆`; done is green `✔`; idle 
 
 A plain bordered box with a bold cyan title set into the top border. Fields are a label and a value on one line; the active field has a yellow `›` and a bold label, the others a dim label. Notes about a field sit dim under it. The last line is always the key hints, dim, separated by ` · `.
 
+### Inline rename
+
+Renaming edits the name in its own sidebar row, with the text cursor after it; no box opens on the agent side. The footer carries the branch preview and the keys while it lasts.
+
 ### Notices
 
 Inline, on the line where they apply: yellow for warnings, red for errors and refusals. A refusal states the reason and names the key that forces the action.
@@ -152,3 +156,4 @@ One dim line. A banner about the current agent (for example an exit and how to r
 - **Don't** box the sidebar or the pane; borders belong to dialogs.
 - **Don't** wrap names in the sidebar; truncate them.
 - **Don't** signal a state by color alone.
+- **Don't** open a box over the agent for something that happens to a sidebar row.

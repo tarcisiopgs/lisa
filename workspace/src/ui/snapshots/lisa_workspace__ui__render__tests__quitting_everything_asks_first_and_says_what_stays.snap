@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                                                                       "
+"▐▾ api                      │                                                                       "
+"   ◉ fix-login              │                                                                       "
+"   ◆ rate-limit             │       ┌ Quit ────────────────────────────────────────────────┐        "
+"   ○ docs-update            │       │  Stop 4 agents and quit?                             │        "
+" ▾ lisa                     │       │  Worktrees and branches are kept.                    │        "
+"   no worktrees · n         │       │                                                      │        "
+" ▾ web                      │       │  y stop and quit · esc cancel                        │        "
+"   ✔ new-checkout           │       └──────────────────────────────────────────────────────┘        "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                                                                                                    "

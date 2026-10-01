@@ -222,7 +222,8 @@ pub fn render(f: &mut Frame, app: &App) {
     }
     render_footer(f, app, footer);
 
-    if let Some(dialog) = app.dialog() {
+    // O rename é editado na própria linha do menu: não abre caixa do lado do agente
+    if let Some(dialog) = app.dialog().filter(|d| !matches!(d, Dialog::Rename { .. })) {
         // Centralizado no painel: a lateral continua legível atrás do diálogo
         render_dialog(f, app, dialog, pane);
     } else if app.zone() == Zone::Pane
@@ -374,6 +375,37 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
         } else {
             Span::raw(" ")
         };
+        // Linha em rename: o texto é editado no lugar do nome
+        let editing = app.renaming().and_then(|(target, value)| {
+            let hit = match (target, row) {
+                (RenameTarget::Project(s), Row::Project { slug }) => s == slug,
+                (RenameTarget::Group(s), Row::Group { slug }) => s == slug,
+                (RenameTarget::Worktree(i), Row::Worktree { id }) => i == id,
+                _ => false,
+            };
+            hit.then_some(value)
+        });
+        if let Some(value) = editing {
+            let lead = if matches!(row, Row::Worktree { .. }) {
+                let glyph = match row {
+                    Row::Worktree { id } => app.worktree(id).map(state_glyph),
+                    _ => None,
+                };
+                let (glyph, style) = glyph.unwrap_or(("○", dim()));
+                vec![Span::raw("  "), Span::styled(glyph, style), Span::raw(" ")]
+            } else {
+                vec![Span::raw("▾ ")]
+            };
+            let used: usize = lead.iter().map(|s| s.width()).sum();
+            // O fim do texto e o cursor ficam sempre à vista
+            let room = width.saturating_sub(used + 3);
+            let mut spans = vec![bar];
+            spans.extend(lead);
+            spans.push(Span::styled(truncate_left(value, room), bold()));
+            spans.push(cursor());
+            lines.push(Line::from(spans));
+            continue;
+        }
         let line = match row {
             Row::Group { slug } => {
                 let name = app
@@ -500,25 +532,42 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
         );
         return;
     }
-    let mut left = vec![Span::raw(" ")];
+    let width = usize::from(footer.width);
+    // Rename em andamento: a legenda fala só dele, embaixo do menu onde ele acontece
+    if let Some((target, value)) = app.renaming() {
+        let text = match target {
+            RenameTarget::Worktree(_) => format!(
+                " branch: {} · ⏎ rename · esc cancel",
+                crate::git::sanitize_branch(value).unwrap_or_else(|_| "—".to_owned())
+            ),
+            RenameTarget::Project(_) => {
+                " ⏎ rename · empty restores the folder name · esc cancel".to_owned()
+            }
+            RenameTarget::Group(_) => " ⏎ rename · esc cancel".to_owned(),
+        };
+        f.render_widget(Paragraph::new(truncate(&text, width)).style(dim()), footer);
+        return;
+    }
+    let mut label = Vec::new();
     if let Some(w) = app.focused_view() {
-        left.push(Span::raw(format!("{}/{}", w.project, w.name)));
+        label.push(Span::raw(format!("{}/{}", w.project, w.name)));
         if let Some(agent) = &w.agent {
-            left.push(Span::styled(format!(" · {agent}"), dim()));
+            label.push(Span::styled(format!(" · {agent}"), dim()));
         }
         if w.autonomy {
-            left.push(Span::styled(
+            label.push(Span::styled(
                 " · full autonomy",
                 Style::default().fg(TuiColor::Yellow),
             ));
         }
     }
-    let used: usize = left.iter().map(|s| s.content.chars().count()).sum();
+    let label_width: usize = label.iter().map(|s| s.content.chars().count()).sum();
     // Sobre um grupo, `d` desfaz o grupo em vez de remover um worktree
     let on_group = matches!(
         app.selected_row(),
         Some(Row::Group { .. } | Row::EmptyGroup { .. })
     );
+    let sidebar = app.dialog().is_none() && app.zone() == Zone::Sidebar;
     let hints: &[&str] = match (app.dialog().is_some(), app.zone()) {
         (true, _) => &[],
         (false, Zone::Pane) => &["^a menu"],
@@ -533,22 +582,41 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
             "q quit",
         ],
     };
-    let room = usize::from(footer.width).saturating_sub(used + 2);
-    let mut text = String::new();
-    for hint in hints {
-        let next = if text.is_empty() {
-            (*hint).to_owned()
-        } else {
-            format!("{text} · {hint}")
-        };
-        if next.chars().count() > room {
-            break;
+    let fit = |room: usize| {
+        let mut text = String::new();
+        for hint in hints {
+            let next = if text.is_empty() {
+                (*hint).to_owned()
+            } else {
+                format!("{text} · {hint}")
+            };
+            if next.chars().count() > room {
+                break;
+            }
+            text = next;
         }
-        text = next;
+        text
+    };
+    let mut left = vec![Span::raw(" ")];
+    if sidebar {
+        // As teclas do menu ficam embaixo dele, à esquerda; o agente aberto vai para a direita
+        let text = fit(width.saturating_sub(2));
+        let used = 1 + text.chars().count();
+        left.push(Span::styled(text, dim()));
+        if label_width > 0 && used + 2 + label_width < width {
+            left.push(Span::raw(" ".repeat(width - used - label_width - 1)));
+            left.extend(label);
+        }
+    } else {
+        let used = 1 + label_width;
+        left.extend(label);
+        let room = width.saturating_sub(used + 2);
+        let text = fit(room);
+        left.push(Span::raw(
+            " ".repeat(room.saturating_sub(text.chars().count())),
+        ));
+        left.push(Span::styled(text, dim()));
     }
-    let pad = room.saturating_sub(text.chars().count());
-    left.push(Span::raw(" ".repeat(pad)));
-    left.push(Span::styled(text, dim()));
     f.render_widget(Paragraph::new(Line::from(left)), footer);
 }
 
@@ -1068,63 +1136,69 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
 fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
     let width = DIALOG_WIDTH.min(body.width.saturating_sub(4));
     let (title, lines): (String, Vec<Line>) = match dialog {
-        Dialog::Help => (
-            "Keys".into(),
-            [
-                ("^a", "switch between the agent and the sidebar"),
-                ("^a ^a", "send ctrl-a to the agent"),
-                ("↑↓ j k", "move"),
-                ("⏎", "open worktree / fold project or group"),
-                ("tab", "next worktree that needs you"),
-                ("n", "new worktree in this project or group"),
-                ("p", "add project or group"),
-                ("e", "rename project, group or worktree"),
-                ("b", "change base branch"),
-                ("d", "remove worktree / ungroup"),
-                ("r / s", "restart / stop agent"),
-                ("< >", "resize the sidebar"),
-                ("q", "detach (agents keep running)"),
-            ]
-            .iter()
-            .map(|(k, v)| {
+        Dialog::Help => {
+            let section = |name: &'static str| {
+                Line::styled(format!("  {name}"), dim().add_modifier(Modifier::BOLD))
+            };
+            let key = |(k, v): &(&'static str, &'static str)| {
                 Line::from(vec![
                     Span::styled(format!("  {k:<8}"), bold()),
                     Span::styled(*v, dim()),
                 ])
-            })
-            .collect(),
-        ),
-        Dialog::Rename { target, value } => {
-            let (title, note) = match target {
-                RenameTarget::Project(_) => (
-                    "Rename project",
-                    "  Sidebar name only; empty restores the folder name".to_owned(),
-                ),
-                RenameTarget::Group(_) => ("Rename group", String::new()),
-                RenameTarget::Worktree(_) => (
-                    "Rename worktree",
-                    format!(
-                        "          branch: {}",
-                        crate::git::sanitize_branch(value).unwrap_or_else(|_| "—".to_owned())
-                    ),
-                ),
             };
-            let mut name = field_label("Name", true);
-            name.push(Span::raw(truncate_left(
-                value,
-                usize::from(width).saturating_sub(4 + LABEL_WIDTH),
-            )));
-            name.push(cursor());
-            (
-                title.into(),
-                vec![
-                    Line::from(name),
-                    Line::styled(note, dim()),
-                    Line::default(),
-                    Line::styled("  ⏎ rename · esc cancel", dim()),
-                ],
-            )
+            let mut lines = vec![section("ANYWHERE")];
+            lines.extend(
+                [
+                    ("^a", "switch between the agent and the sidebar"),
+                    ("^a ^a", "send ctrl-a to the agent"),
+                ]
+                .iter()
+                .map(key),
+            );
+            lines.push(Line::default());
+            lines.push(section("SIDEBAR"));
+            lines.extend(
+                [
+                    ("↑↓ j k", "move"),
+                    ("⏎", "open worktree / fold project or group"),
+                    ("tab", "next worktree that needs you"),
+                    ("n", "new worktree in this project or group"),
+                    ("p", "add project or group"),
+                    ("e", "rename project, group or worktree"),
+                    ("b", "change base branch"),
+                    ("d", "remove worktree / ungroup"),
+                    ("r / s", "restart / stop agent"),
+                    ("< >", "resize the sidebar"),
+                    ("q", "quit (agents keep running)"),
+                    ("Q", "stop every agent and quit"),
+                ]
+                .iter()
+                .map(key),
+            );
+            ("Keys".into(), lines)
         }
+        // Editado na linha do menu; `render` não chama este desenho para ele
+        Dialog::Rename { .. } => return,
+        Dialog::ConfirmQuit { running } => (
+            "Quit".into(),
+            vec![
+                Line::from(vec![
+                    Span::raw("  Stop "),
+                    Span::styled(
+                        if *running == 1 {
+                            "1 agent".to_owned()
+                        } else {
+                            format!("{running} agents")
+                        },
+                        bold(),
+                    ),
+                    Span::raw(" and quit?"),
+                ]),
+                Line::styled("  Worktrees and branches are kept.", dim()),
+                Line::default(),
+                Line::styled("  y stop and quit · esc cancel", dim()),
+            ],
+        ),
         Dialog::ConfirmDissolve { group } => {
             let name = app
                 .workspace()

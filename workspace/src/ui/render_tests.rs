@@ -926,20 +926,24 @@ fn the_task_step_fits_the_smallest_terminal() {
 }
 
 #[test]
-fn renaming_a_worktree_previews_the_branch() {
+fn renaming_a_worktree_edits_its_row_and_previews_the_branch_in_the_footer() {
     let mut a = grouped(100, 14, grouped_workspace());
     a.select_row(1);
     a.on_key(key(KeyCode::Char('e')));
     type_text(&mut a, " V2");
     let t = draw(&a);
     let screen = text_of(&t);
-    assert!(screen.contains("Rename worktree"), "{screen}");
-    assert!(screen.contains("branch: fix-ingest-lag-v2"), "{screen}");
+    assert!(!screen.contains("┌"), "no box on the agent side: {screen}");
+    assert_eq!(row_text(&t, 2, 28).trim_end(), "▐  ◉ fix-ingest-lag V2▏");
+    assert!(
+        row_text(&t, 13, 100).starts_with(" branch: fix-ingest-lag-v2 · ⏎ rename · esc cancel"),
+        "{screen}"
+    );
     insta::assert_snapshot!(t.backend());
 }
 
 #[test]
-fn renaming_a_project_says_the_folder_keeps_its_name() {
+fn renaming_a_project_edits_its_row_and_says_the_folder_keeps_its_name() {
     let mut a = grouped(100, 14, grouped_workspace());
     let at = a
         .rows()
@@ -953,6 +957,71 @@ fn renaming_a_project_says_the_folder_keeps_its_name() {
     a.select_row(at);
     a.on_key(key(KeyCode::Char('e')));
     let t = draw(&a);
-    assert!(text_of(&t).contains("empty restores the folder name"));
+    let screen = text_of(&t);
+    assert!(screen.contains("▐▾ lisa▏"), "{screen}");
+    assert!(
+        screen.contains(" ⏎ rename · empty restores the folder name · esc cancel"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn a_long_rename_keeps_its_end_and_the_cursor_inside_the_sidebar() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(1);
+    a.on_key(key(KeyCode::Char('e')));
+    type_text(&mut a, "-with-a-very-long-name-that-does-not-fit");
+    let t = draw(&a);
+    let line = row_text(&t, 2, 29);
+    assert!(line.ends_with("does-not-fit▏ │"), "{line:?}");
+}
+
+#[test]
+fn sidebar_keys_sit_under_the_sidebar_and_the_open_agent_moves_right() {
+    let mut a = app(120, 14);
+    open(&mut a, "api/fix-login");
+    a.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    let t = draw(&a);
+    let footer = row_text(&t, 13, 120);
+    assert!(
+        footer.starts_with(" ⏎ open · n new · p project"),
+        "{footer:?}"
+    );
+    assert!(
+        footer.trim_end().ends_with("api/fix-login · claude"),
+        "{footer:?}"
+    );
+    // Com o foco no agente, a ordem é a de antes
+    a.on_key(key(KeyCode::Esc));
+    let footer = row_text(&draw(&a), 13, 120);
+    assert!(footer.starts_with(" api/fix-login · claude"), "{footer:?}");
+    assert!(footer.trim_end().ends_with("^a menu"), "{footer:?}");
+}
+
+#[test]
+fn help_separates_the_sidebar_keys_from_the_ones_that_work_anywhere() {
+    let mut a = app(100, 24);
+    a.on_key(key(KeyCode::Char('?')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    let anywhere = screen.find("ANYWHERE").unwrap_or(usize::MAX);
+    let sidebar = screen.find("SIDEBAR").unwrap_or(0);
+    let prefix = screen.find("send ctrl-a").unwrap_or(0);
+    let quit_all = screen.find("stop every agent and quit").unwrap_or(0);
+    assert!(
+        anywhere < prefix && prefix < sidebar && sidebar < quit_all,
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn quitting_everything_asks_first_and_says_what_stays() {
+    let mut a = app(100, 14);
+    a.on_key(key(KeyCode::Char('Q')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Stop 4 agents and quit?"), "{screen}");
+    assert!(screen.contains("y stop and quit · esc cancel"), "{screen}");
     insta::assert_snapshot!(t.backend());
 }

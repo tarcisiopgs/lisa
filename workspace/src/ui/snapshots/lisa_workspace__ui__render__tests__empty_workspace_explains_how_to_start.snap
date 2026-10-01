@@ -13,4 +13,4 @@ expression: draw(&a).backend()
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
-"                    ⏎ open · n new · p project · e rename · d remove · r restart · ? help · q quit  "
+" ⏎ open · n new · p project · e rename · d remove · r restart · ? help · q quit                     "
