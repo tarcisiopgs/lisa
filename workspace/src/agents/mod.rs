@@ -4,6 +4,12 @@
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
+mod catalog;
+
+pub use catalog::{
+    Effort, EffortArg, MAX_PROMPT_BYTES, ModelCatalog, ModelSpec, PromptArg, catalog, model,
+};
+
 /// Agentes que a Lisa conhece. Os nomes batem com `src/providers/` do lado Node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentId {
@@ -64,6 +70,23 @@ pub enum LaunchError {
     InvalidSessionId(String),
     #[error("{} has no full-autonomy flag in interactive mode", .0.name())]
     AutonomyUnsupported(AgentId),
+    #[error("unknown model {0:?}")]
+    UnknownModel(String),
+    #[error("model {model} does not support effort {effort}")]
+    UnsupportedEffort { model: String, effort: &'static str },
+    #[error("{} cannot receive a task at launch", .0.name())]
+    PromptUnsupported(AgentId),
+    #[error("task is too long (max 100,000 bytes)")]
+    PromptTooLarge,
+}
+
+/// Escolhas opcionais de um lançamento; vazio mantém os padrões da CLI.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LaunchOptions<'a> {
+    pub model: Option<&'a str>,
+    pub effort: Option<Effort>,
+    /// Entregue só em sessão nova.
+    pub prompt: Option<&'a str>,
 }
 
 /// Como uma CLI de agente sobe em modo interativo.
@@ -251,6 +274,7 @@ pub fn launch_args(
     id: AgentId,
     permission: Permission,
     session: &SessionMode,
+    opts: &LaunchOptions<'_>,
 ) -> Result<Vec<String>, LaunchError> {
     let spec = spec(id);
     let mut args: Vec<String> = spec.base_args.iter().map(|a| (*a).to_owned()).collect();
@@ -291,6 +315,8 @@ pub fn launch_args(
         }
     }
 
+    args.extend(model_args(id, opts)?);
+
     if permission == Permission::FullAutonomy {
         let flags = spec
             .autonomy_args
@@ -298,6 +324,65 @@ pub fn launch_args(
         args.extend(flags.iter().map(|a| (*a).to_owned()));
     }
 
+    // O prompt é sempre o último argumento, e só em sessão nova
+    let new_session = matches!(session, SessionMode::New { .. });
+    if let Some(prompt) = opts.prompt {
+        let form = catalog(id)
+            .and_then(|c| c.prompt)
+            .ok_or(LaunchError::PromptUnsupported(id))?;
+        if prompt.len() > MAX_PROMPT_BYTES {
+            return Err(LaunchError::PromptTooLarge);
+        }
+        if new_session {
+            match form {
+                PromptArg::Positional => {
+                    args.push("--".to_owned());
+                    args.push(prompt.to_owned());
+                }
+                PromptArg::Flag(flag) => args.push(format!("{flag}={prompt}")),
+            }
+        }
+    }
+
+    Ok(args)
+}
+
+/// Argumentos de modelo e effort, conferidos contra o catálogo.
+fn model_args(id: AgentId, opts: &LaunchOptions<'_>) -> Result<Vec<String>, LaunchError> {
+    let mut args = Vec::new();
+    let Some(name) = opts.model else {
+        return match opts.effort {
+            Some(effort) => Err(LaunchError::UnsupportedEffort {
+                model: "default".to_owned(),
+                effort: effort.name(),
+            }),
+            None => Ok(args),
+        };
+    };
+    let unknown = || LaunchError::UnknownModel(name.to_owned());
+    let catalog = catalog(id).ok_or_else(unknown)?;
+    let model = model(id, name).ok_or_else(unknown)?;
+    args.push(catalog.model_flag.to_owned());
+    args.push(model.id.to_owned());
+    if let Some(effort) = opts.effort {
+        let form = catalog
+            .effort_arg
+            .filter(|_| model.efforts.contains(&effort))
+            .ok_or_else(|| LaunchError::UnsupportedEffort {
+                model: model.id.to_owned(),
+                effort: effort.name(),
+            })?;
+        match form {
+            EffortArg::Flag(flag) => {
+                args.push(flag.to_owned());
+                args.push(effort.name().to_owned());
+            }
+            EffortArg::ConfigKey(key) => {
+                args.push("-c".to_owned());
+                args.push(format!("{key}={}", effort.name()));
+            }
+        }
+    }
     Ok(args)
 }
 

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::pty::Launch;
-use crate::agents::{self, AgentId, LaunchError, Permission, SessionMode};
+use crate::agents::{self, AgentId, Effort, LaunchError, LaunchOptions, Permission, SessionMode};
 
 /// Script que troca o shell pelo agente, recebendo programa e argumentos como `$0 "$@"`
 /// (sem montar string de comando, então nada precisa de escape).
@@ -13,6 +13,10 @@ pub struct LaunchRequest<'a> {
     pub agent: AgentId,
     pub permission: Permission,
     pub session: SessionMode,
+    pub model: Option<String>,
+    pub effort: Option<Effort>,
+    /// Tarefa inicial; só entra em sessão nova.
+    pub prompt: Option<String>,
     pub cwd: &'a Path,
     pub env: Vec<(String, String)>,
     pub cols: u16,
@@ -45,6 +49,11 @@ pub fn build_launch(req: LaunchRequest<'_>) -> Result<Launch, LaunchError> {
         req.agent,
         req.permission,
         &req.session,
+        &LaunchOptions {
+            model: req.model.as_deref(),
+            effort: req.effort,
+            prompt: req.prompt.as_deref(),
+        },
     )?);
     Ok(Launch {
         program: login_shell(&req.env),
@@ -67,6 +76,9 @@ mod tests {
             session: SessionMode::New {
                 session_id: Some("abc".into()),
             },
+            model: None,
+            effort: None,
+            prompt: None,
             cwd: Path::new("/tmp"),
             env,
             cols: 80,
@@ -83,6 +95,16 @@ mod tests {
             launch.args,
             ["-lc", EXEC_SCRIPT, "claude", "--session-id", "abc"]
         );
+    }
+
+    #[test]
+    fn prompt_reaches_the_agent_as_one_untouched_argument() {
+        let prompt = "a 'b' \"c\" `d` $(e)\nf";
+        let mut req = request(vec![("SHELL".into(), "/bin/zsh".into())]);
+        req.prompt = Some(prompt.to_owned());
+        let launch = build_launch(req).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(launch.args[1], EXEC_SCRIPT);
+        assert_eq!(launch.args.last().map(String::as_str), Some(prompt));
     }
 
     #[test]
