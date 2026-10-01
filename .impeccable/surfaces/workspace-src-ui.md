@@ -62,7 +62,7 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
 
 ## Empty and edge states
 
-- No projects: a centred message in the pane area, `No projects yet` and `p add a project`.
+- No agent open (with or without projects): the welcome, centred in the pane. The wordmark `LISA` in block letters (yellow), the tagline `Map projects. Run agents. Stay in the terminal.` (dim), the steps for the selected row (`⏎  opens <worktree>` or `n  starts a worktree in <project or group>`, then `p  adds a project or a group` and `?  shows every key`), and a summary line `1 needs you · 2 working · 1 done` (needs-you in red) with the version on the right. Short or narrow panes swap the wordmark for `LISA` on one line and drop the tagline and the least urgent counts whole.
 - Project without worktrees: a dim `no worktrees · n` row.
 - Group without agents: the same dim `no worktrees · n` row.
 - History: while the pane shows scrollback, its last row reads `↑ N lines back · scroll down or type to return` in dim and the agent's cursor is hidden.

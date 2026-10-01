@@ -1310,41 +1310,42 @@ fn the_empty_pane_hint_follows_the_selected_row() {
     let cases = [
         (
             worktree_row("lisa/sidebar-groups"),
-            "⏎ opens sidebar-groups",
+            "⏎  opens sidebar-groups",
         ),
-        (worktree_row("lisa/stopped-one"), "⏎ opens stopped-one"),
+        (worktree_row("lisa/stopped-one"), "⏎  opens stopped-one"),
         (
             Row::Project {
                 slug: "lisa".into(),
             },
-            "n starts a worktree in Lisa CLI",
+            "n  starts a worktree in Lisa CLI",
         ),
         (
             Row::Empty {
                 project: "bloom".into(),
             },
-            "n starts a worktree in Bloom App",
+            "n  starts a worktree in Bloom App",
         ),
         (
             Row::Group {
                 slug: "b-metric".into(),
             },
-            "n starts a worktree in B-Metric",
+            "n  starts a worktree in B-Metric",
         ),
         (
             Row::EmptyGroup {
                 group: "acme".into(),
             },
-            "n starts a worktree in Acme Corp",
+            "n  starts a worktree in Acme Corp",
         ),
     ];
     for (row, hint) in cases {
         select(&mut a, &row);
-        assert_eq!(pane_text(&a), hint, "{row:?}");
+        let pane = pane_text(&a);
+        assert!(pane.lines().any(|l| l == hint), "{row:?}: {pane}");
     }
     // Com um diálogo aberto, a dica sai
     a.on_key(key(KeyCode::Char('?')));
-    assert!(!text_of(&draw(&a)).contains("n starts a worktree"));
+    assert!(!text_of(&draw(&a)).contains("n  starts a worktree"));
 }
 
 #[test]
@@ -1362,9 +1363,12 @@ fn a_long_empty_pane_hint_is_cut_inside_the_pane() {
         &mut a,
         &worktree_row("lisa/a-worktree-with-a-very-long-name-that-cannot-fit-in-the-pane-at-all"),
     );
-    let hint = pane_text(&a);
-    assert!(hint.starts_with("⏎ opens a-worktree-with"), "{hint:?}");
-    assert!(hint.ends_with('…'), "{hint:?}");
+    let pane = pane_text(&a);
+    let hint = pane
+        .lines()
+        .find(|l| l.starts_with("⏎  opens a-worktree-with"))
+        .unwrap_or_default();
+    assert!(hint.ends_with('…'), "{pane}");
 }
 
 #[test]
@@ -1439,10 +1443,13 @@ fn in_a_narrow_terminal_the_empty_pane_hint_stays_clear_of_the_sidebar() {
     a.on_focus(true);
     a.on_daemon(DaemonMsg::State(ws));
     a.select_row(1);
-    let t = draw(&a);
-    let line = row_text(&t, 5, 60);
+    let screen = text_of(&draw(&a));
+    let line = screen
+        .lines()
+        .find(|l| l.contains("opens "))
+        .unwrap_or_default();
     let hint = line.split('│').nth(1).unwrap_or_default();
-    assert!(hint.trim_start().starts_with("⏎ opens "), "{line:?}");
+    assert!(hint.trim_start().starts_with("⏎  opens "), "{screen}");
 }
 
 // ---- Histórico ----
@@ -1487,4 +1494,85 @@ fn removing_a_worktree_without_a_folder_says_only_the_list_changes() {
         "{screen}"
     );
     assert!(!screen.contains("Deletes the worktree"), "{screen}");
+}
+
+// ---- Tela de entrada ----
+
+#[test]
+fn the_welcome_screen_shows_the_wordmark_next_steps_and_the_agents() {
+    let a = app(120, 30);
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("███████ ██  ███████  ██   ██"), "{screen}");
+    assert!(
+        screen.contains("Map projects. Run agents. Stay in the terminal."),
+        "{screen}"
+    );
+    assert!(screen.contains("n  starts a worktree in api"), "{screen}");
+    assert!(screen.contains("p  adds a project or a group"), "{screen}");
+    assert!(screen.contains("?  shows every key"), "{screen}");
+    assert!(
+        screen.contains("1 needs you · 1 working · 1 done"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))),
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn the_wordmark_is_yellow_and_only_what_waits_on_the_user_is_red() {
+    let a = app(120, 30);
+    let t = draw(&a);
+    let (x, y) = find(&t, '█').unwrap_or_else(|| panic!("no wordmark"));
+    let cell = t
+        .backend()
+        .buffer()
+        .cell((x, y))
+        .unwrap_or_else(|| panic!("cell"));
+    assert_eq!(cell.fg, TuiColor::Yellow);
+    let buf = t.backend().buffer();
+    let area = buf.area;
+    let red: String = (0..area.height)
+        .flat_map(|y| (29..area.width).map(move |x| (x, y)))
+        .filter_map(|p| buf.cell(p))
+        .filter(|c| c.fg == TuiColor::Red)
+        .map(|c| c.symbol().to_owned())
+        .collect();
+    assert_eq!(red, "1 needs you");
+}
+
+#[test]
+fn the_welcome_screen_without_projects_says_how_to_add_one() {
+    let mut a = App::new(100, 24);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(WorkspaceState::default()));
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("███████ ██  ███████  ██   ██"), "{screen}");
+    assert!(screen.contains("p  adds a project or a group"), "{screen}");
+    assert!(!screen.contains("starts a worktree"), "{screen}");
+    assert!(!screen.contains("working"), "{screen}");
+}
+
+#[test]
+fn a_short_terminal_swaps_the_wordmark_for_the_name_and_keeps_the_steps() {
+    let a = app(60, 12);
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(!screen.contains('█'), "{screen}");
+    assert!(screen.contains("LISA"), "{screen}");
+    assert!(screen.contains("?  shows every key"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn the_welcome_screen_leaves_when_an_agent_or_a_dialog_opens() {
+    let mut a = app(120, 30);
+    a.on_key(key(KeyCode::Char('?')));
+    assert!(!text_of(&draw(&a)).contains("Map projects."));
+    a.on_key(key(KeyCode::Esc));
+    open(&mut a, "api/fix-login");
+    assert!(!text_of(&draw(&a)).contains("Map projects."));
 }
