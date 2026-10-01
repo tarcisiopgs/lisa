@@ -50,7 +50,7 @@ Four named ANSI colors plus the terminal default, each with one job.
 
 **The Shape-First Rule.** Every state has its own glyph. Color reinforces a state; it never is the state.
 
-**The Quiet Screen Rule.** If no agent needs the user, nothing on screen is red. Red is reserved for what blocks on a person.
+**The Quiet Screen Rule.** If no agent needs the user, nothing on screen is red. Red is reserved for what blocks on a person. The yellow wordmark on the welcome is the only color that is not a signal. The yellow wordmark on the welcome is the only color that is not a signal.
 
 **The Theme-Is-Theirs Rule.** Never use RGB or indexed colors for Lisa's own chrome. RGB and indexed colors appear only inside the agent pane, where they are the agent's output passed through.
 
@@ -125,6 +125,14 @@ Working is yellow `◉`; needs you is bold red `◆`; done is green `✔`; idle 
 ### Dialog
 
 A plain bordered box with a bold cyan title set into the top border. Fields are a label and a value on one line; the active field has a yellow `›` and a bold label, the others a dim label. Notes about a field sit dim under it. The last line is always the key hints, dim, separated by ` · `.
+
+### Welcome
+
+With no agent open, the pane shows the welcome: the name LISA in block letters, in the focus yellow; the tagline in dim; the keys that apply to the selected row; and a one-line summary of the agents, most urgent first, with the version on the right. It is the one place where the brand takes room, because nothing else is using the pane. When it does not fit, the wordmark becomes the name on one line, and the tagline and the least urgent counts are dropped whole rather than cut.
+
+### Welcome
+
+With no agent open, the pane shows the welcome: the name LISA in block letters, in the focus yellow; the tagline in dim; the keys that apply to the selected row; and a one-line summary of the agents, most urgent first, with the version on the right. It is the one place where the brand takes room, because nothing else is using the pane. When it does not fit, the wordmark becomes the name on one line, and the tagline and the least urgent counts are dropped whole rather than cut.
 
 ### Inline rename
 

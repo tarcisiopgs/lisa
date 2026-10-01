@@ -239,60 +239,139 @@ pub fn render(f: &mut Frame, app: &App) {
     }
 }
 
-fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
-    if app.workspace().projects.is_empty() {
-        let lines = vec![
-            Line::styled("No projects yet", bold()),
-            Line::default(),
-            Line::from(vec![
-                Span::styled("p", bold()),
-                Span::styled("  add a project", dim()),
-            ]),
-        ];
-        f.render_widget(Paragraph::new(lines).centered(), centered(pane, 48, 3));
-        return;
+/// O nome da Lisa em letras de bloco, para a tela de entrada.
+const WORDMARK: [&str; 5] = [
+    "██      ██  ███████   █████ ",
+    "██      ██  ██       ██   ██",
+    "██      ██  ███████  ███████",
+    "██      ██       ██  ██   ██",
+    "███████ ██  ███████  ██   ██",
+];
+const TAGLINE: &str = "Map projects. Run agents. Stay in the terminal.";
+/// Largura do bloco da tela de entrada: a da frase, a linha mais longa.
+const WELCOME_WIDTH: u16 = 47;
+
+/// Tela de entrada, quando nenhum agente está aberto: a marca, o que dá para fazer agora
+/// com a linha selecionada e um resumo dos agentes.
+fn render_welcome(f: &mut Frame, app: &App, area: Rect) {
+    let ws = app.workspace();
+    let mut steps: Vec<(&str, String)> = Vec::new();
+    match app.selected_row() {
+        Some(Row::Worktree { id }) => {
+            if let Some(w) = app.worktree(&id) {
+                steps.push(("⏎", format!("opens {}", w.name)));
+            }
+        }
+        Some(Row::Project { slug } | Row::Empty { project: slug }) => {
+            if let Some(p) = ws.projects.iter().find(|p| p.slug == slug) {
+                steps.push(("n", format!("starts a worktree in {}", p.name)));
+            }
+        }
+        Some(Row::Group { slug } | Row::EmptyGroup { group: slug }) => {
+            if let Some(g) = ws.groups.iter().find(|g| g.slug == slug) {
+                steps.push(("n", format!("starts a worktree in {}", g.name)));
+            }
+        }
+        None => {}
     }
+    steps.push(("p", "adds a project or a group".to_owned()));
+    steps.push(("?", "shows every key".to_owned()));
+
+    let width = WELCOME_WIDTH.min(area.width.saturating_sub(2));
+    let yellow = Style::default().fg(TuiColor::Yellow);
+    let mut lines: Vec<Line> = Vec::new();
+    // A marca em bloco só entra quando cabe inteira com o resto; senão, o nome em uma linha
+    let full = WORDMARK.len() + steps.len() + 6;
+    if usize::from(area.height) > full && usize::from(width) >= cols(WORDMARK[0]) {
+        lines.extend(WORDMARK.iter().map(|row| Line::styled(*row, yellow)));
+    } else {
+        lines.push(Line::styled("LISA", yellow.add_modifier(Modifier::BOLD)));
+    }
+    lines.push(Line::default());
+    // Uma frase cortada no meio não diz nada: sem espaço, ela sai
+    if cols(TAGLINE) <= usize::from(width) {
+        lines.push(Line::styled(TAGLINE, dim()));
+        lines.push(Line::default());
+    }
+    for (key, text) in &steps {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{key}  "), bold()),
+            Span::styled(clip(text, usize::from(width).saturating_sub(3)), dim()),
+        ]));
+    }
+    lines.push(Line::default());
+
+    // Resumo dos agentes: só o que espera por alguém ganha cor
+    let count = |state: AgentState| {
+        ws.worktrees
+            .iter()
+            .filter(|w| w.running && !w.broken && w.state == state)
+            .count()
+    };
+    let waiting = count(AgentState::NeedsYou);
+    let verb = if waiting == 1 { "needs" } else { "need" };
+    // Do mais urgente ao menos: sem espaço, o que sobra de fora é o menos importante
+    let parts = [
+        (
+            waiting,
+            format!("{waiting} {verb} you"),
+            Style::default()
+                .fg(TuiColor::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            count(AgentState::Working),
+            format!("{} working", count(AgentState::Working)),
+            dim(),
+        ),
+        (
+            count(AgentState::Done),
+            format!("{} done", count(AgentState::Done)),
+            dim(),
+        ),
+    ];
+    let mut summary: Vec<Span> = Vec::new();
+    let mut used = 0;
+    for (n, text, style) in parts {
+        let more = cols(&text) + if used > 0 { 3 } else { 0 };
+        if n == 0 || used + more > usize::from(width) {
+            continue;
+        }
+        if used > 0 {
+            summary.push(Span::styled(" · ", dim()));
+        }
+        summary.push(Span::styled(text, style));
+        used += more;
+    }
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let room = usize::from(width).saturating_sub(used);
+    if room > cols(&version) + 1 || (used == 0 && room >= cols(&version)) {
+        summary.push(Span::raw(" ".repeat(room - cols(&version))));
+        summary.push(Span::styled(version, dim()));
+    }
+    lines.push(Line::from(summary));
+
+    let height = u16::try_from(lines.len()).unwrap_or(area.height);
+    f.render_widget(Paragraph::new(lines), centered(area, width, height));
+}
+
+fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
     let Some(view) = app.focused_view() else {
         if app.dialog().is_none() {
-            // A dica fala da linha selecionada, não de um worktree que não está sob o cursor
-            let ws = app.workspace();
-            let hint = match app.selected_row() {
-                _ if app.zone() != Zone::Sidebar => "^a then ⏎ to open a worktree".to_owned(),
-                Some(Row::Worktree { id }) => app
-                    .worktree(&id)
-                    .map(|w| format!("⏎ opens {}", w.name))
-                    .unwrap_or_default(),
-                Some(Row::Project { slug } | Row::Empty { project: slug }) => ws
-                    .projects
-                    .iter()
-                    .find(|p| p.slug == slug)
-                    .map(|p| format!("n starts a worktree in {}", p.name))
-                    .unwrap_or_default(),
-                Some(Row::Group { slug } | Row::EmptyGroup { group: slug }) => ws
-                    .groups
-                    .iter()
-                    .find(|g| g.slug == slug)
-                    .map(|g| format!("n starts a worktree in {}", g.name))
-                    .unwrap_or_default(),
-                None => String::new(),
-            };
             // Em terminal estreito a lateral cobre o começo do painel enquanto se navega
             let covered = if !app.wide() && app.zone() == Zone::Sidebar {
                 (app.sidebar_width() + 1).saturating_sub(pane.x)
             } else {
                 0
             };
-            let visible = Rect {
-                x: pane.x + covered,
-                width: pane.width.saturating_sub(covered),
-                ..pane
-            };
-            let width = visible.width.saturating_sub(2);
-            f.render_widget(
-                Paragraph::new(clip(&hint, usize::from(width)))
-                    .style(dim())
-                    .centered(),
-                centered(visible, width, 1),
+            render_welcome(
+                f,
+                app,
+                Rect {
+                    x: pane.x + covered,
+                    width: pane.width.saturating_sub(covered),
+                    ..pane
+                },
             );
         }
         return;

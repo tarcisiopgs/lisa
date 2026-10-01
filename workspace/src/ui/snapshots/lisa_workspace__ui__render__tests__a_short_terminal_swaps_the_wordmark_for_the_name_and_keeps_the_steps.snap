@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                               "
+"▐▾ api                      │                               "
+"   ◉ fix-login              │ LISA                          "
+"   ◆ rate-limit             │                               "
+"   ○ docs-update            │ n  starts a worktree in api   "
+" ▾ lisa                     │ p  adds a project or a group  "
+"   no worktrees · n         │ ?  shows every key            "
+" ▾ web                      │                               "
+"   ✔ new-checkout           │ 1 needs you · 1 working       "
+"                            │                               "
+"                            │                               "
+" ⏎ fold · n new · e rename · ? keys                         "
