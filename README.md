@@ -366,6 +366,7 @@ Acceptance criteria:
 
 - **Projects:** add a project once, from any git repository path. Every new worktree starts from the project's base branch after a fetch, and you can change the base branch later.
 - **Worktrees:** worktrees live in `~/.lisa/workspaces/<project>/<name>`, outside your repository. Each one runs one agent, launched through your login shell, so your PATH and tools resolve as usual.
+- **Task, model and effort:** the new worktree dialog takes an optional task. For Claude Code and Codex you can also pick the model and the reasoning effort, and the agent starts with the task already sent. See [Routing](#routing) for automatic suggestions.
 - **Permissions:** you choose them per worktree. Normal mode lets the agent ask; full autonomy uses the agent's skip-permissions flag.
 - **One state per worktree:**
 
@@ -392,9 +393,39 @@ Acceptance criteria:
 | `r` / `s` | restart / stop the agent |
 | `?` / `q` | help / detach |
 
+### Routing
+
+With a [TypeSafe](https://typesafe.ai) API key, Lisa asks the Jev model which agent, model and effort fit the task you typed, and fills the dialog with the answer. You confirm with `⏎` or change any field first. Lisa never starts an agent you did not confirm.
+
+```bash
+export TYPESAFE_API_KEY="..."
+```
+
+- **What is sent:** when the key is set, the text of the `Task` field is sent to TypeSafe. Nothing is sent without the key.
+- **What is decided:** the size of the task picks the model, a separate check raises the effort one level for tasks that need extra verification, and the kind of task picks the agent. `max` and `ultra` are never suggested.
+- **Routed agents:** Claude Code and Codex. Other agents keep the manual flow. Gemini CLI, Grok, CodeBuddy, Antigravity, Cursor Agent, OMP and Muse have catalogs written from their documentation that stay off until their command lines are verified on a real install.
+- **Without a key, offline or on any error:** the dialog says why in one line and you choose by hand. The task is still sent to the agent.
+
+Optional preferences live in `~/.lisa/workspace/router.toml`:
+
+```toml
+# Which agent to prefer when the kind of task does not decide
+preference = ["claude", "codex"]
+
+[kinds]
+review = "codex"          # review or audit without changing code
+investigation = "claude"  # unknown cause, architecture decisions
+visual_ui = "gemini"      # interface from an image or mockup
+
+[thresholds]
+depth = 0.7   # above this, effort goes up one level
+kind = 0.5    # below this, the suggestion is marked "unsure"
+size = 0.5    # below this, the larger of the two likeliest sizes wins
+```
+
 Supported agents in Workspace mode: Claude Code, Gemini CLI, OpenCode, GitHub Copilot CLI, Goose, Aider, Codex, Kilo Code and MiMo Code. Cursor Agent is hidden until its interactive mode is verified. Full autonomy is not offered for OpenCode, Goose and MiMo Code, which have no interactive flag for it.
 
-Workspace mode runs on macOS (arm64, x64) and Linux (x64, arm64). It supports Ghostty, iTerm2, kitty and WezTerm; Terminal.app cannot tell Shift+Enter from Enter. It ships as a small native binary (about 1.7 MB per platform) bundled inside the Lisa package, so there is nothing else to install.
+Workspace mode runs on macOS (arm64, x64) and Linux (x64, arm64). It supports Ghostty, iTerm2, kitty and WezTerm; Terminal.app cannot tell Shift+Enter from Enter. It ships as a small native binary (about 3.6 MB per platform) bundled inside the Lisa package, so there is nothing else to install.
 
 ## TUI
 
