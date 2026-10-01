@@ -1,0 +1,28 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"                                                                       │▐▾ api                      "
+"                                                                       │   ◉ fix-login              "
+"       ┌ New worktree in api ─────────────────────────────────┐        │   ◆ rate-limit             "
+"       │  Name    fix-login-redirect                          │        │   ○ docs-update            "
+"       │          branch: fix-login-redirect                  │        │ ▾ web                      "
+"       │                                                      │        │   ✔ new-checkout           "
+"       │  Task    Fix the redirect loop on login when the     │        │ ▾ lisa                     "
+"       │          session cookie has expired                  │        │   no worktrees · n         "
+"       │                                                      │        │                            "
+"       │› Agent   ● claude  unsure · your default             │        │                            "
+"       │          ○ opencode  no full autonomy                │        │                            "
+"       │          ○ gemini  not installed                     │        │                            "
+"       │                                                      │        │                            "
+"       │  Model   ‹ sonnet ›   effort ‹ medium ›              │        │                            "
+"       │                                                      │        │                            "
+"       │  Mode    (•) normal   ( ) full autonomy              │        │                            "
+"       │                                                      │        │                            "
+"       │  ⏎ create · tab next field · ←→ change · esc cancel  │        │                            "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                                                    "
