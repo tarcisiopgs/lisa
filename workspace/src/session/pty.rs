@@ -13,6 +13,8 @@ use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 
 /// Fila de escrita por PTY; cheia, o input é descartado em vez de travar o daemon.
 const WRITE_QUEUE: usize = 256;
+/// Quanto a saída espera a leitura terminar antes de ser avisada.
+const DRAIN_GRACE: Duration = Duration::from_millis(500);
 
 /// Como subir o processo.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +79,10 @@ impl Pty {
             .and_then(Pid::from_raw);
 
         let mut reader = pair.master.try_clone_reader().map_err(other)?;
+        // Fecha quando a leitura acaba: a saída só é avisada depois da última tela
+        let (drained_tx, drained_rx) = mpsc::channel::<()>();
         thread::spawn(move || {
+            let _drained = drained_tx;
             let mut buf = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buf) {
@@ -103,6 +108,10 @@ impl Pty {
 
         thread::spawn(move || {
             let code = child.wait().map(|s| s.exit_code()).unwrap_or(1);
+            // O processo pode sair antes de a leitura entregar o que ele escreveu por
+            // último. Espera a leitura fechar, com prazo: um neto que herdou o terminal
+            // pode mantê-lo aberto.
+            let _ = drained_rx.recv_timeout(DRAIN_GRACE);
             on_exit(code);
         });
 
