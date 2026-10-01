@@ -78,6 +78,8 @@ hook() {
   printf '%s' "$2" | "$exe" hook "$1"
 }
 case " $* " in *" --resume "*) [ -f .fail-resume ] && { echo "no such session"; exit 1; };; esac
+# Argumentos exatos, separados por NUL, fora do worktree (para não sujá-lo)
+printf '%s\0' "$@" > "$(dirname "$0")/../argv.$(basename "$PWD")"
 echo "fake-claude-ready args:$*"
 [ -n "$settings" ] && hook SessionStart '{"session_id":"sess-from-hook"}'
 while IFS= read -r line; do
@@ -224,6 +226,34 @@ pub fn create(conn: &mut Conn, env: &Env, name: &str) -> String {
 }
 
 pub fn create_with(conn: &mut Conn, env: &Env, name: &str, agent: &str) -> String {
+    create_full(conn, env, name, agent, None, None, None)
+}
+
+/// Argumentos que o `claude` falso recebeu no último lançamento do worktree `name`.
+pub fn argv(env: &Env, name: &str) -> Vec<String> {
+    let file = env.root.join(format!("argv.{name}"));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(raw) = std::fs::read(&file)
+            && raw.last() == Some(&0)
+        {
+            return raw[..raw.len() - 1]
+                .split(|b| *b == 0)
+                .map(|a| String::from_utf8_lossy(a).into_owned())
+                .collect();
+        }
+        assert!(Instant::now() < deadline, "no argv recorded for {name}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Esquece o último lançamento registrado, para esperar pelo próximo.
+pub fn forget_argv(env: &Env, name: &str) {
+    let _ = std::fs::remove_file(env.root.join(format!("argv.{name}")));
+}
+
+/// Slug do projeto de teste, registrando-o se preciso.
+pub fn project(conn: &mut Conn, env: &Env) -> String {
     let already = {
         conn.send(&ClientMsg::AddProject {
             path: env.repo.display().to_string(),
@@ -235,18 +265,34 @@ pub fn create_with(conn: &mut Conn, env: &Env, name: &str, agent: &str) -> Strin
             _ => None,
         })
     };
-    let project = if already.is_empty() {
+    if already.is_empty() {
         state(conn, |s| !s.projects.is_empty()).projects[0]
             .slug
             .clone()
     } else {
         already
-    };
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_full(
+    conn: &mut Conn,
+    env: &Env,
+    name: &str,
+    agent: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+    prompt: Option<&str>,
+) -> String {
+    let project = project(conn, env);
     conn.send(&ClientMsg::CreateWorktree {
         project,
         name: name.into(),
         agent: agent.into(),
         permission: PermissionWire::Normal,
+        model: model.map(str::to_owned),
+        effort: effort.map(str::to_owned),
+        prompt: prompt.map(str::to_owned),
     })
     .unwrap_or_else(|e| panic!("{e}"));
     let s = state(conn, |s| s.worktrees.iter().any(|w| w.name == name));

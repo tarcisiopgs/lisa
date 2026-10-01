@@ -176,6 +176,9 @@ fn creating_a_worktree_sends_name_agent_and_permission() {
             name: "Fix Login".into(),
             agent: "claude".into(),
             permission: PermissionWire::Normal,
+            model: None,
+            effort: None,
+            prompt: None,
         }]
     );
     assert!(matches!(a.dialog(), Some(Dialog::NewWorktree(d)) if d.pending));

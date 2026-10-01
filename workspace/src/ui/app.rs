@@ -731,6 +731,9 @@ impl App {
                                 } else {
                                     PermissionWire::Normal
                                 },
+                                model: None,
+                                effort: None,
+                                prompt: None,
                             }),
                             Action::RememberAutonomy(autonomy),
                         ];

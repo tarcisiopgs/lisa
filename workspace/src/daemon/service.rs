@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::notify::{OsNotifier, SystemNotifier};
 use super::{SessionHost, UiSink};
-use crate::agents::{self, AgentId, Permission, SessionMode};
+use crate::agents::{self, AgentId, Effort, LaunchOptions, Permission, SessionMode};
 use crate::git::{self, RemovalBlock};
 use crate::protocol::work::{
     AgentOption, AgentState, ClientMsg, DaemonMsg, PermissionWire, ProjectView, Snapshot,
@@ -85,6 +85,36 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// UUID v4 para sessões de agentes que aceitam id definido pela Lisa.
+/// Modelo, effort e tarefa escolhidos ao criar um worktree.
+struct Choice {
+    model: Option<String>,
+    effort: Option<String>,
+    prompt: Option<String>,
+}
+
+/// Modelo e effort guardados, conferidos contra o catálogo atual: o que saiu dele é
+/// ignorado com aviso, para um restart nunca falhar por causa de um modelo aposentado.
+fn stored_options(
+    agent: AgentId,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> (Option<String>, Option<Effort>, Option<String>) {
+    let Some(name) = model else {
+        return (None, None, None);
+    };
+    let Some(spec) = agents::model(agent, name) else {
+        let notice = format!(
+            "model {name} is no longer in the {} catalog; starting with the default model",
+            agent.name()
+        );
+        return (None, None, Some(notice));
+    };
+    let effort = effort
+        .and_then(Effort::from_name)
+        .filter(|e| spec.efforts.contains(e));
+    (Some(name.to_owned()), effort, None)
+}
+
 fn new_session_id() -> String {
     let mut b = [0u8; 16];
     if std::fs::File::open("/dev/urandom")
@@ -261,7 +291,12 @@ impl Inner {
         lock(&self.dirty).insert(pane.to_owned());
     }
 
-    fn launch_for(&self, id: &str, session: SessionMode) -> Result<Launch, String> {
+    fn launch_for(
+        &self,
+        id: &str,
+        session: SessionMode,
+        prompt: Option<String>,
+    ) -> Result<Launch, String> {
         let registry = lock(&self.registry);
         let wt = registry
             .worktree(id)
@@ -276,6 +311,11 @@ impl Inner {
         } else {
             Permission::Normal
         };
+        let (model, effort, stale) =
+            stored_options(agent, wt.model.as_deref(), wt.effort.as_deref());
+        if let Some(notice) = stale {
+            self.send(&DaemonMsg::Notice(notice));
+        }
         let (cols, rows) = *lock(&self.size);
         let mut env = lock(&self.env).clone();
         env.retain(|(k, _)| k != "LISA_PANE_ID" && k != "LISA_WORKSPACE_RUNTIME_DIR");
@@ -290,9 +330,9 @@ impl Inner {
             agent,
             permission,
             session,
-            model: None,
-            effort: None,
-            prompt: None,
+            model,
+            effort,
+            prompt,
             cwd: &wt.path,
             env,
             cols,
@@ -441,6 +481,7 @@ impl Inner {
         name: &str,
         agent: &str,
         permission: PermissionWire,
+        choice: Choice,
     ) {
         let Some(agent_id) = AgentId::from_name(agent) else {
             return self.error(format!("unknown agent {agent}"));
@@ -455,6 +496,29 @@ impl Inner {
         if permission == Permission::FullAutonomy && agents::spec(agent_id).autonomy_args.is_none()
         {
             return self.error(format!("{agent} has no full-autonomy mode"));
+        }
+        // Modelo, effort e tarefa conferidos antes de qualquer worktree existir
+        let effort = match choice.effort.as_deref().map(Effort::from_name) {
+            Some(None) => {
+                return self.error(format!(
+                    "unknown effort {}",
+                    choice.effort.as_deref().unwrap_or_default()
+                ));
+            }
+            Some(known) => known,
+            None => None,
+        };
+        if let Err(e) = agents::launch_args(
+            agent_id,
+            permission,
+            &SessionMode::New { session_id: None },
+            &LaunchOptions {
+                model: choice.model.as_deref(),
+                effort,
+                prompt: choice.prompt.as_deref(),
+            },
+        ) {
+            return self.error(format!("{agent}: {e}"));
         }
         let git_env = git::Env(
             lock(&self.env)
@@ -475,13 +539,20 @@ impl Inner {
                     inner.send(&DaemonMsg::Notice(w));
                 }
                 let id = lock(&inner.registry).add_planned(&plan).id;
-                inner.start_new_agent(&id, agent_id, &agent, permission);
+                inner.start_new_agent(&id, agent_id, &agent, permission, choice);
             }
             Err(e) => inner.error(e),
         });
     }
 
-    fn start_new_agent(&self, id: &str, agent_id: AgentId, agent: &str, permission: Permission) {
+    fn start_new_agent(
+        &self,
+        id: &str,
+        agent_id: AgentId,
+        agent: &str,
+        permission: Permission,
+        choice: Choice,
+    ) {
         let id = id.to_owned();
         let session_id = agents::spec(agent_id)
             .new_session_flag
@@ -497,9 +568,12 @@ impl Inner {
                 .to_owned(),
             );
             wt.session_id.clone_from(&session_id);
+            wt.model = choice.model;
+            wt.effort = choice.effort;
         }
         self.save();
-        match self.launch_for(&id, SessionMode::New { session_id }) {
+        // A tarefa vale só para este lançamento: não vai para o registro
+        match self.launch_for(&id, SessionMode::New { session_id }, choice.prompt) {
             Ok(launch) => {
                 self.track_spawn(&id);
                 if let Err(e) = self.sessions.start(&id, launch) {
@@ -568,7 +642,7 @@ impl Inner {
         let session_id = lock(&self.registry)
             .worktree(id)
             .and_then(|w| w.session_id.clone());
-        let primary = match self.launch_for(id, SessionMode::Resume { session_id }) {
+        let primary = match self.launch_for(id, SessionMode::Resume { session_id }, None) {
             Ok(l) => l,
             Err(e) => return self.error(e),
         };
@@ -578,6 +652,7 @@ impl Inner {
             SessionMode::New {
                 session_id: Some(fresh_id.clone()),
             },
+            None,
         ) {
             Ok(l) => l,
             Err(e) => return self.error(e),
@@ -686,8 +761,16 @@ impl Inner {
                 name,
                 agent,
                 permission,
+                model,
+                effort,
+                prompt,
             } => {
-                self.create_worktree(&project, &name, &agent, permission);
+                let choice = Choice {
+                    model,
+                    effort,
+                    prompt,
+                };
+                self.create_worktree(&project, &name, &agent, permission, choice);
             }
             ClientMsg::RemoveWorktree { id, force } => self.remove_worktree(&id, force),
             ClientMsg::StopAgent { id } => self.sessions.stop(&id),
@@ -836,5 +919,41 @@ impl SessionHost for Workspace {
         self.inner.ui_attached.store(false, Ordering::SeqCst);
         *lock(&self.inner.focus) = Focus::default();
         lock(&self.inner.last_sent).clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_model_and_effort_are_kept_when_the_catalog_has_them() {
+        let (model, effort, notice) = stored_options(AgentId::Claude, Some("opus"), Some("high"));
+        assert_eq!(model.as_deref(), Some("opus"));
+        assert_eq!(effort, Some(Effort::High));
+        assert_eq!(notice, None);
+    }
+
+    #[test]
+    fn a_retired_model_is_dropped_with_a_notice() {
+        let (model, effort, notice) =
+            stored_options(AgentId::Claude, Some("retired-model"), Some("high"));
+        assert_eq!((model, effort), (None, None));
+        assert!(notice.is_some_and(|n| n.contains("retired-model")));
+    }
+
+    #[test]
+    fn an_effort_the_model_lost_is_dropped_quietly() {
+        let (model, effort, notice) = stored_options(AgentId::Claude, Some("haiku"), Some("high"));
+        assert_eq!(model.as_deref(), Some("haiku"));
+        assert_eq!((effort, notice), (None, None));
+    }
+
+    #[test]
+    fn worktrees_without_a_stored_model_launch_with_defaults() {
+        assert_eq!(
+            stored_options(AgentId::Claude, None, None),
+            (None, None, None)
+        );
     }
 }

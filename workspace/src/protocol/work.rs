@@ -43,6 +43,11 @@ pub enum ClientMsg {
         name: String,
         agent: String,
         permission: PermissionWire,
+        /// Id do catálogo; `None` deixa o padrão da CLI.
+        model: Option<String>,
+        effort: Option<String>,
+        /// Tarefa inicial, entregue só neste lançamento.
+        prompt: Option<String>,
     },
     RemoveWorktree {
         id: String,
