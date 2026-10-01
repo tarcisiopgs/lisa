@@ -11,6 +11,7 @@ use super::app::{
     App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row,
     SIDEBAR_WIDTH, Zone, cost_note, effort_options, model_options, task_delivered,
 };
+use super::picker::Picker;
 use crate::protocol::work::{
     ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
     ATTR_WIDE_SPACER, AgentState, Color, Snapshot, WorktreeView,
@@ -179,7 +180,7 @@ fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
             Line::default(),
             Line::from(vec![
                 Span::styled("p", bold()),
-                Span::styled("  add a project (path to a git repository)", dim()),
+                Span::styled("  add a project", dim()),
             ]),
         ];
         f.render_widget(Paragraph::new(lines).centered(), centered(pane, 48, 3));
@@ -774,7 +775,114 @@ fn new_worktree_lines(
     lines
 }
 
+/// O mesmo que `truncate`, cortando o começo: num caminho, o fim é o que situa.
+fn truncate_left(text: &str, width: usize) -> String {
+    let len = text.chars().count();
+    if len <= width {
+        return text.to_owned();
+    }
+    let tail: String = text.chars().skip(len + 1 - width.max(1)).collect();
+    format!("…{tail}")
+}
+
+/// Linhas da lista do seletor quando há espaço.
+const PICKER_ROWS: usize = 10;
+
+/// Linhas do seletor de projetos. A altura da lista depende só da pasta, não do filtro,
+/// para o diálogo não pular enquanto se digita; passando disso, vira janela em volta do
+/// selecionado.
+fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
+    let inner = usize::from(width).saturating_sub(2);
+    let entries = p.visible();
+    // Pasta, filtro, dicas e dois espaços são fixos; a lista fica com o resto
+    let rows = usize::from(max_lines)
+        .saturating_sub(5)
+        .min(PICKER_ROWS)
+        .min(p.total())
+        .max(1);
+    let yellow = Style::default().fg(TuiColor::Yellow);
+
+    let position = if entries.len() > rows {
+        format!("{}/{}", p.selected() + 1, entries.len())
+    } else {
+        String::new()
+    };
+    let dir = truncate_left(
+        &p.dir_label(),
+        inner.saturating_sub(4 + position.chars().count()),
+    );
+    let pad = inner.saturating_sub(3 + dir.chars().count() + position.chars().count());
+    let mut lines = vec![
+        Line::styled(format!("  {dir}{}{position}", " ".repeat(pad)), dim()),
+        Line::from(vec![
+            Span::styled("  › ", yellow),
+            Span::raw(truncate_left(p.query(), inner.saturating_sub(6))),
+            cursor(),
+        ]),
+        Line::default(),
+    ];
+
+    let mut list: Vec<Line<'static>> = Vec::new();
+    if let Some(reason) = p.error() {
+        list.push(Line::styled(
+            format!("  Cannot open this folder: {reason}"),
+            Style::default().fg(TuiColor::Red),
+        ));
+    } else if entries.is_empty() {
+        let text = if p.query().is_empty() {
+            "  no folders here"
+        } else {
+            "  no match"
+        };
+        list.push(Line::styled(text, dim()));
+    }
+    let first = p
+        .selected()
+        .saturating_sub(rows.saturating_sub(1))
+        .min(entries.len().saturating_sub(rows));
+    for (i, entry) in entries.iter().enumerate().skip(first).take(rows) {
+        let chosen = i == p.selected();
+        let name = if entry.repo {
+            entry.name.clone()
+        } else {
+            format!("{}/", entry.name)
+        };
+        let mark = if entry.added { "added" } else { "" };
+        let room = inner.saturating_sub(8 + mark.len());
+        let name = truncate(&name, room);
+        let style = match (entry.added, entry.repo, chosen) {
+            (true, _, _) | (false, false, false) => dim(),
+            (false, true, true) => bold(),
+            _ => Style::default(),
+        };
+        let gap = room.saturating_sub(name.chars().count()) + 1;
+        list.push(Line::from(vec![
+            if chosen {
+                Span::styled(format!("  {SELECT_BAR} "), yellow)
+            } else {
+                Span::raw("    ")
+            },
+            Span::styled(if entry.repo { "● " } else { "  " }, style),
+            Span::styled(name, style),
+            Span::styled(format!("{}{mark}", " ".repeat(gap)), dim()),
+        ]));
+    }
+    list.resize(rows, Line::default());
+    lines.extend(list);
+    lines.push(Line::default());
+
+    let hints = match p.current() {
+        Some(entry) if entry.added => "  already a project · → open · ← up · esc cancel",
+        Some(entry) if entry.repo => "  ⏎ add · → open · ← up · esc cancel",
+        Some(_) => "  ⏎ open · ← up · esc cancel",
+        None => "  ← up · esc cancel",
+    };
+    lines.push(Line::styled(hints, dim()));
+    lines
+}
+
 fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
+    let width = DIALOG_WIDTH.min(body.width.saturating_sub(4));
     let (title, lines): (String, Vec<Line>) = match dialog {
         Dialog::Help => (
             "Keys".into(),
@@ -800,18 +908,9 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             })
             .collect(),
         ),
-        Dialog::AddProject { path } => (
+        Dialog::AddProject(picker) => (
             "Add project".into(),
-            vec![
-                Line::styled("  Path to a git repository", dim()),
-                Line::from(vec![
-                    Span::raw("  "),
-                    Span::raw(path.clone()),
-                    Span::styled("▏", Style::default().fg(TuiColor::Yellow)),
-                ]),
-                Line::default(),
-                Line::styled("  ⏎ add · esc cancel", dim()),
-            ],
+            add_project(picker, width, body.height.saturating_sub(2)),
         ),
         Dialog::BaseBranch { project, value } => (
             format!("Base branch for {project}"),
@@ -861,7 +960,6 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
         }
         Dialog::NewWorktree(d) => new_worktree(app, d, body.height.saturating_sub(2)),
     };
-    let width = DIALOG_WIDTH.min(body.width.saturating_sub(4));
     let height = u16::try_from(lines.len()).unwrap_or(0) + 2;
     let rect = centered(body, width, height);
     f.render_widget(Clear, rect);

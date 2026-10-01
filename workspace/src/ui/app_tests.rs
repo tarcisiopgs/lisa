@@ -1007,3 +1007,72 @@ fn an_answer_for_text_that_changed_since_is_dropped() {
     // Ao sair do campo, o texto novo é consultado
     assert_eq!(route_id(&a.on_key(key(KeyCode::Tab))), 2);
 }
+
+/// Pasta temporária com `work/api` e `work/web` como repositórios.
+fn repos() -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().unwrap_or_else(|e| panic!("{e}"));
+    for dir in ["work/api/.git", "work/web/.git", "other"] {
+        std::fs::create_dir_all(tmp.path().join(dir)).unwrap_or_else(|e| panic!("{e}"));
+    }
+    tmp
+}
+
+fn picker(a: &App) -> &Picker {
+    match a.dialog() {
+        Some(Dialog::AddProject(p)) => p,
+        other => panic!("expected the project picker, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_project_picker_opens_where_lisa_was_started_when_nothing_is_mapped_nearby() {
+    let tmp = repos();
+    let mut a = app();
+    a.set_dirs(tmp.path().join("work"), Some(tmp.path().to_path_buf()));
+    a.on_key(key(KeyCode::Char('p')));
+    assert_eq!(picker(&a).dir_label(), "~/work/");
+}
+
+#[test]
+fn the_project_picker_opens_beside_the_last_project_and_marks_it() {
+    let tmp = repos();
+    let mut a = app();
+    a.set_dirs(tmp.path().join("other"), Some(tmp.path().to_path_buf()));
+    let mut state = workspace();
+    state.projects[1].path = tmp.path().join("work/api").display().to_string();
+    a.on_daemon(DaemonMsg::State(state));
+    a.on_key(key(KeyCode::Char('p')));
+    assert_eq!(picker(&a).dir_label(), "~/work/");
+    assert!(
+        picker(&a)
+            .current()
+            .is_some_and(|e| e.name == "api" && e.added)
+    );
+}
+
+#[test]
+fn choosing_a_repository_in_the_picker_adds_it_and_closes_the_dialog() {
+    let tmp = repos();
+    let mut a = app();
+    a.set_dirs(tmp.path().join("work"), None);
+    a.on_key(key(KeyCode::Char('p')));
+    type_text(&mut a, "we");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert_eq!(
+        sent(&actions),
+        vec![ClientMsg::AddProject {
+            path: tmp.path().join("work/web").display().to_string()
+        }]
+    );
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn pasting_a_path_into_the_picker_selects_that_repository() {
+    let tmp = repos();
+    let mut a = app();
+    a.set_dirs(tmp.path().join("other"), None);
+    a.on_key(key(KeyCode::Char('p')));
+    a.on_paste(&format!("{}/work/api\n", tmp.path().display()));
+    assert!(picker(&a).current().is_some_and(|e| e.name == "api"));
+}

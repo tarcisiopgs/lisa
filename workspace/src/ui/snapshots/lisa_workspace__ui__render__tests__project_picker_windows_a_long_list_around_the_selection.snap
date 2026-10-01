@@ -1,0 +1,28 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"                                                                       │▐▾ api                      "
+"                                                                       │   ◉ fix-login              "
+"       ┌ Add project ─────────────────────────────────────────┐        │   ◆ rate-limit             "
+"       │  ~/Workspace/                                  15/35 │        │   ○ docs-update            "
+"       │  › ▏                                                 │        │ ▾ web                      "
+"       │                                                      │        │   ✔ new-checkout           "
+"       │    ● service-02                                      │        │ ▾ lisa                     "
+"       │    ● service-03                                      │        │   no worktrees · n         "
+"       │    ● service-04                                      │        │                            "
+"       │    ● service-05                                      │        │                            "
+"       │    ● service-06                                      │        │                            "
+"       │    ● service-07                                      │        │                            "
+"       │    ● service-08                                      │        │                            "
+"       │    ● service-09                                      │        │                            "
+"       │    ● service-10                                      │        │                            "
+"       │  ▐ ● service-11                                      │        │                            "
+"       │                                                      │        │                            "
+"       │  ⏎ add · → open · ← up · esc cancel                  │        │                            "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                                                    "

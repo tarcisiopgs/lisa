@@ -438,3 +438,95 @@ fn very_short_terminal_still_shows_the_selected_agent_and_the_hints() {
     assert!(screen.contains("● opencode"), "{screen}");
     assert!(screen.contains("⏎ create"), "{screen}");
 }
+
+/// HOME temporário com `Workspace/` cheio de repositórios e pastas comuns.
+fn projects_home(extra: usize) -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().unwrap_or_else(|e| panic!("{e}"));
+    let mut dirs: Vec<String> = [
+        "glowz/.git",
+        "glowz-api/.git",
+        "lisa/.git",
+        "archive",
+        "notes",
+    ]
+    .iter()
+    .map(|d| format!("Workspace/{d}"))
+    .collect();
+    dirs.extend((0..extra).map(|i| format!("Workspace/service-{i:02}/.git")));
+    for dir in dirs {
+        std::fs::create_dir_all(tmp.path().join(dir)).unwrap_or_else(|e| panic!("{e}"));
+    }
+    tmp
+}
+
+fn picker_app(tmp: &tempfile::TempDir, cols: u16, rows: u16) -> App {
+    let mut a = app(cols, rows);
+    let mut state = workspace();
+    state.projects[2].path = tmp.path().join("Workspace/lisa").display().to_string();
+    a.on_daemon(DaemonMsg::State(state));
+    a.set_dirs(tmp.path().to_path_buf(), Some(tmp.path().to_path_buf()));
+    a.on_key(key(KeyCode::Char('p')));
+    a
+}
+
+fn type_text(a: &mut App, text: &str) {
+    for c in text.chars() {
+        a.on_key(key(KeyCode::Char(c)));
+    }
+}
+
+#[test]
+fn project_picker_lists_repositories_then_folders_and_marks_mapped_ones() {
+    let tmp = projects_home(0);
+    let a = picker_app(&tmp, 100, 20);
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_narrows_the_list_as_you_type() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "glo");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_says_when_nothing_matches() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "zzz");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_offers_to_open_a_plain_folder() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "arch");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_explains_a_folder_it_cannot_read() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "~/missing/");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_windows_a_long_list_around_the_selection() {
+    let tmp = projects_home(30);
+    let mut a = picker_app(&tmp, 100, 24);
+    for _ in 0..14 {
+        a.on_key(key(KeyCode::Down));
+    }
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn project_picker_fits_the_smallest_terminal() {
+    let tmp = projects_home(30);
+    let a = picker_app(&tmp, 60, 12);
+    insta::assert_snapshot!(draw(&a).backend());
+}

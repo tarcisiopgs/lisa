@@ -19,6 +19,7 @@ use crate::router::{Answers, RouteError, config};
 
 pub mod app;
 pub mod input;
+pub mod picker;
 pub mod render;
 pub mod terminal;
 
@@ -141,6 +142,9 @@ pub fn run() -> anyhow::Result<()> {
 
     let size = terminal.size()?;
     let mut app = App::new(size.width, size.height);
+    if let Ok(cwd) = std::env::current_dir() {
+        app.set_dirs(cwd, std::env::var_os("HOME").map(std::path::PathBuf::from));
+    }
     app.set_default_autonomy(terminal::load_default_autonomy(&terminal::prefs_path()));
     let (router_config, config_warning) = config::load(&config::config_path());
     app.set_router_config(router_config);

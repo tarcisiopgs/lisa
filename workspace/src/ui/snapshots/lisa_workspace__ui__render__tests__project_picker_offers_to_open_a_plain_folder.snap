@@ -1,0 +1,24 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"                                                                       │▐▾ api                      "
+"                                                                       │   ◉ fix-login              "
+"       ┌ Add project ─────────────────────────────────────────┐        │   ◆ rate-limit             "
+"       │  ~/Workspace/                                        │        │   ○ docs-update            "
+"       │  › arch▏                                             │        │ ▾ web                      "
+"       │                                                      │        │   ✔ new-checkout           "
+"       │  ▐   archive/                                        │        │ ▾ lisa                     "
+"       │                                                      │        │   no worktrees · n         "
+"       │                                                      │        │                            "
+"       │                                                      │        │                            "
+"       │                                                      │        │                            "
+"       │                                                      │        │                            "
+"       │  ⏎ open · ← up · esc cancel                          │        │                            "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                       │                            "
+"                                                                                                    "
