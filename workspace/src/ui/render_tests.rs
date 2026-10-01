@@ -147,10 +147,29 @@ fn find(t: &Terminal<TestBackend>, needle: char) -> Option<(u16, u16)> {
 }
 
 #[test]
-fn wide_layout_puts_the_agent_left_and_the_sidebar_right() {
+fn wide_layout_puts_the_sidebar_left_and_the_agent_right() {
     let mut a = app(100, 14);
     open(&mut a, "api/fix-login");
     insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn the_sidebar_starts_at_the_left_edge_and_the_cursor_follows_the_pane() {
+    let mut a = app(100, 14);
+    open(&mut a, "api/fix-login");
+    let mut t = draw(&a);
+    assert_eq!(find(&t, 'P'), Some((1, 0)), "PROJECTS label");
+    assert_eq!(find(&t, '│'), Some((28, 0)), "separator");
+    // O cursor do agente está em (2, 2) dentro do painel, que começa depois do separador
+    let cursor = t.get_cursor_position().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((cursor.x, cursor.y), (31, 2));
+}
+
+#[test]
+fn narrow_terminal_puts_the_rail_at_the_left_edge() {
+    let mut a = app(80, 12);
+    open(&mut a, "api/fix-login");
+    assert_eq!(find(&draw(&a), '│'), Some((3, 0)));
 }
 
 #[test]

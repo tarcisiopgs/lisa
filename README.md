@@ -362,7 +362,7 @@ Acceptance criteria:
 
 ## Workspace
 
-`lisa workspace` opens a terminal UI. The agent you are working with fills the left of the screen, and a narrow sidebar on the right lists your projects and their worktrees:
+`lisa workspace` opens a terminal UI. The agent you are working with fills the screen, and a narrow sidebar on the left lists your projects and their worktrees:
 
 - **Projects:** add a project once, from any git repository path. Every new worktree starts from the project's base branch after a fetch, and you can change the base branch later.
 - **Worktrees:** worktrees live in `~/.lisa/workspaces/<project>/<name>`, outside your repository. Each one runs one agent, launched through your login shell, so your PATH and tools resolve as usual.

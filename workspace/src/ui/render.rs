@@ -1,4 +1,4 @@
-//! Desenho da UI: agente à esquerda ocupando a tela, lateral estreita à direita,
+//! Desenho da UI: lateral estreita à esquerda, agente ocupando o resto da tela,
 //! uma linha de rodapé. Cores ANSI nomeadas, como o kanban da Lisa e o devsweep.
 
 use ratatui::Frame;
@@ -95,22 +95,22 @@ pub fn render(f: &mut Frame, app: &App) {
     } else {
         RAIL_WIDTH
     };
-    let pane = Rect {
+    let side = Rect {
         x: 0,
         y: 0,
-        width: area.width - side_w - 1,
+        width: side_w,
         height: body_h,
     };
     let sep = Rect {
-        x: pane.width,
+        x: side_w,
         y: 0,
         width: 1,
         height: body_h,
     };
-    let side = Rect {
-        x: pane.width + 1,
+    let pane = Rect {
+        x: side_w + 1,
         y: 0,
-        width: side_w,
+        width: area.width - side_w - 1,
         height: body_h,
     };
     let footer = Rect {
@@ -130,7 +130,7 @@ pub fn render(f: &mut Frame, app: &App) {
     } else if app.zone() == Zone::Sidebar {
         // Terminal estreito: a lateral completa aparece por cima do painel enquanto navega
         let overlay = Rect {
-            x: area.width - SIDEBAR_WIDTH - 1,
+            x: 0,
             y: 0,
             width: SIDEBAR_WIDTH + 1,
             height: body_h,
@@ -139,6 +139,7 @@ pub fn render(f: &mut Frame, app: &App) {
         f.render_widget(
             Paragraph::new(vec![Line::from("│"); usize::from(body_h)]).style(dim()),
             Rect {
+                x: SIDEBAR_WIDTH,
                 width: 1,
                 ..overlay
             },
@@ -147,7 +148,6 @@ pub fn render(f: &mut Frame, app: &App) {
             f,
             app,
             Rect {
-                x: overlay.x + 1,
                 width: SIDEBAR_WIDTH,
                 ..overlay
             },
