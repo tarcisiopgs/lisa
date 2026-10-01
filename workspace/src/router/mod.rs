@@ -2,6 +2,7 @@
 //! pura; `config` lê as preferências do usuário.
 
 pub mod config;
+pub mod jev;
 
 use serde_json::{Value, json};
 

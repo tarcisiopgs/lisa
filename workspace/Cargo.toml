@@ -26,6 +26,7 @@ terminput = "0.5"
 terminput-crossterm = "0.4.11"
 thiserror = "2.0.17"
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 insta = "1"
