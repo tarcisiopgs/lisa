@@ -21,15 +21,23 @@ Lisa has two modes:
 
 Success for Workspace mode is replacing the maintainer's daily use of Orca without Orca's visual clutter.
 
+Workspace is now the main product (decided 2026-10-01). The Autonomous mode is to be absorbed into it, so the whole project runs as one product.
+
+**Undecided:** how and when the Autonomous mode moves into Workspace.
+
 ## Positioning
 
-- Terminal-native, with no Electron and no tmux prerequisite.
+- Terminal-native, with no Electron and no tmux prerequisite. Measured on the maintainer's machine on 2026-10-01, Orca's app and helpers held about 995 MB resident across 11 processes, roughly the cost of four Claude Code agents (about 240 MB each). The per-agent cost is the same in any interface; the fixed cost of the interface is what Lisa removes. Lisa's own memory use has not been measured yet.
+- Agent-agnostic: Claude Code, Codex and the other supported agents run side by side on the same project, with no vendor favoured.
+- Automatic routing: a task description picks the agent, model and effort, and the user confirms.
 - Project-first: the user maps a project once and works from it, instead of opening the tool inside a repository folder (the flow of herdr and claude-squad).
 - One mode for autonomous issue delivery and one for interactive agent work, in the same CLI.
 
 ## Operating Context
 
 The user lives in a terminal, primarily Ghostty. Several agents run at the same time across projects. The user switches between them, answers permission prompts and reviews results. Often the terminal window is not focused and the user is in another app, so notifications carry the workflow.
+
+One agent runs in one worktree of one repository; work that spans several repositories is left to what the agents themselves provide. The worktree is always the unit of work, never a question. The user opens extra terminal tabs for anything else. Browsers and mobile simulators stay separate windows and devices; embedding them is not a requirement.
 
 ## Capabilities and Constraints
 
@@ -40,8 +48,16 @@ The user lives in a terminal, primarily Ghostty. Several agents run at the same 
   - one agent terminal per worktree
   - exactly four agent states: working, needs you, done and idle
   - no diff view, no tracker integrations and no PR actions
+- Project groups:
+  - groups and standalone projects share one alphabetical list
+  - a group is created from a folder that holds repositories, or by name with repositories picked from any folder
+  - an agent is started from a group by picking which repository to run in
+  - a group's agents are listed directly under it, each marked with its repository
+  - ungrouping turns the repositories back into standalone projects and deletes nothing
+- The sidebar width is adjustable between 20 and 48 columns.
 - Terminology:
   - "project": a mapped git repository
+  - "group": a name over several projects, used to list and launch, never to run
   - "worktree": a git worktree created from the project's base branch
   - "agent": the coding CLI running in a worktree
 - Specification of record: the maintainer's vault note "2026-09-30 - Modo Workspace" (R1–R15, AE1–AE6).

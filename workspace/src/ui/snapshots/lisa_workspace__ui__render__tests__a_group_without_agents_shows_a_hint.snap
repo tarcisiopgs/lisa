@@ -4,7 +4,7 @@ expression: draw(&a).backend()
 ---
 " PROJECTS                   │                                                                       "
 "▐▾ B-Metric                 │                                                                       "
-"   no agents · n            │                                                                       "
+"   no worktrees · n         │                                                                       "
 " ▾ bloom                    │                                                                       "
 "   no worktrees · n         │                                                                       "
 " ▾ lisa                     │                                                                       "

@@ -753,7 +753,7 @@ fn project_picker_offers_groups_on_a_plain_folder() {
     let mut a = picker_app(&tmp, 100, 20);
     type_text(&mut a, "arch");
     let t = draw(&a);
-    assert!(text_of(&t).contains("⏎ open · ^g add as group · ^n new group · esc"));
+    assert!(text_of(&t).contains("⏎ open · ^g as group · ^n new group · esc cancel"));
     insta::assert_snapshot!(t.backend());
 }
 
@@ -830,5 +830,23 @@ fn ungroup_asks_and_says_nothing_is_deleted() {
     let screen = text_of(&t);
     assert!(screen.contains("Ungroup B-Metric?"), "{screen}");
     assert!(screen.contains("Nothing is deleted."), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn help_lists_groups_and_resize() {
+    let mut a = grouped(100, 24, grouped_workspace());
+    a.on_key(key(KeyCode::Char('?')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    for line in [
+        "open worktree / fold project or group",
+        "new worktree in this project or group",
+        "add project or group",
+        "remove worktree / ungroup",
+        "resize the sidebar",
+    ] {
+        assert!(screen.contains(line), "missing {line:?} in {screen}");
+    }
     insta::assert_snapshot!(t.backend());
 }

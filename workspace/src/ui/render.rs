@@ -431,7 +431,9 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
                 Line::from(spans)
             }
             Row::Empty { .. } => Line::from(vec![bar, Span::styled("  no worktrees · n", dim())]),
-            Row::EmptyGroup { .. } => Line::from(vec![bar, Span::styled("  no agents · n", dim())]),
+            Row::EmptyGroup { .. } => {
+                Line::from(vec![bar, Span::styled("  no worktrees · n", dim())])
+            }
         };
         lines.push(line);
     }
@@ -1011,9 +1013,9 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
     let picking = matches!(p.mode(), Mode::GroupPick { .. });
     let hints = match p.current() {
         _ if picking => "  space mark · → open · ← up · ⏎ create · esc cancel",
-        Some(entry) if entry.added => "  already a project · → open · ^n new group · esc",
+        Some(entry) if entry.added => "  already added · → open · ^n new group · esc cancel",
         Some(entry) if entry.repo => "  ⏎ add · → open · ^n new group · esc cancel",
-        Some(_) => "  ⏎ open · ^g add as group · ^n new group · esc",
+        Some(_) => "  ⏎ open · ^g as group · ^n new group · esc cancel",
         None => "  ← up · ^n new group · esc cancel",
     };
     lines.push(Line::styled(hints, dim()));
@@ -1029,13 +1031,14 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
                 ("^a", "switch between the agent and the sidebar"),
                 ("^a ^a", "send ctrl-a to the agent"),
                 ("↑↓ j k", "move"),
-                ("⏎", "open worktree / fold project"),
+                ("⏎", "open worktree / fold project or group"),
                 ("tab", "next worktree that needs you"),
-                ("n", "new worktree in this project"),
-                ("p", "add project"),
+                ("n", "new worktree in this project or group"),
+                ("p", "add project or group"),
                 ("b", "change base branch"),
-                ("d", "remove worktree"),
+                ("d", "remove worktree / ungroup"),
                 ("r / s", "restart / stop agent"),
+                ("< >", "resize the sidebar"),
                 ("q", "detach (agents keep running)"),
             ]
             .iter()
