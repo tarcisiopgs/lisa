@@ -3,6 +3,7 @@
 pub mod agents;
 pub mod daemon;
 pub mod git;
+pub mod naming;
 pub mod protocol;
 pub mod registry;
 pub mod router;

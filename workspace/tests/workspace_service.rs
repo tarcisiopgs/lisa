@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use lisa_workspace::daemon::service::Workspace;
-use lisa_workspace::protocol::work::{AgentState, GroupView, PermissionWire};
+use lisa_workspace::protocol::work::{AgentState, GroupView, PermissionWire, RenameTarget};
 use lisa_workspace::protocol::{ClientMsg, DaemonMsg};
 
 #[test]
@@ -385,4 +385,54 @@ fn groups_survive_a_daemon_restart() {
     let s = reopened.state();
     assert_eq!(s.groups.len(), 1);
     assert_eq!(s.projects[0].group.as_deref(), Some("acme"));
+}
+
+// ---- Renomear ----
+
+#[test]
+fn renaming_reaches_the_ui_for_projects_and_running_worktrees() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    conn.send(&ClientMsg::Rename {
+        target: RenameTarget::Project("repo".into()),
+        name: "Site".into(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = state(&mut conn, |s| s.projects[0].name == "Site");
+    assert_eq!(s.projects[0].slug, "repo");
+
+    conn.send(&ClientMsg::Rename {
+        target: RenameTarget::Worktree(id.clone()),
+        name: "better name".into(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = state(&mut conn, |s| {
+        s.worktrees.iter().any(|w| w.name == "better name")
+    });
+    let wt = &s.worktrees[0];
+    assert_eq!(
+        (wt.id.as_str(), wt.branch.as_str()),
+        (id.as_str(), "better-name")
+    );
+    assert!(wt.running, "the agent must survive the rename");
+}
+
+#[test]
+fn a_refused_rename_reports_the_reason() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    conn.send(&ClientMsg::Rename {
+        target: RenameTarget::Worktree(id),
+        name: "main".into(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let reason = until(&mut conn, |m| match m {
+        DaemonMsg::Error(e) => Some(e.clone()),
+        _ => None,
+    });
+    assert!(reason.contains("branch main already exists"), "{reason}");
 }

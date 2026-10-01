@@ -46,6 +46,16 @@ pub struct Project {
     /// Slug do grupo; ausente em projeto solto e em estados anteriores à versão 2.
     #[serde(default)]
     pub group: Option<String>,
+    /// Nome escolhido pelo usuário para o menu; a pasta e o slug não mudam.
+    #[serde(default)]
+    pub alias: Option<String>,
+}
+
+impl Project {
+    /// Nome mostrado: o apelido, ou o nome da pasta.
+    pub fn display_name(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
 }
 
 /// Agrupa projetos no menu; não é unidade de execução.
@@ -57,7 +67,7 @@ pub struct Group {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Worktree {
-    /// `<slug do projeto>/<branch>`
+    /// `<slug do projeto>/<branch da criação>`; não muda quando a branch é renomeada.
     pub id: String,
     pub project: String,
     pub name: String,
@@ -269,6 +279,7 @@ impl Registry {
             base_branch,
             remote,
             group: None,
+            alias: None,
         })
     }
 
@@ -368,6 +379,74 @@ impl Registry {
         Ok(())
     }
 
+    /// Apelido do projeto no menu; em branco, volta ao nome da pasta.
+    pub fn set_alias(&mut self, slug: &str, alias: &str) -> Result<(), RegistryError> {
+        let project = self
+            .projects
+            .iter_mut()
+            .find(|p| p.slug == slug)
+            .ok_or_else(|| RegistryError::UnknownProject(slug.to_owned()))?;
+        let alias = alias.trim();
+        project.alias = (!alias.is_empty() && alias != project.name).then(|| alias.to_owned());
+        Ok(())
+    }
+
+    /// Troca o nome do grupo; o slug fica, para nada que aponta para ele se perder.
+    pub fn rename_group(&mut self, slug: &str, name: &str) -> Result<(), RegistryError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(RegistryError::UnnamedGroup);
+        }
+        let lower = name.to_lowercase();
+        if self
+            .groups
+            .iter()
+            .any(|g| g.slug != slug && g.name.to_lowercase() == lower)
+        {
+            return Err(RegistryError::GroupExists(name.to_owned()));
+        }
+        let group = self
+            .groups
+            .iter_mut()
+            .find(|g| g.slug == slug)
+            .ok_or_else(|| RegistryError::UnknownGroup(slug.to_owned()))?;
+        group.name = name.to_owned();
+        Ok(())
+    }
+
+    /// Troca o nome do worktree e renomeia a branch local. O id e a pasta não mudam.
+    /// Devolve um aviso quando a branch antiga já está no remote, que fica como estava.
+    pub fn rename_worktree(
+        &mut self,
+        id: &str,
+        name: &str,
+    ) -> Result<Option<String>, RegistryError> {
+        let (wt, project) = self.removal_target(id)?;
+        let branch = git::sanitize_branch(name)?;
+        let mut notice = None;
+        if branch != wt.branch {
+            if git::branch_exists(&project.path, project.remote.as_deref(), &branch) {
+                return Err(GitError::BranchExists(branch).into());
+            }
+            git::rename_branch(&project.path, &wt.branch, &branch)?;
+            notice = project
+                .remote
+                .as_deref()
+                .filter(|remote| git::remote_branch_exists(&project.path, remote, &wt.branch))
+                .map(|remote| {
+                    format!(
+                        "renamed locally; {remote}/{} keeps its name on the remote",
+                        wt.branch
+                    )
+                });
+        }
+        if let Some(wt) = self.worktree_mut(id) {
+            wt.name = name.trim().to_owned();
+            wt.branch = branch;
+        }
+        Ok(notice)
+    }
+
     /// Marca de cada projeto de grupo: slug do projeto → marca.
     pub fn tags(&self) -> BTreeMap<String, String> {
         let mut out = BTreeMap::new();
@@ -414,10 +493,15 @@ impl Registry {
             .cloned()
             .ok_or_else(|| RegistryError::UnknownProject(slug.to_owned()))?;
         let branch = git::sanitize_branch(name)?;
-        let dest = self
-            .worktree_root
-            .join(&project.slug)
-            .join(branch.replace('/', "-"));
+        // Um worktree renomeado mantém a pasta com o nome antigo: o novo vai para outra
+        let folder = branch.replace('/', "-");
+        let root = self.worktree_root.join(&project.slug);
+        let mut dest = root.join(&folder);
+        let mut n = 2;
+        while self.worktrees.iter().any(|w| w.path == dest) {
+            dest = root.join(format!("{folder}-{n}"));
+            n += 1;
+        }
         Ok(WorktreePlan {
             project,
             name: name.trim().to_owned(),
@@ -428,8 +512,16 @@ impl Registry {
 
     /// Registra um worktree já criado no disco.
     pub fn add_planned(&mut self, plan: &WorktreePlan) -> Worktree {
+        // Depois de um rename, o id de um worktree antigo pode ser o da branch nova
+        let base = format!("{}/{}", plan.project.slug, plan.branch);
+        let mut id = base.clone();
+        let mut n = 2;
+        while self.worktree(&id).is_some() {
+            id = format!("{base}~{n}");
+            n += 1;
+        }
         let worktree = Worktree {
-            id: format!("{}/{}", plan.project.slug, plan.branch),
+            id,
             project: plan.project.slug.clone(),
             name: plan.name.clone(),
             branch: plan.branch.clone(),
