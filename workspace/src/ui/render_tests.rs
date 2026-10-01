@@ -886,3 +886,73 @@ fn the_footer_says_ungroup_on_a_group_row() {
     let screen = text_of(&draw(&a));
     assert!(screen.contains("d remove"), "{screen}");
 }
+
+// ---- Tarefa primeiro, nome automático e renomear ----
+
+#[test]
+fn with_the_router_the_new_worktree_dialog_asks_only_for_the_task() {
+    let mut a = app(100, 20);
+    a.set_router_ready(true);
+    a.on_key(key(KeyCode::Char('n')));
+    type_text(&mut a, "Fix the redirect loop on login");
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("⏎ continue · esc cancel"), "{screen}");
+    assert!(!screen.contains("Agent"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn a_generated_name_is_marked_auto_until_edited() {
+    let mut a = app(100, 24);
+    a.on_key(key(KeyCode::Char('n')));
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains(" · auto"), "{screen}");
+    type_text(&mut a, "mine");
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("branch: mine"), "{screen}");
+    assert!(!screen.contains(" · auto"), "{screen}");
+}
+
+#[test]
+fn the_task_step_fits_the_smallest_terminal() {
+    let mut a = app(60, 12);
+    a.set_router_ready(true);
+    a.on_key(key(KeyCode::Char('n')));
+    let t = draw(&a);
+    assert!(text_of(&t).contains("⏎ skip · esc cancel"));
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn renaming_a_worktree_previews_the_branch() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(1);
+    a.on_key(key(KeyCode::Char('e')));
+    type_text(&mut a, " V2");
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Rename worktree"), "{screen}");
+    assert!(screen.contains("branch: fix-ingest-lag-v2"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn renaming_a_project_says_the_folder_keeps_its_name() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| {
+            *r == crate::ui::app::Row::Project {
+                slug: "lisa".into(),
+            }
+        })
+        .unwrap_or(0);
+    a.select_row(at);
+    a.on_key(key(KeyCode::Char('e')));
+    let t = draw(&a);
+    assert!(text_of(&t).contains("empty restores the folder name"));
+    insta::assert_snapshot!(t.backend());
+}

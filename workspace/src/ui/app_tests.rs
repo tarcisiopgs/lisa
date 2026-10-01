@@ -1441,7 +1441,7 @@ fn arrows_cycle_the_repositories_and_a_letter_jumps_by_tag() {
     // Letra que nenhuma marca usa não muda nada nem vira texto
     a.on_key(ch('z'));
     assert_eq!(new_worktree(&a).project, "b-metric-web");
-    assert_eq!(new_worktree(&a).name, "");
+    assert!(new_worktree(&a).name_auto);
 }
 
 #[test]
@@ -1611,4 +1611,273 @@ fn d_on_a_grouped_agent_still_removes_the_worktree() {
         a.dialog(),
         Some(Dialog::ConfirmRemove { id, .. }) if id == "b-metric-api/ingest"
     ));
+}
+
+// ---- Tarefa primeiro, nome automático e renomear ----
+
+fn routed() -> App {
+    let mut a = app();
+    a.set_router_ready(true);
+    a
+}
+
+fn route_of(actions: &[Action]) -> Option<(u64, String)> {
+    actions.iter().find_map(|a| match a {
+        Action::Route { id, task } => Some((*id, task.clone())),
+        _ => None,
+    })
+}
+
+#[test]
+fn without_the_router_the_dialog_opens_complete_with_a_generated_name() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.stage, Stage::Review);
+    assert_eq!(d.field, Field::Name);
+    assert!(d.name_auto);
+    assert!(naming::WORDS.contains(&d.name.as_str()), "{}", d.name);
+}
+
+#[test]
+fn the_generated_name_skips_names_and_branches_already_in_the_project() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    let first = new_worktree(&a).name.clone();
+    a.on_key(key(KeyCode::Esc));
+    let mut ws = workspace();
+    ws.worktrees
+        .push(wt(&format!("api/{first}"), AgentState::Idle, true));
+    a.on_daemon(DaemonMsg::State(ws));
+    a.on_key(ch('n'));
+    assert_ne!(new_worktree(&a).name, first);
+}
+
+#[test]
+fn typing_replaces_a_generated_name_and_then_edits_normally() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    type_text(&mut a, "fix");
+    let d = new_worktree(&a);
+    assert_eq!(d.name, "fix");
+    assert!(!d.name_auto);
+    a.on_key(key(KeyCode::Backspace));
+    assert_eq!(new_worktree(&a).name, "fi");
+}
+
+#[test]
+fn backspace_or_a_paste_also_replace_a_generated_name() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Backspace));
+    assert_eq!(new_worktree(&a).name, "");
+    a.on_key(key(KeyCode::Esc));
+    a.on_key(ch('n'));
+    a.on_paste("pasted-name");
+    assert_eq!(new_worktree(&a).name, "pasted-name");
+}
+
+#[test]
+fn enter_with_a_generated_name_creates_the_worktree() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    let name = new_worktree(&a).name.clone();
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::CreateWorktree { name: n, .. }] if *n == name
+    ));
+}
+
+#[test]
+fn with_the_router_the_dialog_asks_for_the_task_first() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.stage, Stage::Ask);
+    assert_eq!(d.field, Field::Task);
+    // Tab não sai da tarefa nessa etapa
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).field, Field::Task);
+    type_text(&mut a, "x");
+    assert_eq!(new_worktree(&a).task, "x");
+}
+
+#[test]
+fn enter_on_the_task_routes_it_and_opens_the_dialog_named_after_it() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    type_text(&mut a, "Fix the redirect loop on login");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert_eq!(
+        route_of(&actions).map(|(_, task)| task),
+        Some("Fix the redirect loop on login".to_owned())
+    );
+    assert!(sent(&actions).is_empty(), "nothing is created yet");
+    let d = new_worktree(&a);
+    assert_eq!(d.stage, Stage::Review);
+    assert_eq!(d.field, Field::Name);
+    assert_eq!(d.name, "fix-redirect-loop-login");
+    assert!(d.name_auto);
+    assert!(matches!(d.route, Route::Pending { .. }));
+}
+
+#[test]
+fn an_empty_task_skips_the_router_and_keeps_the_word_name() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(actions.is_empty());
+    let d = new_worktree(&a);
+    assert_eq!(d.stage, Stage::Review);
+    assert!(naming::WORDS.contains(&d.name.as_str()));
+    assert_eq!(d.route, Route::Idle);
+}
+
+#[test]
+fn a_task_name_already_in_use_gets_a_number() {
+    let mut a = routed();
+    let mut ws = workspace();
+    ws.worktrees
+        .push(wt("api/fix-login", AgentState::Idle, true));
+    a.on_daemon(DaemonMsg::State(ws));
+    a.on_key(ch('n'));
+    type_text(&mut a, "fix login");
+    a.on_key(key(KeyCode::Enter));
+    assert_eq!(new_worktree(&a).name, "fix-login-2");
+}
+
+#[test]
+fn a_name_the_user_typed_is_never_replaced_by_the_task() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    type_text(&mut a, "mine");
+    a.on_key(key(KeyCode::Tab));
+    type_text(&mut a, "fix the login");
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).name, "mine");
+}
+
+#[test]
+fn editing_the_task_later_renames_a_still_generated_name() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Tab));
+    type_text(&mut a, "tune the cache");
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).name, "tune-cache");
+}
+
+#[test]
+fn a_task_from_a_group_goes_to_the_repo_field_next() {
+    let mut a = grouped();
+    a.set_router_ready(true);
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).stage, Stage::Ask);
+    type_text(&mut a, "tune ingest");
+    a.on_key(key(KeyCode::Enter));
+    let d = new_worktree(&a);
+    assert_eq!(d.field, Field::Repo);
+    assert_eq!(d.name, "tune-ingest");
+}
+
+#[test]
+fn a_task_too_long_stays_on_the_task_and_says_why() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    a.on_paste(&"x".repeat(MAX_PROMPT_BYTES + 1));
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(actions.is_empty());
+    let d = new_worktree(&a);
+    assert_eq!(d.stage, Stage::Ask);
+    assert!(d.error.as_deref().is_some_and(|e| e.contains("too long")));
+}
+
+fn rename_dialog(a: &App) -> (&RenameTarget, &str) {
+    match a.dialog() {
+        Some(Dialog::Rename { target, value }) => (target, value.as_str()),
+        other => panic!("no rename dialog: {other:?}"),
+    }
+}
+
+#[test]
+fn e_renames_whatever_row_is_selected_starting_from_its_name() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('e'));
+    assert_eq!(
+        rename_dialog(&a),
+        (&RenameTarget::Group("b-metric".into()), "B-Metric")
+    );
+    a.on_key(key(KeyCode::Esc));
+
+    select_row(
+        &mut a,
+        &Row::Project {
+            slug: "lisa".into(),
+        },
+    );
+    a.on_key(ch('e'));
+    assert_eq!(
+        rename_dialog(&a),
+        (&RenameTarget::Project("lisa".into()), "Lisa")
+    );
+    a.on_key(key(KeyCode::Esc));
+
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('e'));
+    assert_eq!(
+        rename_dialog(&a),
+        (&RenameTarget::Worktree("lisa/sidebar".into()), "sidebar")
+    );
+}
+
+#[test]
+fn enter_sends_the_new_name_and_closes_the_dialog() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('e'));
+    type_text(&mut a, "-v2");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::Rename {
+            target: RenameTarget::Worktree("lisa/sidebar".into()),
+            name: "sidebar-v2".into(),
+        }]
+    );
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn only_a_project_alias_may_be_cleared() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('e'));
+    for _ in 0.."sidebar".len() {
+        a.on_key(key(KeyCode::Backspace));
+    }
+    assert!(a.on_key(key(KeyCode::Enter)).is_empty());
+    assert!(a.dialog().is_some());
+    a.on_key(key(KeyCode::Esc));
+
+    select_row(
+        &mut a,
+        &Row::Project {
+            slug: "lisa".into(),
+        },
+    );
+    a.on_key(ch('e'));
+    for _ in 0.."Lisa".len() {
+        a.on_key(key(KeyCode::Backspace));
+    }
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::Rename {
+            target: RenameTarget::Project("lisa".into()),
+            name: String::new(),
+        }]
+    );
 }

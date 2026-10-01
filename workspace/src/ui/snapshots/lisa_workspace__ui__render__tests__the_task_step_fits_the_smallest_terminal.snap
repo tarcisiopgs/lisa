@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                               "
+"▐▾ api                      │                               "
+"   ◉ fix-login              │                               "
+"   ◆ r┌ New worktree in api ─────────────────────────────┐  "
+"   ○ d│› Task    ▏                                       │  "
+" ▾ lis│                                                  │  "
+"   no │  ⏎ skip · esc cancel                             │  "
+" ▾ web└──────────────────────────────────────────────────┘  "
+"   ✔ new-checkout           │                               "
+"                            │                               "
+"                            │                               "
+"                                                            "

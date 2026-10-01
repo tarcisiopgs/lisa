@@ -31,6 +31,7 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
 - Sidebar actions:
   - `n` new worktree in the selected project or group
   - `p` add project or group
+  - `e` rename: a project's alias, a group's name, or a worktree's name and local branch
   - `b` change base branch
   - `d` remove a worktree, or ungroup a group
   - `<` `>` narrow or widen the sidebar, one column per press
@@ -39,7 +40,9 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
   - `?` help overlay
   - `q` detach (agents keep running)
 - Dialogs are centred single-border boxes with a cyan title.
-  - New worktree: name (with a dim `branch: <sanitized>` preview), task (optional, up to three wrapped rows, dim placeholder when empty), agent list (unavailable ones dim with `not installed`), model (`‹ opus ›   effort ‹ high ›`, only for agents with a verified catalog; arrows turn yellow in focus), permission (normal / full autonomy; disabled with a reason when unsupported), a `fetching origin/main…` line while the daemon works.
+  - Task first: with the router key set, `n` opens the dialog with the task alone and `⏎ continue · esc cancel` (`⏎ skip` while it is empty). `⏎` opens the full dialog below, named after the task, with the router mark on the agent row.
+  - Rename (`e`): `› Name    value▏` starting from the current name, one dim line under it (the `branch:` preview for a worktree, `Sidebar name only; empty restores the folder name` for a project), `⏎ rename · esc cancel`.
+  - New worktree: name (never blank: generated from the task or from a word list, marked `· auto` after the branch preview until the user types, and replaced by the first key; with a dim `branch: <sanitized>` preview), task (optional, up to three wrapped rows, dim placeholder when empty), agent list (unavailable ones dim with `not installed`), model (`‹ opus ›   effort ‹ high ›`, only for agents with a verified catalog; arrows turn yellow in focus), permission (normal / full autonomy; disabled with a reason when unsupported), a `fetching origin/main…` line while the daemon works.
   - Routing marks sit dim on the agent row: `routing…` (yellow) while waiting, `suggested · 86%`, `unsure · your default`. A failure reason or `task is not sent to <agent>` takes one dim line under the task; a documented cost note takes one dim line under the model.
   - On short terminals the dialog shrinks in this order: task to one row, blank separators removed, agent list windowed around the selection. The focused field and the hint line always stay.
   - Add project: a folder picker, never a bare path field. A dim line with the listed folder (`~/Workspace/`, plus `15/35` on the right when the list overflows), the filter line (`› glo▏`), then the subfolders: git repositories first with `●`, plain folders dim with a trailing `/`, already mapped repositories dim with `added` on the right. Hidden folders appear only when the filter starts with a dot.

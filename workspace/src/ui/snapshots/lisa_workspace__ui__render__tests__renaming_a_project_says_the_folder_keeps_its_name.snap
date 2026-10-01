@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                                                                       "
+" ▾ B-Metric                 │                                                                       "
+"   ◉ fix-ingest-lag     api │                                                                       "
+"   ◆ dashboard-filter   web │       ┌ Rename project ──────────────────────────────────────┐        "
+" ▾ bloom                    │       │› Name    lisa▏                                       │        "
+"   no worktrees · n         │       │  Sidebar name only; empty restores the folder name   │        "
+"▐▾ lisa                     │       │                                                      │        "
+"   ✔ sidebar-groups         │       │  ⏎ rename · esc cancel                               │        "
+"                            │       └──────────────────────────────────────────────────────┘        "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                                                                                                    "
