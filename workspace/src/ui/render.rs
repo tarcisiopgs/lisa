@@ -1283,19 +1283,26 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             let w = app.worktree(id);
             let name = w.map_or(id.as_str(), |w| w.name.as_str());
             let branch = w.map_or(id.as_str(), |w| w.branch.as_str());
-            let mut lines = vec![
-                Line::from(vec![
-                    Span::raw("  Remove "),
-                    Span::styled(name.to_owned(), bold()),
-                    Span::raw("?"),
-                ]),
-                Line::styled(
+            let mut lines = vec![Line::from(vec![
+                Span::raw("  Remove "),
+                Span::styled(name.to_owned(), bold()),
+                Span::raw("?"),
+            ])];
+            if w.is_some_and(|w| w.broken) {
+                // A pasta já sumiu: só sai da lista
+                lines.push(Line::styled("  Its folder is already gone.", dim()));
+                lines.push(Line::styled(
+                    format!("  Only the list changes; branch {branch} is kept."),
+                    dim(),
+                ));
+            } else {
+                lines.push(Line::styled(
                     format!("  Deletes the worktree and the local branch {branch}."),
                     dim(),
-                ),
-                Line::styled("  The remote branch is kept.", dim()),
-                Line::default(),
-            ];
+                ));
+                lines.push(Line::styled("  The remote branch is kept.", dim()));
+            }
+            lines.push(Line::default());
             match (sent, refused) {
                 (_, Some(reason)) => {
                     lines.push(Line::styled(

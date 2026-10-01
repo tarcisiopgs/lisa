@@ -2252,3 +2252,86 @@ fn in_a_narrow_terminal_a_click_on_the_rail_brings_the_sidebar() {
     click(&mut a, 1, 1);
     assert_eq!(a.zone(), Zone::Sidebar);
 }
+
+// ---- Worktree sem pasta e agente parado ----
+
+fn with_one(worktree: WorktreeView) -> App {
+    let mut ws = workspace();
+    ws.worktrees = vec![worktree];
+    let mut a = App::new(120, 30);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a
+}
+
+fn gone() -> WorktreeView {
+    let mut w = wt("api/gone", AgentState::Idle, false);
+    w.broken = true;
+    w
+}
+
+#[test]
+fn opening_a_worktree_whose_folder_is_gone_keeps_the_sidebar_in_charge() {
+    let mut a = with_one(gone());
+    select(&mut a, "api/gone");
+    a.on_key(key(KeyCode::Enter));
+    assert_eq!(a.focused(), Some("api/gone"));
+    assert_eq!(a.zone(), Zone::Sidebar);
+    // O `d` que a tela anuncia funciona de onde se está
+    a.on_key(ch('d'));
+    assert!(matches!(
+        a.dialog(),
+        Some(Dialog::ConfirmRemove { id, .. }) if id == "api/gone"
+    ));
+}
+
+#[test]
+fn clicking_a_worktree_whose_folder_is_gone_also_keeps_the_sidebar_in_charge() {
+    let mut a = with_one(gone());
+    click(&mut a, 5, 2);
+    assert_eq!(a.zone(), Zone::Sidebar);
+}
+
+#[test]
+fn a_stopped_agent_takes_r_and_d_from_the_pane_and_swallows_the_rest() {
+    let mut a = with_one(wt("api/done", AgentState::Idle, false));
+    open(&mut a, "api/done");
+    assert_eq!(a.zone(), Zone::Pane);
+    // Não há agente para receber a tecla
+    assert!(sent(&a.on_key(ch('x'))).is_empty());
+    assert_eq!(
+        sent(&a.on_key(ch('r'))),
+        [ClientMsg::RestartAgent {
+            id: "api/done".into()
+        }]
+    );
+    a.on_key(ch('d'));
+    assert!(matches!(
+        a.dialog(),
+        Some(Dialog::ConfirmRemove { id, .. }) if id == "api/done"
+    ));
+}
+
+#[test]
+fn a_running_agent_still_receives_r_and_d_as_input() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    for c in ['r', 'd'] {
+        assert!(matches!(
+            sent(&a.on_key(ch(c))).as_slice(),
+            [ClientMsg::Input { .. }]
+        ));
+    }
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn an_error_while_removing_closes_the_dialog_and_shows_the_reason() {
+    let mut a = with_one(gone());
+    select(&mut a, "api/gone");
+    a.on_key(ch('d'));
+    a.on_key(ch('y'));
+    a.on_daemon(DaemonMsg::Error("git worktree prune failed".into()));
+    assert!(a.dialog().is_none());
+    assert!(a.notice().is_some_and(|n| n.text.contains("prune failed")));
+}

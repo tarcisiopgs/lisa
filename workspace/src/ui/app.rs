@@ -930,6 +930,10 @@ impl App {
                     d.pending = false;
                     d.error = Some(text);
                 } else {
+                    // Uma remoção que falhou não deixa o diálogo preso em "removing…"
+                    if matches!(self.dialog, Some(Dialog::ConfirmRemove { sent: true, .. })) {
+                        self.dialog = None;
+                    }
                     self.set_notice(NoticeKind::Error, text);
                 }
                 Vec::new()
@@ -1059,7 +1063,13 @@ impl App {
             self.screen = None;
         }
         self.focused = Some(id.to_owned());
-        self.zone = Zone::Pane;
+        // Sem pasta não há agente a quem dar o teclado: o menu continua no comando, e o
+        // `d` que a tela anuncia funciona
+        self.zone = if self.worktree(id).is_some_and(|w| w.broken) {
+            Zone::Sidebar
+        } else {
+            Zone::Pane
+        };
         if let Some(i) = self
             .rows()
             .iter()
@@ -1084,6 +1094,12 @@ impl App {
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('a');
         match self.zone {
             Zone::Pane if prefix => self.zone = Zone::Sidebar,
+            // Agente parado: não há quem receba a tecla. Valem as duas que a tela anuncia.
+            Zone::Pane if self.focused_view().is_some_and(|w| !w.running) => {
+                if matches!(key.code, KeyCode::Char('r' | 'd')) {
+                    actions.extend(self.on_sidebar_key(key));
+                }
+            }
             Zone::Pane => {
                 if let Some(pane) = self.focused.clone() {
                     let bytes = encode_key(key, &self.modes());
