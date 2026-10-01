@@ -59,6 +59,15 @@ pub enum ClientMsg {
     RestartAgent {
         id: String,
     },
+    /// Cria um grupo com os repositórios dos caminhos (tudo ou nada).
+    AddGroup {
+        name: String,
+        paths: Vec<String>,
+    },
+    /// Desfaz o grupo; os repositórios viram projetos soltos.
+    DissolveGroup {
+        group: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +121,16 @@ pub struct ProjectView {
     pub name: String,
     pub path: String,
     pub base_branch: String,
+    /// Slug do grupo; `None` em projeto solto.
+    pub group: Option<String>,
+    /// Marca do repositório dentro do grupo; vazia em projeto solto.
+    pub tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupView {
+    pub slug: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +159,7 @@ pub struct WorkspaceState {
     pub projects: Vec<ProjectView>,
     pub worktrees: Vec<WorktreeView>,
     pub agents: Vec<AgentOption>,
+    pub groups: Vec<GroupView>,
 }
 
 // ---- Tela ----

@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use lisa_workspace::daemon::service::Workspace;
-use lisa_workspace::protocol::work::{AgentState, PermissionWire};
+use lisa_workspace::protocol::work::{AgentState, GroupView, PermissionWire};
 use lisa_workspace::protocol::{ClientMsg, DaemonMsg};
 
 #[test]
@@ -276,4 +276,113 @@ fn state_from_2_0_0_loads_without_model_fields() {
     let reopened =
         Workspace::open(other, env.root.join("workspaces")).unwrap_or_else(|e| panic!("{e}"));
     assert!(reopened.state().worktrees.iter().any(|w| w.id == id));
+}
+
+// ---- Grupos ----
+
+/// Repositório local com um commit, dentro do diretório do teste.
+fn repo(env: &Env, name: &str) -> String {
+    let dir = env.root.join(name);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    git(&dir, &["init", "-q", "-b", "main"]);
+    std::fs::write(dir.join("README"), "x").unwrap_or_else(|e| panic!("{e}"));
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "init"]);
+    dir.display().to_string()
+}
+
+fn add_group(conn: &mut lisa_workspace::protocol::Conn, name: &str, paths: Vec<String>) {
+    conn.send(&ClientMsg::AddGroup {
+        name: name.into(),
+        paths,
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+}
+
+#[test]
+fn a_group_reaches_the_ui_with_tags() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let paths = vec![repo(&env, "acme-api"), repo(&env, "acme-web")];
+    add_group(&mut conn, "Acme", paths);
+    let s = state(&mut conn, |s| !s.groups.is_empty());
+    assert_eq!(
+        s.groups,
+        [GroupView {
+            slug: "acme".into(),
+            name: "Acme".into()
+        }]
+    );
+    let mut tags: Vec<(&str, Option<&str>)> = s
+        .projects
+        .iter()
+        .map(|p| (p.tag.as_str(), p.group.as_deref()))
+        .collect();
+    tags.sort_unstable();
+    assert_eq!(tags, [("api", Some("acme")), ("web", Some("acme"))]);
+}
+
+#[test]
+fn a_refused_group_reports_the_reason_and_changes_nothing() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let plain = env.root.join("plain");
+    std::fs::create_dir_all(&plain).unwrap_or_else(|e| panic!("{e}"));
+    add_group(
+        &mut conn,
+        "Acme",
+        vec![repo(&env, "acme-api"), plain.display().to_string()],
+    );
+    let reason = until(&mut conn, |m| match m {
+        DaemonMsg::Error(e) => Some(e.clone()),
+        _ => None,
+    });
+    assert!(
+        reason.contains("is not inside a git repository"),
+        "{reason}"
+    );
+    let s = state(&mut conn, |_| true);
+    assert!(s.groups.is_empty());
+    assert!(s.projects.is_empty());
+}
+
+#[test]
+fn dissolving_a_group_keeps_its_agents_running() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    add_group(&mut conn, "Acme", vec![env.repo.display().to_string()]);
+    state(&mut conn, |s| !s.groups.is_empty());
+    let id = create(&mut conn, &env, "feature");
+    conn.send(&ClientMsg::DissolveGroup {
+        group: "acme".into(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = state(&mut conn, |s| s.groups.is_empty());
+    assert!(
+        s.projects
+            .iter()
+            .all(|p| p.group.is_none() && p.tag.is_empty())
+    );
+    assert!(s.worktrees.iter().any(|w| w.id == id && w.running));
+}
+
+#[test]
+fn groups_survive_a_daemon_restart() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    add_group(&mut conn, "Acme", vec![env.repo.display().to_string()]);
+    state(&mut conn, |s| !s.groups.is_empty());
+    drop(conn);
+    let reopened = Workspace::open(
+        env.root.join("state/state.json"),
+        env.root.join("workspaces"),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = reopened.state();
+    assert_eq!(s.groups.len(), 1);
+    assert_eq!(s.projects[0].group.as_deref(), Some("acme"));
 }

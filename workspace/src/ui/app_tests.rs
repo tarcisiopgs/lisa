@@ -28,18 +28,23 @@ fn wt(id: &str, state: AgentState, running: bool) -> WorktreeView {
 
 fn workspace() -> WorkspaceState {
     WorkspaceState {
+        groups: Vec::new(),
         projects: vec![
             ProjectView {
                 slug: "api".into(),
                 name: "api".into(),
                 path: "/r/api".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
             ProjectView {
                 slug: "web".into(),
                 name: "web".into(),
                 path: "/r/web".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
         ],
         worktrees: vec![
