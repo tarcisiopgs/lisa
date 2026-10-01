@@ -1881,3 +1881,55 @@ fn only_a_project_alias_may_be_cleared() {
         }]
     );
 }
+
+// ---- Sair ----
+
+#[test]
+fn q_quits_at_once_and_says_how_many_agents_keep_running() {
+    let mut a = app();
+    assert_eq!(a.on_key(ch('q')), [Action::Quit]);
+    assert_eq!(
+        a.exit_message(),
+        Some("3 agents still running · `lisa workspace` returns to them")
+    );
+}
+
+#[test]
+fn q_says_nothing_when_no_agent_is_running() {
+    let mut ws = workspace();
+    for w in &mut ws.worktrees {
+        w.running = false;
+    }
+    let mut a = app();
+    a.on_daemon(DaemonMsg::State(ws));
+    assert_eq!(a.on_key(ch('q')), [Action::Quit]);
+    assert_eq!(a.exit_message(), None);
+    assert_eq!(a.on_key(ch('Q')), [Action::Quit]);
+}
+
+#[test]
+fn capital_q_asks_then_stops_every_running_agent_and_quits() {
+    let mut a = app();
+    assert!(a.on_key(ch('Q')).is_empty());
+    assert_eq!(a.dialog(), Some(&Dialog::ConfirmQuit { running: 3 }));
+    let actions = a.on_key(ch('y'));
+    let stopped: Vec<String> = sent(&actions)
+        .into_iter()
+        .filter_map(|m| match m {
+            ClientMsg::StopAgent { id } => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stopped, ["api/fix-login", "api/rate-limit", "web/checkout"]);
+    assert_eq!(actions.last(), Some(&Action::Quit));
+    assert_eq!(a.exit_message(), Some("stopped 3 agents"));
+}
+
+#[test]
+fn any_other_key_cancels_quitting_everything() {
+    let mut a = app();
+    a.on_key(ch('Q'));
+    assert!(a.on_key(ch('n')).is_empty());
+    assert!(a.dialog().is_none());
+    assert_eq!(a.exit_message(), None);
+}

@@ -263,7 +263,12 @@ pub enum Dialog {
     ConfirmDissolve {
         group: String,
     },
-    /// Apelido do projeto, nome do grupo, ou nome e branch do worktree.
+    /// Parar todos os agentes e sair.
+    ConfirmQuit {
+        running: usize,
+    },
+    /// Apelido do projeto, nome do grupo, ou nome e branch do worktree. Editado na própria
+    /// linha do menu, sem caixa.
     Rename {
         target: RenameTarget,
         value: String,
@@ -345,6 +350,23 @@ impl App {
     pub fn set_dirs(&mut self, start: PathBuf, home: Option<PathBuf>) {
         self.start_dir = start;
         self.home = home;
+    }
+
+    /// Quantos agentes estão rodando.
+    fn running(&self) -> usize {
+        self.workspace
+            .worktrees
+            .iter()
+            .filter(|w| w.running)
+            .count()
+    }
+
+    /// Rename em andamento: alvo e texto, para a linha do menu se desenhar em edição.
+    pub fn renaming(&self) -> Option<(&RenameTarget, &str)> {
+        match &self.dialog {
+            Some(Dialog::Rename { target, value }) => Some((target, value.as_str())),
+            _ => None,
+        }
     }
 
     pub fn set_router_ready(&mut self, ready: bool) {
@@ -1093,7 +1115,25 @@ impl App {
             KeyCode::Char('<') => return self.resize_sidebar(false),
             KeyCode::Char('>') => return self.resize_sidebar(true),
             KeyCode::Char('?') => self.dialog = Some(Dialog::Help),
-            KeyCode::Char('q') => return vec![Action::Quit],
+            KeyCode::Char('q') => {
+                // Os agentes são do daemon: sair da UI não os para
+                let running = self.running();
+                if running > 0 {
+                    self.exit_message = Some(format!(
+                        "{} still running · `lisa workspace` returns to {}",
+                        agents_label(running),
+                        if running == 1 { "it" } else { "them" }
+                    ));
+                }
+                return vec![Action::Quit];
+            }
+            KeyCode::Char('Q') => {
+                let running = self.running();
+                if running == 0 {
+                    return vec![Action::Quit];
+                }
+                self.dialog = Some(Dialog::ConfirmQuit { running });
+            }
             _ => {}
         }
         Vec::new()
@@ -1230,6 +1270,22 @@ impl App {
             Dialog::Help => {
                 self.dialog = None;
                 Vec::new()
+            }
+            Dialog::ConfirmQuit { .. } => {
+                self.dialog = None;
+                if key.code != KeyCode::Char('y') {
+                    return Vec::new();
+                }
+                let mut actions: Vec<Action> = self
+                    .workspace
+                    .worktrees
+                    .iter()
+                    .filter(|w| w.running)
+                    .map(|w| Action::Send(ClientMsg::StopAgent { id: w.id.clone() }))
+                    .collect();
+                self.exit_message = Some(format!("stopped {}", agents_label(actions.len())));
+                actions.push(Action::Quit);
+                actions
             }
             Dialog::Rename { target, value } => {
                 if key.code == KeyCode::Enter {
@@ -1503,6 +1559,14 @@ fn route_request(d: &mut NewWorktree, seq: &mut u64) -> Option<Action> {
 fn fix_autonomy(d: &mut NewWorktree, agents: &[AgentOption]) {
     if !agents.get(d.agent).is_some_and(|a| a.autonomy_supported) {
         d.autonomy = false;
+    }
+}
+
+fn agents_label(n: usize) -> String {
+    if n == 1 {
+        "1 agent".to_owned()
+    } else {
+        format!("{n} agents")
     }
 }
 

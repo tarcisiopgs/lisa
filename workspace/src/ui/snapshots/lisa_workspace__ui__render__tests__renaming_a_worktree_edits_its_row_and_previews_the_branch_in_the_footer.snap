@@ -1,18 +1,18 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
 " PROJECTS                   │                                                                       "
-"▐▾ B-Metric                 │                                                                       "
-"   no worktrees · n         │                                                                       "
+" ▾ B-Metric                 │                                                                       "
+"▐  ◉ fix-ingest-lag V2▏     │                                                                       "
+"   ◆ dashboard-filter   web │                                                                       "
 " ▾ bloom                    │                                                                       "
 "   no worktrees · n         │                                                                       "
 " ▾ lisa                     │                                                                       "
-"   ✔ sidebar-groups         │                     ⏎ opens the selected worktree                     "
+"   ✔ sidebar-groups         │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
-"                            │                                                                       "
-" ⏎ open · n new · p project · e rename · d ungroup · r restart · ? help · q quit                    "
+" branch: fix-ingest-lag-v2 · ⏎ rename · esc cancel                                                  "
