@@ -15,7 +15,7 @@ expression: draw(&a).backend()
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
-"                            │       │  ⏎ add · → open · ← up · esc cancel                  │        "
+"                            │       │  ⏎ add · → open · ^n new group · esc cancel          │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "

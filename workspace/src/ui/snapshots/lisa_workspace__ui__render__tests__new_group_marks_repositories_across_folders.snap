@@ -1,21 +1,21 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
 " PROJECTS                   │                                                                       "
 "▐▾ api                      │                                                                       "
 "   ◉ fix-login              │                                                                       "
-"   ◆ rate-limit             │       ┌ Add project ─────────────────────────────────────────┐        "
-"   ○ docs-update            │       │  ~/Workspace/                                        │        "
+"   ◆ rate-limit             │       ┌ New group ───────────────────────────────────────────┐        "
+"   ○ docs-update            │       │  ~/Workspace/                       Glowz · 2 marked │        "
 " ▾ lisa                     │       │  › ▏                                                 │        "
 "   no worktrees · n         │       │                                                      │        "
-" ▾ web                      │       │  ▐ ● glowz                                           │        "
+" ▾ web                      │       │    ✔ glowz                                           │        "
 "   ✔ new-checkout           │       │    ● glowz-api                                       │        "
 "                            │       │    ● lisa                                      added │        "
-"                            │       │      archive/                                        │        "
+"                            │       │  ▐   archive/                                        │        "
 "                            │       │      notes/                                          │        "
 "                            │       │                                                      │        "
-"                            │       │  ⏎ add · → open · ^n new group · esc cancel          │        "
+"                            │       │  space mark · → open · ← up · ⏎ create · esc cancel  │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "

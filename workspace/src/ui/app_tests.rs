@@ -1548,3 +1548,67 @@ fn a_removed_repository_closes_the_dialog_with_a_notice() {
             .is_some_and(|n| n.text.contains("no longer mapped"))
     );
 }
+
+// ---- Criar e desfazer grupos ----
+
+#[test]
+fn a_group_from_the_picker_is_sent_to_the_daemon() {
+    let tmp = tempfile::TempDir::new().unwrap_or_else(|e| panic!("{e}"));
+    for dir in ["acme/acme-api/.git", "acme/acme-web/.git"] {
+        std::fs::create_dir_all(tmp.path().join(dir)).unwrap_or_else(|e| panic!("{e}"));
+    }
+    let mut a = App::new(120, 30);
+    a.on_focus(true);
+    a.set_dirs(tmp.path().to_path_buf(), None);
+    a.on_key(ch('p'));
+    let actions = a.on_key(ctrl('g'));
+    let acme = tmp.path().join("acme");
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::AddGroup {
+            name: "acme".into(),
+            paths: vec![
+                acme.join("acme-api").display().to_string(),
+                acme.join("acme-web").display().to_string(),
+            ],
+        }]
+    );
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn d_on_a_group_asks_before_ungrouping_and_y_sends_it() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    assert!(a.on_key(ch('d')).is_empty());
+    assert_eq!(
+        a.dialog(),
+        Some(&Dialog::ConfirmDissolve {
+            group: "b-metric".into()
+        })
+    );
+    let actions = a.on_key(ch('y'));
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::DissolveGroup {
+            group: "b-metric".into()
+        }]
+    );
+    assert!(a.dialog().is_none());
+
+    // Qualquer outra tecla desiste
+    a.on_key(ch('d'));
+    assert!(a.on_key(ch('n')).is_empty());
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn d_on_a_grouped_agent_still_removes_the_worktree() {
+    let mut a = grouped();
+    select(&mut a, "b-metric-api/ingest");
+    a.on_key(ch('d'));
+    assert!(matches!(
+        a.dialog(),
+        Some(Dialog::ConfirmRemove { id, .. }) if id == "b-metric-api/ingest"
+    ));
+}

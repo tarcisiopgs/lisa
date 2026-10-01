@@ -11,7 +11,7 @@ use super::app::{
     App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row, Zone,
     cost_note, effort_options, group_key, model_options, task_delivered,
 };
-use super::picker::Picker;
+use super::picker::{Mode, Picker};
 use crate::protocol::work::{
     ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
     ATTR_WIDE_SPACER, AgentState, Color, Snapshot, WorktreeView,
@@ -900,6 +900,22 @@ const PICKER_ROWS: usize = 10;
 /// selecionado.
 fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
     let inner = usize::from(width).saturating_sub(2);
+    let problem = |p: &Picker| match p.problem() {
+        Some(reason) => Line::styled(format!("  {reason}"), Style::default().fg(TuiColor::Red)),
+        None => Line::default(),
+    };
+    if let Mode::GroupName { name } = p.mode() {
+        return vec![
+            Line::from(vec![
+                Span::styled("  › ", Style::default().fg(TuiColor::Yellow)),
+                Span::styled("Name  ", bold()),
+                Span::raw(truncate_left(name, inner.saturating_sub(12))),
+                cursor(),
+            ]),
+            problem(p),
+            Line::styled("  ⏎ next · esc cancel", dim()),
+        ];
+    }
     let entries = p.visible();
     // Pasta, filtro, dicas e dois espaços são fixos; a lista fica com o resto
     let rows = usize::from(max_lines)
@@ -909,11 +925,20 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
         .max(1);
     let yellow = Style::default().fg(TuiColor::Yellow);
 
-    let position = if entries.len() > rows {
+    let mut position = if entries.len() > rows {
         format!("{}/{}", p.selected() + 1, entries.len())
     } else {
         String::new()
     };
+    // Grupo em criação: nome e quantos repositórios já foram marcados
+    if let Mode::GroupPick { name, marked } = p.mode() {
+        let group = format!("{} · {} marked", clip(name, 16), marked.len());
+        position = if position.is_empty() {
+            group
+        } else {
+            format!("{group}  {position}")
+        };
+    }
     let dir = truncate_left(
         &p.dir_label(),
         inner.saturating_sub(4 + position.chars().count()),
@@ -963,26 +988,33 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
             _ => Style::default(),
         };
         let gap = room.saturating_sub(name.chars().count()) + 1;
+        let bullet = if p.is_marked(entry) {
+            Span::styled("✔ ", Style::default().fg(TuiColor::Green))
+        } else {
+            Span::styled(if entry.repo { "● " } else { "  " }, style)
+        };
         list.push(Line::from(vec![
             if chosen {
                 Span::styled(format!("  {SELECT_BAR} "), yellow)
             } else {
                 Span::raw("    ")
             },
-            Span::styled(if entry.repo { "● " } else { "  " }, style),
+            bullet,
             Span::styled(name, style),
             Span::styled(format!("{}{mark}", " ".repeat(gap)), dim()),
         ]));
     }
     list.resize(rows, Line::default());
     lines.extend(list);
-    lines.push(Line::default());
+    lines.push(problem(p));
 
+    let picking = matches!(p.mode(), Mode::GroupPick { .. });
     let hints = match p.current() {
-        Some(entry) if entry.added => "  already a project · → open · ← up · esc cancel",
-        Some(entry) if entry.repo => "  ⏎ add · → open · ← up · esc cancel",
-        Some(_) => "  ⏎ open · ← up · esc cancel",
-        None => "  ← up · esc cancel",
+        _ if picking => "  space mark · → open · ← up · ⏎ create · esc cancel",
+        Some(entry) if entry.added => "  already a project · → open · ^n new group · esc",
+        Some(entry) if entry.repo => "  ⏎ add · → open · ^n new group · esc cancel",
+        Some(_) => "  ⏎ open · ^g add as group · ^n new group · esc",
+        None => "  ← up · ^n new group · esc cancel",
     };
     lines.push(Line::styled(hints, dim()));
     lines
@@ -1015,8 +1047,34 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             })
             .collect(),
         ),
+        Dialog::ConfirmDissolve { group } => {
+            let name = app
+                .workspace()
+                .groups
+                .iter()
+                .find(|g| g.slug == *group)
+                .map_or(group.as_str(), |g| g.name.as_str());
+            (
+                "Ungroup".into(),
+                vec![
+                    Line::from(vec![
+                        Span::raw("  Ungroup "),
+                        Span::styled(name.to_owned(), bold()),
+                        Span::raw("?"),
+                    ]),
+                    Line::styled("  Its repositories become standalone projects.", dim()),
+                    Line::styled("  Nothing is deleted.", dim()),
+                    Line::default(),
+                    Line::styled("  y ungroup · esc cancel", dim()),
+                ],
+            )
+        }
         Dialog::AddProject(picker) => (
-            "Add project".into(),
+            match picker.mode() {
+                Mode::Project => "Add project",
+                Mode::GroupName { .. } | Mode::GroupPick { .. } => "New group",
+            }
+            .into(),
             add_project(picker, width, body.height.saturating_sub(2)),
         ),
         Dialog::BaseBranch { project, value } => (

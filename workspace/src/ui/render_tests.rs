@@ -740,3 +740,95 @@ fn new_worktree_from_a_group_fits_the_smallest_terminal() {
     assert!(screen.contains("⏎ create"), "{screen}");
     insta::assert_snapshot!(t.backend());
 }
+
+// ---- Criar e desfazer grupos ----
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
+#[test]
+fn project_picker_offers_groups_on_a_plain_folder() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "arch");
+    let t = draw(&a);
+    assert!(text_of(&t).contains("⏎ open · ^g add as group · ^n new group · esc"));
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn a_folder_without_repositories_says_why_it_cannot_be_a_group() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "arch");
+    a.on_key(ctrl('g'));
+    let t = draw(&a);
+    assert!(text_of(&t).contains("no repositories in this folder"));
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_asks_for_a_name() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("┌ New group "), "{screen}");
+    assert!(screen.contains("› Name  Glowz"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_marks_repositories_across_folders() {
+    let tmp = projects_home(0);
+    std::fs::create_dir_all(tmp.path().join("Workspace/archive/old-api/.git"))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut a = picker_app(&tmp, 100, 20);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    a.on_key(key(KeyCode::Enter));
+    a.on_key(key(KeyCode::Char(' ')));
+    type_text(&mut a, "arch");
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::Char(' ')));
+    a.on_key(key(KeyCode::Left));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Glowz · 2 marked"), "{screen}");
+    assert!(screen.contains("✔ glowz"), "{screen}");
+    assert!(
+        screen.contains("space mark · → open · ← up · ⏎ create · esc cancel"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_fits_the_smallest_terminal() {
+    let tmp = projects_home(12);
+    let mut a = picker_app(&tmp, 60, 12);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    a.on_key(key(KeyCode::Enter));
+    a.on_key(key(KeyCode::Enter));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("mark at least one repository"), "{screen}");
+    assert!(screen.contains("space mark"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn ungroup_asks_and_says_nothing_is_deleted() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('d')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Ungroup B-Metric?"), "{screen}");
+    assert!(screen.contains("Nothing is deleted."), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}

@@ -20,7 +20,7 @@ expression: draw(&a).backend()
 "                            │       │    ● service-10                                      │        "
 "                            │       │  ▐ ● service-11                                      │        "
 "                            │       │                                                      │        "
-"                            │       │  ⏎ add · → open · ← up · esc cancel                  │        "
+"                            │       │  ⏎ add · → open · ^n new group · esc cancel          │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "

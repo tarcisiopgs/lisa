@@ -241,6 +241,10 @@ pub enum Dialog {
         sent: bool,
         refused: Option<String>,
     },
+    /// Desfazer o grupo: os repositórios viram projetos soltos.
+    ConfirmDissolve {
+        group: String,
+    },
     Help,
 }
 
@@ -997,7 +1001,11 @@ impl App {
                 }
             }
             KeyCode::Char('d') => {
-                if let Some(w) = self.selected_worktree() {
+                if let Some(Row::Group { slug: group } | Row::EmptyGroup { group }) =
+                    self.selected_row()
+                {
+                    self.dialog = Some(Dialog::ConfirmDissolve { group });
+                } else if let Some(w) = self.selected_worktree() {
                     self.dialog = Some(Dialog::ConfirmRemove {
                         id: w.id,
                         sent: false,
@@ -1058,11 +1066,15 @@ impl App {
             .find(|dir| dir.is_dir())
             .unwrap_or_else(|| PathBuf::from("/"));
         let added: Vec<PathBuf> = projects.iter().map(|p| PathBuf::from(&p.path)).collect();
-        self.dialog = Some(Dialog::AddProject(Picker::open(
-            &start,
-            self.home.clone(),
-            &added,
-        )));
+        let groups: Vec<String> = self
+            .workspace
+            .groups
+            .iter()
+            .map(|g| g.name.clone())
+            .collect();
+        self.dialog = Some(Dialog::AddProject(
+            Picker::open(&start, self.home.clone(), &added).with_groups(&groups),
+        ));
     }
 
     fn open_new_worktree(&mut self, project: String, group: Option<String>, field: Field) {
@@ -1128,10 +1140,23 @@ impl App {
                 self.dialog = None;
                 Vec::new()
             }
+            Dialog::ConfirmDissolve { group } => {
+                let group = group.clone();
+                self.dialog = None;
+                if key.code == KeyCode::Char('y') {
+                    vec![Action::Send(ClientMsg::DissolveGroup { group })]
+                } else {
+                    Vec::new()
+                }
+            }
             Dialog::AddProject(picker) => match picker.on_key(key) {
                 Outcome::Add(path) => {
                     self.dialog = None;
                     vec![Action::Send(ClientMsg::AddProject { path })]
+                }
+                Outcome::Group { name, paths } => {
+                    self.dialog = None;
+                    vec![Action::Send(ClientMsg::AddGroup { name, paths })]
                 }
                 Outcome::Stay => Vec::new(),
             },

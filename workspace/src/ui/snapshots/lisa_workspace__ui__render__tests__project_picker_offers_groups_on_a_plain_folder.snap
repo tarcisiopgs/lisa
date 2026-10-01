@@ -1,21 +1,21 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
 " PROJECTS                   │                                                                       "
 "▐▾ api                      │                                                                       "
 "   ◉ fix-login              │                                                                       "
 "   ◆ rate-limit             │       ┌ Add project ─────────────────────────────────────────┐        "
 "   ○ docs-update            │       │  ~/Workspace/                                        │        "
-" ▾ lisa                     │       │  › zzz▏                                              │        "
+" ▾ lisa                     │       │  › arch▏                                             │        "
 "   no worktrees · n         │       │                                                      │        "
-" ▾ web                      │       │  no match                                            │        "
+" ▾ web                      │       │  ▐   archive/                                        │        "
 "   ✔ new-checkout           │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
-"                            │       │  ← up · ^n new group · esc cancel                    │        "
+"                            │       │  ⏎ open · ^g add as group · ^n new group · esc       │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "
