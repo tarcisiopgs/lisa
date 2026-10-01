@@ -723,9 +723,11 @@ fn switching_agent_keeps_the_size() {
     assert_eq!(agent_name(&a), "codex");
     assert_eq!(model_name(&a), "gpt-6.1-sol");
     assert_eq!(new_worktree(&a).effort, Some(Effort::Medium));
+    // gemini ainda não tem catálogo conferido: sem modelo, e a seleção volta ao padrão
     a.on_key(key(KeyCode::Down));
-    assert_eq!((agent_name(&a).as_str(), model_name(&a)), ("gemini", "pro"));
-    assert_eq!(new_worktree(&a).effort, None);
+    assert_eq!(agent_name(&a), "gemini");
+    assert!(model_options("gemini").is_empty());
+    assert_eq!((new_worktree(&a).model, new_worktree(&a).effort), (0, None));
 }
 
 #[test]

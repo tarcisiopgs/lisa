@@ -357,10 +357,16 @@ fn unverified_agents_never_reach_the_create_dialog() {
 }
 
 #[test]
-fn only_three_catalogs_are_verified() {
+fn gemini_stays_creatable_but_is_not_routed_until_its_command_line_is_executed() {
+    assert!(creatable_agents().contains(&AgentId::Gemini));
+    assert!(catalog(AgentId::Gemini).is_some_and(|c| !c.verified));
+}
+
+#[test]
+fn only_catalogs_executed_on_a_real_install_are_verified() {
     let verified: Vec<_> = AgentId::ALL
         .into_iter()
         .filter(|id| catalog(*id).is_some_and(|c| c.verified))
         .collect();
-    assert_eq!(verified, [AgentId::Claude, AgentId::Gemini, AgentId::Codex]);
+    assert_eq!(verified, [AgentId::Claude, AgentId::Codex]);
 }

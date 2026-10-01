@@ -179,8 +179,11 @@ static CODEX: ModelCatalog = ModelCatalog {
     ],
 };
 
+/// Escrito a partir da documentação, mas ainda não executado: na máquina de referência o
+/// Gemini CLI não autentica mais ("no longer supported for Gemini Code Assist for
+/// individuals"). Vira `verified` quando a linha de comando rodar numa instalação real.
 static GEMINI: ModelCatalog = ModelCatalog {
-    verified: true,
+    verified: false,
     model_flag: "-m",
     effort_arg: None,
     prompt: Some(PromptArg::Flag("--prompt-interactive")),
