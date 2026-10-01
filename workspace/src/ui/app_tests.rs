@@ -966,3 +966,44 @@ fn clearing_the_task_forgets_the_suggestion() {
     assert!(a.on_key(key(KeyCode::Tab)).is_empty());
     assert_eq!(new_worktree(&a).route, Route::Idle);
 }
+
+#[test]
+fn a_hand_picked_model_keeps_its_agent_when_the_suggestion_arrives() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "review the auth module"));
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(
+        (agent_name(&a).as_str(), model_name(&a)),
+        ("claude", "opus")
+    );
+    // A sugestão aponta para codex: a escolha feita à mão fica inteira
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.9)));
+    assert_eq!(
+        (agent_name(&a).as_str(), model_name(&a)),
+        ("claude", "opus")
+    );
+    assert_eq!(new_worktree(&a).effort, Some(Effort::Medium));
+    assert!(matches!(
+        &new_worktree(&a).route,
+        Route::Suggested { agent, .. } if agent == "codex"
+    ));
+}
+
+#[test]
+fn an_answer_for_text_that_changed_since_is_dropped() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "fix typo"));
+    a.on_key(key(KeyCode::BackTab));
+    type_text(&mut a, " and then redesign the whole storage layer");
+    // Ainda no campo da tarefa: a resposta é do texto antigo
+    a.on_route(id, Ok(answers(Size::Trivial, 0.1, Kind::Review, 0.9)));
+    assert_eq!(
+        (agent_name(&a).as_str(), model_name(&a)),
+        ("claude", "default")
+    );
+    assert_eq!(new_worktree(&a).route, Route::Idle);
+    // Ao sair do campo, o texto novo é consultado
+    assert_eq!(route_id(&a.on_key(key(KeyCode::Tab))), 2);
+}

@@ -300,6 +300,13 @@ impl App {
         if d.route != (Route::Pending { id }) {
             return;
         }
+        // A tarefa mudou desde a consulta: a resposta é de outro texto, e a saída do
+        // campo pede uma nova
+        if d.routed_task.as_deref() != Some(d.task.trim()) {
+            d.route = Route::Idle;
+            d.routed_task = None;
+            return;
+        }
         let answers = match result {
             Ok(answers) => answers,
             Err(err) => {
@@ -318,7 +325,9 @@ impl App {
             return;
         };
         d.sized = Some((decision.size, decision.bump));
+        // Quem mexeu no agente ou no modelo fica com a escolha; a sugestão vira só marca
         if !d.touched_agent
+            && !d.touched_model
             && let Some(index) = agents.iter().position(|a| a.name == suggested.name())
         {
             d.agent = index;
