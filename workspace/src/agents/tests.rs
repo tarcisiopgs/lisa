@@ -339,3 +339,28 @@ fn every_tier_points_at_a_model_and_effort_the_catalog_has() {
         }
     }
 }
+
+#[test]
+fn unverified_agents_never_reach_the_create_dialog() {
+    let creatable = creatable_agents();
+    for id in [
+        AgentId::Grok,
+        AgentId::Codebuddy,
+        AgentId::Antigravity,
+        AgentId::Muse,
+        AgentId::Omp,
+        AgentId::Cursor,
+    ] {
+        assert!(!creatable.contains(&id), "{}", id.name());
+        assert!(catalog(id).is_some_and(|c| !c.verified), "{}", id.name());
+    }
+}
+
+#[test]
+fn only_three_catalogs_are_verified() {
+    let verified: Vec<_> = AgentId::ALL
+        .into_iter()
+        .filter(|id| catalog(*id).is_some_and(|c| c.verified))
+        .collect();
+    assert_eq!(verified, [AgentId::Claude, AgentId::Gemini, AgentId::Codex]);
+}

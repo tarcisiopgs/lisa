@@ -102,6 +102,17 @@ const LOW_TO_ULTRA: &[Effort] = &[
     Effort::Ultra,
 ];
 
+const LOW_TO_HIGH: &[Effort] = &[Effort::Low, Effort::Medium, Effort::High];
+const LOW_TO_XHIGH: &[Effort] = &[Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh];
+const MINIMAL_TO_MAX: &[Effort] = &[
+    Effort::Minimal,
+    Effort::Low,
+    Effort::Medium,
+    Effort::High,
+    Effort::Xhigh,
+    Effort::Max,
+];
+
 const fn plain(id: &'static str) -> ModelSpec {
     ModelSpec {
         id,
@@ -182,11 +193,125 @@ static GEMINI: ModelCatalog = ModelCatalog {
     ],
 };
 
+// ---- Não conferidos: escritos a partir da documentação, fora do roteamento ----
+
+static GROK: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "-m",
+    effort_arg: Some(EffortArg::Flag("--effort")),
+    prompt: Some(PromptArg::Positional),
+    models: &[
+        leveled("grok-4.7", LOW_TO_XHIGH, Effort::High),
+        leveled("grok-4.6", LOW_TO_XHIGH, Effort::High),
+        leveled("grok-4.5", LOW_TO_HIGH, Effort::High),
+    ],
+    tiers: [
+        ("grok-4.7", Some(Effort::Low)),
+        ("grok-4.7", Some(Effort::Medium)),
+        ("grok-4.7", Some(Effort::High)),
+        ("grok-4.7", Some(Effort::High)),
+    ],
+};
+
+static CODEBUDDY: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "--model",
+    effort_arg: Some(EffortArg::Flag("--effort")),
+    prompt: Some(PromptArg::Positional),
+    models: &[
+        plain("fast-model"),
+        plain("balanced-model"),
+        plain("primary-model"),
+        plain("deep-model"),
+    ],
+    tiers: [
+        ("fast-model", None),
+        ("balanced-model", None),
+        ("primary-model", None),
+        ("deep-model", None),
+    ],
+};
+
+static ANTIGRAVITY: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "--model",
+    effort_arg: Some(EffortArg::Flag("--effort")),
+    prompt: Some(PromptArg::Flag("--prompt-interactive")),
+    models: &[
+        leveled("gemini-3.8-flash", LOW_TO_HIGH, Effort::Medium),
+        leveled("gemini-3.1-pro", &[Effort::Low, Effort::High], Effort::High),
+    ],
+    tiers: [
+        ("gemini-3.8-flash", Some(Effort::Low)),
+        ("gemini-3.8-flash", Some(Effort::Medium)),
+        ("gemini-3.8-flash", Some(Effort::High)),
+        ("gemini-3.1-pro", Some(Effort::High)),
+    ],
+};
+
+static MUSE: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "--model",
+    effort_arg: Some(EffortArg::Flag("--reasoning-effort")),
+    // Sem forma documentada de passar prompt à sessão interativa
+    prompt: None,
+    models: &[
+        leveled("muse-spark-1.3", &Effort::ALL, Effort::High),
+        leveled("muse-spark-1.2", &Effort::ALL, Effort::High),
+    ],
+    tiers: [
+        ("muse-spark-1.3", Some(Effort::Medium)),
+        ("muse-spark-1.3", Some(Effort::Medium)),
+        ("muse-spark-1.3", Some(Effort::High)),
+        ("muse-spark-1.3", Some(Effort::Xhigh)),
+    ],
+};
+
+/// OMP não tem lista fixa de modelos: o que dá para embarcar são os papéis.
+static OMP: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "--model",
+    effort_arg: Some(EffortArg::Flag("--thinking")),
+    prompt: Some(PromptArg::Positional),
+    models: &[
+        leveled("@smol", MINIMAL_TO_MAX, Effort::High),
+        leveled("@default", MINIMAL_TO_MAX, Effort::High),
+        leveled("@slow", MINIMAL_TO_MAX, Effort::High),
+    ],
+    tiers: [
+        ("@smol", None),
+        ("@default", None),
+        ("@default", None),
+        ("@slow", None),
+    ],
+};
+
+/// O catálogo do Cursor varia por conta; só estes dois ids são estáveis na documentação.
+static CURSOR: ModelCatalog = ModelCatalog {
+    verified: false,
+    model_flag: "--model",
+    effort_arg: None,
+    prompt: Some(PromptArg::Positional),
+    models: &[plain("auto"), plain("composer-2.5")],
+    tiers: [
+        ("composer-2.5", None),
+        ("composer-2.5", None),
+        ("auto", None),
+        ("auto", None),
+    ],
+};
+
 pub fn catalog(id: AgentId) -> Option<&'static ModelCatalog> {
     match id {
         AgentId::Claude => Some(&CLAUDE),
         AgentId::Codex => Some(&CODEX),
         AgentId::Gemini => Some(&GEMINI),
+        AgentId::Grok => Some(&GROK),
+        AgentId::Codebuddy => Some(&CODEBUDDY),
+        AgentId::Antigravity => Some(&ANTIGRAVITY),
+        AgentId::Muse => Some(&MUSE),
+        AgentId::Omp => Some(&OMP),
+        AgentId::Cursor => Some(&CURSOR),
         _ => None,
     }
 }

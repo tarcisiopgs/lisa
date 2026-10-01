@@ -1,5 +1,6 @@
 //! Catálogo de agentes: como cada CLI sobe em modo interativo, com autonomia
-//! total e com resume. Espelha os nomes de provider da Lisa em TypeScript.
+//! total e com resume. Os dez primeiros espelham os nomes de provider da Lisa em
+//! TypeScript; os demais só existem aqui, ainda sem modo interativo conferido.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -23,10 +24,15 @@ pub enum AgentId {
     Codex,
     Kilo,
     Mimo,
+    Grok,
+    Codebuddy,
+    Antigravity,
+    Muse,
+    Omp,
 }
 
 impl AgentId {
-    pub const ALL: [AgentId; 10] = [
+    pub const ALL: [AgentId; 15] = [
         AgentId::Claude,
         AgentId::Gemini,
         AgentId::Opencode,
@@ -37,6 +43,11 @@ impl AgentId {
         AgentId::Codex,
         AgentId::Kilo,
         AgentId::Mimo,
+        AgentId::Grok,
+        AgentId::Codebuddy,
+        AgentId::Antigravity,
+        AgentId::Muse,
+        AgentId::Omp,
     ];
 
     pub fn name(self) -> &'static str {
@@ -122,7 +133,7 @@ pub enum Resume {
     HistoryOnly(&'static [&'static str]),
 }
 
-static SPECS: [AgentSpec; 10] = [
+static SPECS: [AgentSpec; 15] = [
     AgentSpec {
         name: "claude",
         binaries: &["claude"],
@@ -239,6 +250,67 @@ static SPECS: [AgentSpec; 10] = [
             last: &["--continue"],
         },
         interactive_verified: true,
+    },
+    // Daqui para baixo: linhas de comando tiradas da documentação, nunca executadas
+    AgentSpec {
+        name: "grok",
+        binaries: &["grok"],
+        base_args: &[],
+        autonomy_args: Some(&["--always-approve"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "codebuddy",
+        binaries: &["codebuddy", "cbc"],
+        base_args: &[],
+        autonomy_args: Some(&["--dangerously-skip-permissions"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "antigravity",
+        binaries: &["agy"],
+        base_args: &[],
+        autonomy_args: Some(&["--dangerously-skip-permissions"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--conversation",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "muse",
+        binaries: &["muse"],
+        base_args: &[],
+        autonomy_args: Some(&["--yolo"]),
+        new_session_flag: None,
+        resume: Resume::Subcommand {
+            sub: "resume",
+            last: &[],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "omp",
+        binaries: &["omp"],
+        base_args: &[],
+        autonomy_args: Some(&["--yolo"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
     },
 ];
 
