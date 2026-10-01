@@ -753,7 +753,7 @@ fn project_picker_offers_groups_on_a_plain_folder() {
     let mut a = picker_app(&tmp, 100, 20);
     type_text(&mut a, "arch");
     let t = draw(&a);
-    assert!(text_of(&t).contains("⏎ open · ^g as group · ^n new group · esc cancel"));
+    assert!(text_of(&t).contains("⏎ open · ^f as group · ^n new group · esc cancel"));
     insta::assert_snapshot!(t.backend());
 }
 
@@ -762,7 +762,7 @@ fn a_folder_without_repositories_says_why_it_cannot_be_a_group() {
     let tmp = projects_home(0);
     let mut a = picker_app(&tmp, 100, 20);
     type_text(&mut a, "arch");
-    a.on_key(ctrl('g'));
+    a.on_key(ctrl('f'));
     let t = draw(&a);
     assert!(text_of(&t).contains("no repositories in this folder"));
     insta::assert_snapshot!(t.backend());

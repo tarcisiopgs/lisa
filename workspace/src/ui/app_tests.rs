@@ -1561,7 +1561,7 @@ fn a_group_from_the_picker_is_sent_to_the_daemon() {
     a.on_focus(true);
     a.set_dirs(tmp.path().to_path_buf(), None);
     a.on_key(ch('p'));
-    let actions = a.on_key(ctrl('g'));
+    let actions = a.on_key(ctrl('f'));
     let acme = tmp.path().join("acme");
     assert_eq!(
         sent(&actions),

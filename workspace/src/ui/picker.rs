@@ -214,7 +214,7 @@ impl Picker {
         let picking = matches!(self.mode, Mode::GroupPick { .. });
         match key.code {
             // Com Ctrl, porque toda tecla de caractere alimenta o filtro
-            KeyCode::Char('g') if ctrl && !picking => return self.group_from_folder(),
+            KeyCode::Char('f') if ctrl && !picking => return self.group_from_folder(),
             KeyCode::Char('n') if ctrl && !picking => {
                 self.mode = Mode::GroupName {
                     name: String::new(),
@@ -282,7 +282,7 @@ impl Picker {
         }
     }
 
-    /// `^g`: a pasta selecionada vira grupo, com os repositórios diretamente dentro dela.
+    /// `^f`: a pasta selecionada vira grupo, com os repositórios diretamente dentro dela.
     fn group_from_folder(&mut self) -> Outcome {
         let Some(entry) = self.current().filter(|e| !e.repo).cloned() else {
             return Outcome::Stay;

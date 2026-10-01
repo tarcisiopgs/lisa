@@ -15,7 +15,7 @@ expression: t.backend()
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
-"                            │       │  ⏎ open · ^g as group · ^n new group · esc cancel    │        "
+"                            │       │  ⏎ open · ^f as group · ^n new group · esc cancel    │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "

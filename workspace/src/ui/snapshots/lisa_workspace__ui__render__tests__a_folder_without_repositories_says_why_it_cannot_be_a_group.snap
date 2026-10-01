@@ -15,7 +15,7 @@ expression: t.backend()
 "                            │       │                                                      │        "
 "                            │       │                                                      │        "
 "                            │       │  no repositories in this folder                      │        "
-"                            │       │  ⏎ open · ^g as group · ^n new group · esc cancel    │        "
+"                            │       │  ⏎ open · ^f as group · ^n new group · esc cancel    │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "

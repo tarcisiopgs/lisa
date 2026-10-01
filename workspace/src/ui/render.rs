@@ -1042,7 +1042,7 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
         _ if picking => "  space mark · → open · ← up · ⏎ create · esc cancel",
         Some(entry) if entry.added => "  already added · → open · ^n new group · esc cancel",
         Some(entry) if entry.repo => "  ⏎ add · → open · ^n new group · esc cancel",
-        Some(_) => "  ⏎ open · ^g as group · ^n new group · esc cancel",
+        Some(_) => "  ⏎ open · ^f as group · ^n new group · esc cancel",
         None => "  ← up · ^n new group · esc cancel",
     };
     lines.push(Line::styled(hints, dim()));

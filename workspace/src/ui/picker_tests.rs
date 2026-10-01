@@ -281,13 +281,13 @@ fn pick_mode(p: &mut Picker, name: &str) {
 }
 
 #[test]
-fn ctrl_g_on_a_folder_with_repositories_returns_a_group_named_after_it() {
+fn ctrl_f_on_a_folder_with_repositories_returns_a_group_named_after_it() {
     let tmp = group_tree();
     let mut p = open(&tmp);
     select_name(&mut p, "acme");
     let acme = tmp.path().join("work/acme");
     assert_eq!(
-        p.on_key(ctrl('g')),
+        p.on_key(ctrl('f')),
         Outcome::Group {
             name: "acme".into(),
             paths: vec![
@@ -299,11 +299,11 @@ fn ctrl_g_on_a_folder_with_repositories_returns_a_group_named_after_it() {
 }
 
 #[test]
-fn ctrl_g_on_a_folder_without_repositories_explains_and_stays() {
+fn ctrl_f_on_a_folder_without_repositories_explains_and_stays() {
     let tmp = group_tree();
     let mut p = open(&tmp);
     select_name(&mut p, "docs");
-    assert_eq!(p.on_key(ctrl('g')), Outcome::Stay);
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
     assert_eq!(p.problem(), Some("no repositories in this folder"));
     // A explicação some na tecla seguinte
     p.on_key(key(KeyCode::Down));
@@ -311,20 +311,20 @@ fn ctrl_g_on_a_folder_without_repositories_explains_and_stays() {
 }
 
 #[test]
-fn ctrl_g_on_a_repository_does_nothing() {
+fn ctrl_f_on_a_repository_does_nothing() {
     let tmp = group_tree();
     let mut p = open(&tmp);
     select_name(&mut p, "api");
-    assert_eq!(p.on_key(ctrl('g')), Outcome::Stay);
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
     assert_eq!(p.problem(), None);
 }
 
 #[test]
-fn ctrl_g_refuses_a_name_that_is_already_a_group() {
+fn ctrl_f_refuses_a_name_that_is_already_a_group() {
     let tmp = group_tree();
     let mut p = open(&tmp).with_groups(&["Acme".to_owned()]);
     select_name(&mut p, "acme");
-    assert_eq!(p.on_key(ctrl('g')), Outcome::Stay);
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
     assert_eq!(p.problem(), Some("a group named acme already exists"));
 }
 
