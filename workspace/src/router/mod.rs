@@ -1,4 +1,7 @@
-//! Roteador: da resposta do Jev à sugestão de agente, modelo e effort. Tudo aqui é puro.
+//! Roteador: da resposta do Jev à sugestão de agente, modelo e effort. A decisão aqui é
+//! pura; `config` lê as preferências do usuário.
+
+pub mod config;
 
 use serde_json::{Value, json};
 
