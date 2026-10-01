@@ -186,6 +186,7 @@ pub fn run() -> anyhow::Result<()> {
                         continue;
                     }
                 }
+                Action::Route { .. } => {}
                 Action::Bell => {
                     let _ = out.write_all(b"\x07");
                     let _ = out.flush();

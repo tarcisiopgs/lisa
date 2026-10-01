@@ -190,6 +190,7 @@ fn full_autonomy_cannot_be_chosen_for_an_agent_without_it() {
     a.on_key(ctrl('a'));
     a.on_key(key(KeyCode::Char('n')));
     type_text(&mut a, "x");
+    a.on_key(key(KeyCode::Tab)); // campo tarefa
     a.on_key(key(KeyCode::Tab)); // campo agente
     a.on_key(key(KeyCode::Down)); // opencode
     a.on_key(key(KeyCode::Tab)); // campo permissão
@@ -207,7 +208,8 @@ fn unavailable_agents_are_skipped_when_choosing() {
     a.on_key(ctrl('a'));
     a.on_key(key(KeyCode::Char('n')));
     type_text(&mut a, "x");
-    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Tab)); // campo tarefa
+    a.on_key(key(KeyCode::Tab)); // campo agente
     a.on_key(key(KeyCode::Down));
     a.on_key(key(KeyCode::Down)); // gemini indisponível: fica em opencode
     let actions = a.on_key(key(KeyCode::Enter));
@@ -481,7 +483,8 @@ fn a_remembered_full_autonomy_is_not_applied_to_an_agent_without_it() {
     a.on_key(ctrl('a'));
     a.on_key(key(KeyCode::Char('n')));
     type_text(&mut a, "x");
-    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Tab)); // campo tarefa
+    a.on_key(key(KeyCode::Tab)); // campo agente
     a.on_key(key(KeyCode::Down)); // opencode
     let actions = a.on_key(key(KeyCode::Enter));
     assert!(sent(&actions).iter().any(|m| matches!(
@@ -503,4 +506,461 @@ fn reattaching_resends_focus_so_the_pane_keeps_streaming() {
         worktree: Some("api/fix-login".into()),
         window_focused: true
     }));
+}
+
+// ---- Roteador no diálogo de novo worktree ----
+
+use crate::agents::Effort;
+use crate::router::{Answers, Kind, RouteError, Size};
+
+fn option(name: &str, autonomy: bool) -> AgentOption {
+    AgentOption {
+        name: name.into(),
+        available: true,
+        autonomy_supported: autonomy,
+    }
+}
+
+/// App com claude, codex, gemini e opencode instalados, e o diálogo de novo worktree aberto.
+fn routing() -> App {
+    let mut state = workspace();
+    state.agents = vec![
+        option("claude", true),
+        option("codex", true),
+        option("gemini", true),
+        option("opencode", false),
+    ];
+    let mut a = App::new(120, 40);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(state));
+    a.on_key(ctrl('a'));
+    select(&mut a, "api/fix-login");
+    a.on_key(key(KeyCode::Char('n')));
+    a
+}
+
+fn new_worktree(a: &App) -> &NewWorktree {
+    match a.dialog() {
+        Some(Dialog::NewWorktree(d)) => d,
+        other => panic!("no new worktree dialog: {other:?}"),
+    }
+}
+
+/// Modelo selecionado, pelo nome.
+fn model_name(a: &App) -> &'static str {
+    let d = new_worktree(a);
+    let agent = &a.workspace.agents[d.agent].name;
+    model_options(agent)[d.model]
+}
+
+fn agent_name(a: &App) -> String {
+    a.workspace.agents[new_worktree(a).agent].name.clone()
+}
+
+/// Digita nome e tarefa e sai do campo `Task`; devolve as ações dessa saída.
+fn fill(a: &mut App, task: &str) -> Vec<Action> {
+    type_text(a, "fix");
+    a.on_key(key(KeyCode::Tab));
+    type_text(a, task);
+    a.on_key(key(KeyCode::Tab))
+}
+
+fn route_id(actions: &[Action]) -> u64 {
+    actions
+        .iter()
+        .find_map(|a| match a {
+            Action::Route { id, .. } => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no route requested: {actions:?}"))
+}
+
+fn answers(size: Size, depth: f32, kind: Kind, kind_confidence: f32) -> Answers {
+    let mut size_probs = [0.0; 4];
+    size_probs[size as usize] = 1.0;
+    Answers {
+        size_probs,
+        size_confidence: 0.9,
+        depth,
+        kind,
+        kind_confidence,
+    }
+}
+
+fn created(actions: &[Action]) -> ClientMsg {
+    sent(actions)
+        .into_iter()
+        .find(|m| matches!(m, ClientMsg::CreateWorktree { .. }))
+        .unwrap_or_else(|| panic!("nothing created: {actions:?}"))
+}
+
+#[test]
+fn blank_task_creates_exactly_as_before() {
+    let mut a = routing();
+    type_text(&mut a, "fix");
+    let tabbed = a.on_key(key(KeyCode::Tab));
+    let left_task = a.on_key(key(KeyCode::Tab));
+    assert!(tabbed.is_empty() && left_task.is_empty());
+    let msg = created(&a.on_key(key(KeyCode::Enter)));
+    assert!(matches!(
+        msg,
+        ClientMsg::CreateWorktree {
+            model: None,
+            effort: None,
+            prompt: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn leaving_the_task_field_asks_for_a_route() {
+    let mut a = routing();
+    let actions = fill(&mut a, "fix login");
+    assert_eq!(
+        actions,
+        vec![Action::Route {
+            id: 1,
+            task: "fix login".into()
+        }]
+    );
+    assert_eq!(new_worktree(&a).route, Route::Pending { id: 1 });
+}
+
+#[test]
+fn leaving_with_the_same_text_does_not_ask_twice() {
+    let mut a = routing();
+    fill(&mut a, "fix login");
+    a.on_key(key(KeyCode::BackTab));
+    assert!(a.on_key(key(KeyCode::Tab)).is_empty());
+    a.on_key(key(KeyCode::BackTab));
+    type_text(&mut a, "!");
+    assert_eq!(route_id(&a.on_key(key(KeyCode::Tab))), 2);
+}
+
+#[test]
+fn a_suggestion_fills_agent_model_and_effort() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "why does login loop"));
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    assert_eq!(agent_name(&a), "claude");
+    assert_eq!(model_name(&a), "opus");
+    assert_eq!(new_worktree(&a).effort, Some(Effort::High));
+    assert_eq!(
+        new_worktree(&a).route,
+        Route::Suggested {
+            agent: "claude".into(),
+            percent: 86,
+            unsure: false
+        }
+    );
+}
+
+#[test]
+fn a_kind_that_maps_elsewhere_moves_the_selection() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "review the auth module"));
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.9)));
+    assert_eq!(agent_name(&a), "codex");
+    assert_eq!(model_name(&a), "gpt-6-luna");
+    assert_eq!(new_worktree(&a).effort, Some(Effort::High));
+}
+
+#[test]
+fn accepting_sends_model_effort_and_prompt() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "  why does login loop "));
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    let msg = created(&a.on_key(key(KeyCode::Enter)));
+    assert_eq!(
+        msg,
+        ClientMsg::CreateWorktree {
+            project: "api".into(),
+            name: "fix".into(),
+            agent: "claude".into(),
+            permission: PermissionWire::Normal,
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+            prompt: Some("why does login loop".into()),
+        }
+    );
+}
+
+#[test]
+fn a_manual_choice_survives_a_late_suggestion() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "why does login loop"));
+    // Já no campo Agent: desce para codex antes de a resposta chegar
+    a.on_key(key(KeyCode::Down));
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    assert_eq!(agent_name(&a), "codex");
+    assert!(matches!(
+        &new_worktree(&a).route,
+        Route::Suggested { agent, .. } if agent == "claude"
+    ));
+    // O tamanho chegou: o modelo do agente escolhido acompanha
+    assert_eq!(model_name(&a), "gpt-6.1-sol");
+}
+
+#[test]
+fn switching_agent_keeps_the_size() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "why does login loop"));
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.1, Kind::Investigation, 0.86)),
+    );
+    a.on_key(key(KeyCode::Down));
+    assert_eq!(agent_name(&a), "codex");
+    assert_eq!(model_name(&a), "gpt-6.1-sol");
+    assert_eq!(new_worktree(&a).effort, Some(Effort::Medium));
+    a.on_key(key(KeyCode::Down));
+    assert_eq!((agent_name(&a).as_str(), model_name(&a)), ("gemini", "pro"));
+    assert_eq!(new_worktree(&a).effort, None);
+}
+
+#[test]
+fn stale_and_orphan_answers_are_dropped() {
+    let complex = || Ok(answers(Size::Complex, 0.9, Kind::Review, 0.9));
+    // Resposta de um texto que já mudou
+    let mut a = routing();
+    let old = route_id(&fill(&mut a, "one"));
+    a.on_key(key(KeyCode::BackTab));
+    type_text(&mut a, " two");
+    let new = route_id(&a.on_key(key(KeyCode::Tab)));
+    a.on_route(old, complex());
+    assert_eq!(new_worktree(&a).route, Route::Pending { id: new });
+    assert_eq!(agent_name(&a), "claude");
+    // Resposta depois de fechar o diálogo, e sem diálogo nenhum
+    a.on_key(key(KeyCode::Esc));
+    a.on_route(new, complex());
+    assert!(a.dialog().is_none());
+    // Resposta de um diálogo anterior não vale para o novo
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_route(new, complex());
+    assert_eq!(new_worktree(&a).route, Route::Idle);
+}
+
+#[test]
+fn a_reordered_agent_list_does_not_move_the_suggestion_to_another_agent() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "review the auth module"));
+    let mut state = a.workspace.clone();
+    state.agents.reverse();
+    a.on_daemon(DaemonMsg::State(state));
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.9)));
+    assert_eq!(agent_name(&a), "codex");
+}
+
+#[test]
+fn failures_show_their_reason_and_keep_the_dialog_usable() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "fix login"));
+    a.on_route(id, Err(RouteError::NoKey));
+    assert_eq!(
+        new_worktree(&a).route,
+        Route::Failed("no TYPESAFE_API_KEY · choosing manually")
+    );
+    let msg = created(&a.on_key(key(KeyCode::Enter)));
+    assert!(matches!(
+        msg,
+        ClientMsg::CreateWorktree { model: None, effort: None, prompt: Some(p), .. } if p == "fix login"
+    ));
+}
+
+#[test]
+fn low_kind_confidence_selects_the_first_preferred_agent_as_unsure() {
+    let mut a = routing();
+    a.set_router_config(crate::router::RouterConfig {
+        preference: vec![
+            crate::agents::AgentId::Codex,
+            crate::agents::AgentId::Claude,
+        ],
+        ..Default::default()
+    });
+    let id = route_id(&fill(&mut a, "do the thing"));
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.2)));
+    assert_eq!(agent_name(&a), "codex");
+    assert!(matches!(
+        new_worktree(&a).route,
+        Route::Suggested { unsure: true, .. }
+    ));
+}
+
+#[test]
+fn no_routable_agent_installed_is_a_failure_with_a_reason() {
+    let mut a = routing();
+    let mut state = a.workspace.clone();
+    state.agents = vec![option("opencode", false)];
+    a.on_daemon(DaemonMsg::State(state));
+    let id = route_id(&fill(&mut a, "fix login"));
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Other, 0.9)));
+    assert_eq!(
+        new_worktree(&a).route,
+        Route::Failed("no routable agent installed · choosing manually")
+    );
+}
+
+#[test]
+fn tab_walks_only_the_fields_that_apply() {
+    let mut a = routing();
+    let fields = |a: &mut App| {
+        let mut seen = vec![new_worktree(a).field];
+        for _ in 0..6 {
+            a.on_key(key(KeyCode::Tab));
+            seen.push(new_worktree(a).field);
+        }
+        seen
+    };
+    // claude com o modelo `default`: sem effort
+    assert_eq!(
+        fields(&mut a),
+        [
+            Field::Name,
+            Field::Task,
+            Field::Agent,
+            Field::Model,
+            Field::Permission,
+            Field::Name,
+            Field::Task
+        ]
+    );
+}
+
+#[test]
+fn models_without_effort_skip_the_effort_field() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "rename foo"));
+    a.on_route(id, Ok(answers(Size::Trivial, 0.1, Kind::Other, 0.9)));
+    assert_eq!((model_name(&a), new_worktree(&a).effort), ("haiku", None));
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).field, Field::Model);
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).field, Field::Permission);
+}
+
+#[test]
+fn changing_model_takes_its_default_effort() {
+    let mut a = routing();
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(
+        (new_worktree(&a).field, model_name(&a)),
+        (Field::Model, "default")
+    );
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(
+        (model_name(&a), new_worktree(&a).effort),
+        ("fable", Some(Effort::High))
+    );
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(
+        (model_name(&a), new_worktree(&a).effort),
+        ("opus", Some(Effort::Medium))
+    );
+    a.on_key(key(KeyCode::Left));
+    a.on_key(key(KeyCode::Left));
+    a.on_key(key(KeyCode::Left));
+    assert_eq!((model_name(&a), new_worktree(&a).effort), ("default", None));
+}
+
+#[test]
+fn effort_only_walks_levels_the_model_supports() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "small fix"));
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.9)));
+    assert_eq!(model_name(&a), "gpt-6-luna");
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).field, Field::Effort);
+    for _ in 0..10 {
+        a.on_key(key(KeyCode::Right));
+    }
+    assert_eq!(new_worktree(&a).effort, Some(Effort::Max));
+    for _ in 0..10 {
+        a.on_key(key(KeyCode::Left));
+    }
+    assert_eq!(new_worktree(&a).effort, Some(Effort::Low));
+}
+
+#[test]
+fn agents_without_a_catalog_hide_model_and_do_not_send_the_task() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "fix login"));
+    a.on_route(id, Err(RouteError::Timeout));
+    for _ in 0..3 {
+        a.on_key(key(KeyCode::Down));
+    }
+    assert_eq!(agent_name(&a), "opencode");
+    assert!(model_options("opencode").is_empty());
+    assert!(!task_delivered("opencode") && task_delivered("claude"));
+    a.on_key(key(KeyCode::Tab));
+    assert_eq!(new_worktree(&a).field, Field::Permission);
+    let msg = created(&a.on_key(key(KeyCode::Enter)));
+    assert!(matches!(
+        msg,
+        ClientMsg::CreateWorktree {
+            model: None,
+            effort: None,
+            prompt: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn an_oversized_task_is_refused_with_a_reason() {
+    let mut a = routing();
+    type_text(&mut a, "fix");
+    a.on_key(key(KeyCode::Tab));
+    a.on_paste(&"a".repeat(crate::agents::MAX_PROMPT_BYTES + 1));
+    a.on_key(key(KeyCode::Tab));
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(sent(&actions).is_empty());
+    let d = new_worktree(&a);
+    assert_eq!(
+        d.error.as_deref(),
+        Some("task is too long (max 100,000 bytes)")
+    );
+    assert_eq!(d.field, Field::Task);
+}
+
+#[test]
+fn pasted_text_lands_in_the_task_with_normalised_newlines() {
+    let mut a = routing();
+    a.on_key(key(KeyCode::Tab));
+    a.on_paste("a\r\nb\rc\n");
+    assert_eq!(new_worktree(&a).task, "a\nb\nc");
+}
+
+#[test]
+fn enter_while_routing_creates_with_the_current_selection() {
+    let mut a = routing();
+    fill(&mut a, "fix login");
+    let msg = created(&a.on_key(key(KeyCode::Enter)));
+    assert!(matches!(
+        msg,
+        ClientMsg::CreateWorktree { model: None, prompt: Some(p), .. } if p == "fix login"
+    ));
+}
+
+#[test]
+fn clearing_the_task_forgets_the_suggestion() {
+    let mut a = routing();
+    let id = route_id(&fill(&mut a, "x"));
+    a.on_route(id, Ok(answers(Size::Complex, 0.1, Kind::Other, 0.9)));
+    a.on_key(key(KeyCode::BackTab));
+    a.on_key(key(KeyCode::Backspace));
+    assert!(a.on_key(key(KeyCode::Tab)).is_empty());
+    assert_eq!(new_worktree(&a).route, Route::Idle);
 }
