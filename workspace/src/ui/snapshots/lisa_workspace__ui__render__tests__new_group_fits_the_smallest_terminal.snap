@@ -1,16 +1,16 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
-" PROJE┌ Add project ─────────────────────────────────────┐  "
-"▐▾ api│  ~/Workspace/                               1/35 │  "
+" PROJE┌ New group ───────────────────────────────────────┐  "
+"▐▾ api│  ~/Workspace/             Glowz · 0 marked  1/17 │  "
 "   ◉ f│  › ▏                                             │  "
 "   ◆ r│                                                  │  "
 "   ○ d│  ▐ ● glowz                                       │  "
 " ▾ lis│    ● glowz-api                                   │  "
 "   no │    ● lisa                                  added │  "
 " ▾ web│    ● service-00                                  │  "
-"   ✔ n│                                                  │  "
-"      │  ⏎ add · → open · ^n new group · esc cancel      │  "
+"   ✔ n│  mark at least one repository                    │  "
+"      │  space mark · → open · ← up · ⏎ create · esc     │  "
 "      └──────────────────────────────────────────────────┘  "
 "                                                            "

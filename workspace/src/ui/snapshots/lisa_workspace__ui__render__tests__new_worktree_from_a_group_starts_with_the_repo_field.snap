@@ -1,22 +1,22 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
 " PROJECTS                   │                                                                       "
-"▐▾ api                      │                                                                       "
-"   ◉ fix-login              │                                                                       "
-"   ◆ rate-limit             │       ┌ New worktree in api ─────────────────────────────────┐        "
-"   ○ docs-update            │       │  Name    fix-login-redirect                          │        "
-" ▾ lisa                     │       │          branch: fix-login-redirect                  │        "
-"   no worktrees · n         │       │                                                      │        "
-" ▾ web                      │       │  Task    Fix the redirect loop on login when the     │        "
-"   ✔ new-checkout           │       │          session cookie has expired                  │        "
+"▐▾ B-Metric                 │                                                                       "
+"   ◉ fix-ingest-lag     api │       ┌ New worktree in B-Metric ────────────────────────────┐        "
+"   ◆ dashboard-filter   web │       │› Repo    ‹ consumer ›  2 of 3                        │        "
+" ▾ bloom                    │       │                                                      │        "
+"   no worktrees · n         │       │  Name                                                │        "
+" ▾ lisa                     │       │          branch: —                                   │        "
+"   ✔ sidebar-groups         │       │                                                      │        "
+"                            │       │  Task    what should the agent do? (optional)        │        "
 "                            │       │                                                      │        "
-"                            │       │› Agent   ● claude  suggested · 86%                   │        "
+"                            │       │  Agent   ● claude                                    │        "
 "                            │       │          ○ opencode  no full autonomy                │        "
 "                            │       │          ○ gemini  not installed                     │        "
 "                            │       │                                                      │        "
-"                            │       │  Model   ‹ opus ›   effort ‹ high ›                  │        "
+"                            │       │  Model   ‹ default ›                                 │        "
 "                            │       │                                                      │        "
 "                            │       │  Mode    (•) normal   ( ) full autonomy              │        "
 "                            │       │                                                      │        "

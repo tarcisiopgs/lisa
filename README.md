@@ -18,7 +18,7 @@
 Lisa has two modes:
 
 - **Autonomous** connects your issue tracker to an AI coding agent and delivers pull requests on its own. Describe a goal, and Lisa decomposes it into issues, picks them up, implements each one, opens PRs and updates your board. No babysitting.
-- **Workspace** keeps your projects in a sidebar. It spins up a git worktree from a project's base branch whenever you want and runs any supported agent interactively inside it, in the same terminal. A background daemon keeps agents working when you close the UI. Lisa notifies you when one needs you or finishes.
+- **Workspace** keeps your projects in a sidebar, alone or in groups of repositories. It spins up a git worktree from a project's base branch whenever you want and runs any supported agent interactively inside it, in the same terminal. A background daemon keeps agents working when you close the UI. Lisa notifies you when one needs you or finishes.
 
 ## Quickstart
 

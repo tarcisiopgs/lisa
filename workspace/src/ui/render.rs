@@ -8,10 +8,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{
-    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row,
-    SIDEBAR_WIDTH, Zone, cost_note, effort_options, model_options, task_delivered,
+    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row, Zone,
+    cost_note, effort_options, group_key, model_options, task_delivered,
 };
-use super::picker::Picker;
+use super::picker::{Mode, Picker};
 use crate::protocol::work::{
     ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
     ATTR_WIDE_SPACER, AgentState, Color, Snapshot, WorktreeView,
@@ -56,6 +56,70 @@ pub fn state_glyph(w: &WorktreeView) -> (&'static str, Style) {
     }
 }
 
+/// Colunas que a marca do repositório ocupa, no máximo.
+pub const TAG_WIDTH: usize = 8;
+
+/// Glifo do estado mais urgente entre os agentes do grupo: precisa de você, trabalhando,
+/// concluído. Nada quando todos estão ociosos ou parados.
+pub fn group_glyph(app: &App, group: &str) -> Option<(&'static str, Style)> {
+    let worktrees = app.group_worktrees(group);
+    [AgentState::NeedsYou, AgentState::Working, AgentState::Done]
+        .into_iter()
+        .find_map(|state| {
+            worktrees
+                .iter()
+                .find(|w| w.running && !w.broken && w.state == state)
+                .map(|w| state_glyph(w))
+        })
+}
+
+/// Largura em colunas do terminal (caracteres largos contam dois).
+fn cols(text: &str) -> usize {
+    Span::raw(text).width()
+}
+
+/// Corta por colunas, sem partir caractere: o que não cabe vira `…`.
+fn clip(text: &str, width: usize) -> String {
+    if cols(text) <= width {
+        return text.to_owned();
+    }
+    let mut out = String::new();
+    for ch in text.chars() {
+        let mut next = out.clone();
+        next.push(ch);
+        if cols(&next) + 1 > width {
+            break;
+        }
+        out = next;
+    }
+    if width > 0 {
+        out.push('…');
+    }
+    out
+}
+
+/// Como `clip`, mas corta o começo: em marcas compridas, é o fim que as distingue.
+fn clip_left(text: &str, width: usize) -> String {
+    if cols(text) <= width {
+        return text.to_owned();
+    }
+    let mut tail: Vec<char> = Vec::new();
+    for ch in text.chars().rev() {
+        let mut next = String::from(ch);
+        next.extend(tail.iter().rev());
+        if cols(&next) + 1 > width {
+            break;
+        }
+        tail.push(ch);
+    }
+    let kept: String = tail.iter().rev().collect();
+    if width > 0 {
+        format!("…{kept}")
+    } else {
+        kept
+    }
+}
+
 fn truncate(text: &str, width: usize) -> String {
     if text.chars().count() <= width {
         return text.to_owned();
@@ -91,7 +155,7 @@ pub fn render(f: &mut Frame, app: &App) {
 
     let body_h = area.height - 1;
     let side_w = if app.wide() {
-        SIDEBAR_WIDTH
+        app.sidebar_width()
     } else {
         RAIL_WIDTH
     };
@@ -129,17 +193,18 @@ pub fn render(f: &mut Frame, app: &App) {
         render_sidebar(f, app, side);
     } else if app.zone() == Zone::Sidebar {
         // Terminal estreito: a lateral completa aparece por cima do painel enquanto navega
+        let full = app.sidebar_width();
         let overlay = Rect {
             x: 0,
             y: 0,
-            width: SIDEBAR_WIDTH + 1,
+            width: full + 1,
             height: body_h,
         };
         f.render_widget(Clear, overlay);
         f.render_widget(
             Paragraph::new(vec![Line::from("│"); usize::from(body_h)]).style(dim()),
             Rect {
-                x: SIDEBAR_WIDTH,
+                x: full,
                 width: 1,
                 ..overlay
             },
@@ -148,7 +213,7 @@ pub fn render(f: &mut Frame, app: &App) {
             f,
             app,
             Rect {
-                width: SIDEBAR_WIDTH,
+                width: full,
                 ..overlay
             },
         );
@@ -310,6 +375,30 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
             Span::raw(" ")
         };
         let line = match row {
+            Row::Group { slug } => {
+                let name = app
+                    .workspace()
+                    .groups
+                    .iter()
+                    .find(|g| g.slug == *slug)
+                    .map_or(slug.as_str(), |g| g.name.as_str());
+                let folded = app.is_collapsed(&group_key(slug));
+                let arrow = if folded { "▸ " } else { "▾ " };
+                // Fechado, o grupo resume os agentes num glifo na última coluna útil
+                let summary = folded.then(|| group_glyph(app, slug)).flatten();
+                let room = width.saturating_sub(if summary.is_some() { 6 } else { 4 });
+                let name = clip(name, room);
+                let mut spans = vec![bar, Span::raw(arrow)];
+                if let Some((glyph, style)) = summary {
+                    let pad = width.saturating_sub(5 + cols(&name));
+                    spans.push(Span::styled(name, bold()));
+                    spans.push(Span::raw(" ".repeat(pad)));
+                    spans.push(Span::styled(glyph, style));
+                } else {
+                    spans.push(Span::styled(name, bold()));
+                }
+                Line::from(spans)
+            }
             Row::Project { slug } => {
                 let name = app
                     .workspace()
@@ -339,15 +428,34 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
                 } else {
                     Style::default()
                 };
-                Line::from(vec![
+                let mut spans = vec![
                     bar,
                     Span::raw("  "),
                     Span::styled(glyph, style),
                     Span::raw(" "),
-                    Span::styled(truncate(&w.name, width.saturating_sub(6)), name_style),
-                ])
+                ];
+                match app.tag(w) {
+                    // Agente de grupo: a marca do repositório fica inteira, à direita
+                    Some(tag) => {
+                        let tag = clip_left(tag, TAG_WIDTH);
+                        let room = width.saturating_sub(7 + cols(&tag));
+                        let name = clip(&w.name, room);
+                        let pad = width.saturating_sub(6 + cols(&name) + cols(&tag));
+                        spans.push(Span::styled(name, name_style));
+                        spans.push(Span::raw(" ".repeat(pad)));
+                        spans.push(Span::styled(tag, dim()));
+                    }
+                    None => spans.push(Span::styled(
+                        truncate(&w.name, width.saturating_sub(6)),
+                        name_style,
+                    )),
+                }
+                Line::from(spans)
             }
             Row::Empty { .. } => Line::from(vec![bar, Span::styled("  no worktrees · n", dim())]),
+            Row::EmptyGroup { .. } => {
+                Line::from(vec![bar, Span::styled("  no worktrees · n", dim())])
+            }
         };
         lines.push(line);
     }
@@ -406,6 +514,11 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
         }
     }
     let used: usize = left.iter().map(|s| s.content.chars().count()).sum();
+    // Sobre um grupo, `d` desfaz o grupo em vez de remover um worktree
+    let on_group = matches!(
+        app.selected_row(),
+        Some(Row::Group { .. } | Row::EmptyGroup { .. })
+    );
     let hints: &[&str] = match (app.dialog().is_some(), app.zone()) {
         (true, _) => &[],
         (false, Zone::Pane) => &["^a menu"],
@@ -413,7 +526,7 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
             "⏎ open",
             "n new",
             "p project",
-            "d remove",
+            if on_group { "d ungroup" } else { "d remove" },
             "r restart",
             "? help",
             "q quit",
@@ -584,9 +697,16 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
         .projects
         .iter()
         .find(|p| p.slug == d.project);
+    let group = d.group.as_deref().and_then(|slug| {
+        app.workspace()
+            .groups
+            .iter()
+            .find(|g| g.slug == slug)
+            .map(|g| g.name.as_str())
+    });
     let title = format!(
         "New worktree in {}",
-        project.map_or(d.project.as_str(), |p| p.name.as_str())
+        group.unwrap_or(project.map_or(d.project.as_str(), |p| p.name.as_str()))
     );
     let agents = app.workspace().agents.len();
     let max = usize::from(max_lines);
@@ -623,6 +743,22 @@ fn new_worktree_lines(
             lines.push(Line::default());
         }
     };
+
+    if let Some(group) = d.group.as_deref() {
+        let repos = app.group_repos(group);
+        let at = repos.iter().position(|p| p.slug == d.project);
+        let tag = at.map_or(d.project.as_str(), |i| repos[i].tag.as_str());
+        let mut repo = field_label("Repo", d.field == Field::Repo);
+        repo.extend(stepper(tag, d.field == Field::Repo));
+        if let Some(i) = at {
+            repo.push(Span::styled(
+                format!("  {} of {}", i + 1, repos.len()),
+                dim(),
+            ));
+        }
+        lines.push(Line::from(repo));
+        gap(&mut lines);
+    }
 
     let mut name = field_label("Name", d.field == Field::Name);
     name.push(Span::raw(d.name.clone()));
@@ -793,6 +929,22 @@ const PICKER_ROWS: usize = 10;
 /// selecionado.
 fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
     let inner = usize::from(width).saturating_sub(2);
+    let problem = |p: &Picker| match p.problem() {
+        Some(reason) => Line::styled(format!("  {reason}"), Style::default().fg(TuiColor::Red)),
+        None => Line::default(),
+    };
+    if let Mode::GroupName { name } = p.mode() {
+        return vec![
+            Line::from(vec![
+                Span::styled("  › ", Style::default().fg(TuiColor::Yellow)),
+                Span::styled("Name  ", bold()),
+                Span::raw(truncate_left(name, inner.saturating_sub(12))),
+                cursor(),
+            ]),
+            problem(p),
+            Line::styled("  ⏎ next · esc cancel", dim()),
+        ];
+    }
     let entries = p.visible();
     // Pasta, filtro, dicas e dois espaços são fixos; a lista fica com o resto
     let rows = usize::from(max_lines)
@@ -802,11 +954,20 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
         .max(1);
     let yellow = Style::default().fg(TuiColor::Yellow);
 
-    let position = if entries.len() > rows {
+    let mut position = if entries.len() > rows {
         format!("{}/{}", p.selected() + 1, entries.len())
     } else {
         String::new()
     };
+    // Grupo em criação: nome e quantos repositórios já foram marcados
+    if let Mode::GroupPick { name, marked } = p.mode() {
+        let group = format!("{} · {} marked", clip(name, 16), marked.len());
+        position = if position.is_empty() {
+            group
+        } else {
+            format!("{group}  {position}")
+        };
+    }
     let dir = truncate_left(
         &p.dir_label(),
         inner.saturating_sub(4 + position.chars().count()),
@@ -856,26 +1017,33 @@ fn add_project(p: &Picker, width: u16, max_lines: u16) -> Vec<Line<'static>> {
             _ => Style::default(),
         };
         let gap = room.saturating_sub(name.chars().count()) + 1;
+        let bullet = if p.is_marked(entry) {
+            Span::styled("✔ ", Style::default().fg(TuiColor::Green))
+        } else {
+            Span::styled(if entry.repo { "● " } else { "  " }, style)
+        };
         list.push(Line::from(vec![
             if chosen {
                 Span::styled(format!("  {SELECT_BAR} "), yellow)
             } else {
                 Span::raw("    ")
             },
-            Span::styled(if entry.repo { "● " } else { "  " }, style),
+            bullet,
             Span::styled(name, style),
             Span::styled(format!("{}{mark}", " ".repeat(gap)), dim()),
         ]));
     }
     list.resize(rows, Line::default());
     lines.extend(list);
-    lines.push(Line::default());
+    lines.push(problem(p));
 
+    let picking = matches!(p.mode(), Mode::GroupPick { .. });
     let hints = match p.current() {
-        Some(entry) if entry.added => "  already a project · → open · ← up · esc cancel",
-        Some(entry) if entry.repo => "  ⏎ add · → open · ← up · esc cancel",
-        Some(_) => "  ⏎ open · ← up · esc cancel",
-        None => "  ← up · esc cancel",
+        _ if picking => "  space mark · → open · ← up · ⏎ create · esc cancel",
+        Some(entry) if entry.added => "  already added · → open · ^n new group · esc cancel",
+        Some(entry) if entry.repo => "  ⏎ add · → open · ^n new group · esc cancel",
+        Some(_) => "  ⏎ open · ^f as group · ^n new group · esc cancel",
+        None => "  ← up · ^n new group · esc cancel",
     };
     lines.push(Line::styled(hints, dim()));
     lines
@@ -890,13 +1058,14 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
                 ("^a", "switch between the agent and the sidebar"),
                 ("^a ^a", "send ctrl-a to the agent"),
                 ("↑↓ j k", "move"),
-                ("⏎", "open worktree / fold project"),
+                ("⏎", "open worktree / fold project or group"),
                 ("tab", "next worktree that needs you"),
-                ("n", "new worktree in this project"),
-                ("p", "add project"),
+                ("n", "new worktree in this project or group"),
+                ("p", "add project or group"),
                 ("b", "change base branch"),
-                ("d", "remove worktree"),
+                ("d", "remove worktree / ungroup"),
                 ("r / s", "restart / stop agent"),
+                ("< >", "resize the sidebar"),
                 ("q", "detach (agents keep running)"),
             ]
             .iter()
@@ -908,8 +1077,34 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             })
             .collect(),
         ),
+        Dialog::ConfirmDissolve { group } => {
+            let name = app
+                .workspace()
+                .groups
+                .iter()
+                .find(|g| g.slug == *group)
+                .map_or(group.as_str(), |g| g.name.as_str());
+            (
+                "Ungroup".into(),
+                vec![
+                    Line::from(vec![
+                        Span::raw("  Ungroup "),
+                        Span::styled(name.to_owned(), bold()),
+                        Span::raw("?"),
+                    ]),
+                    Line::styled("  Its repositories become standalone projects.", dim()),
+                    Line::styled("  Nothing is deleted.", dim()),
+                    Line::default(),
+                    Line::styled("  y ungroup · esc cancel", dim()),
+                ],
+            )
+        }
         Dialog::AddProject(picker) => (
-            "Add project".into(),
+            match picker.mode() {
+                Mode::Project => "Add project",
+                Mode::GroupName { .. } | Mode::GroupPick { .. } => "New group",
+            }
+            .into(),
             add_project(picker, width, body.height.saturating_sub(2)),
         ),
         Dialog::BaseBranch { project, value } => (

@@ -359,3 +359,173 @@ fn state_file_round_trips_and_corrupt_file_is_backed_up() {
         .unwrap_or(0);
     assert_eq!(backups, 1);
 }
+
+// ---- Grupos ----
+
+/// Repositório local sem remote, ao lado do clone da fixture.
+fn local_repo(fx: &Fixture, name: &str) -> PathBuf {
+    let dir = fx.root.parent().unwrap_or(&fx.root).join(name);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    run(&dir, &["init", "-q", "-b", "main"]);
+    commit(&dir, "a");
+    dir
+}
+
+fn group_of<'a>(reg: &'a Registry, slug: &str) -> Option<&'a str> {
+    reg.project(slug).and_then(|p| p.group.as_deref())
+}
+
+#[test]
+fn a_group_registers_new_repositories_and_moves_mapped_ones() {
+    let fx = fixture();
+    let api = local_repo(&fx, "acme-api");
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    let mapped = reg
+        .add_project(&fx.repo, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let wt = reg
+        .create_worktree(&mapped, "feature", &env)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .worktree;
+
+    let slug = reg
+        .add_group("Acme", &[api, fx.repo.clone()], &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    assert_eq!(slug, "acme");
+    assert_eq!(reg.groups().len(), 1);
+    assert_eq!(reg.groups()[0].name, "Acme");
+    assert_eq!(group_of(&reg, &mapped), Some("acme"));
+    assert_eq!(group_of(&reg, "acme-api"), Some("acme"));
+    assert_eq!(reg.projects().len(), 2);
+    assert_eq!(
+        reg.worktree(&wt.id).map(|w| w.project.as_str()),
+        Some(mapped.as_str())
+    );
+    assert_eq!(reg.tags().get("acme-api").map(String::as_str), Some("api"));
+}
+
+#[test]
+fn a_group_is_all_or_nothing() {
+    let fx = fixture();
+    let api = local_repo(&fx, "acme-api");
+    let plain = fx.root.parent().unwrap_or(&fx.root).join("plain");
+    std::fs::create_dir_all(&plain).unwrap_or_else(|e| panic!("{e}"));
+    let mut reg = registry(&fx);
+
+    let err = reg.add_group("Acme", &[api, plain], &git::Env::default());
+
+    match err {
+        Err(RegistryError::Git(GitError::NotARepository(p))) => assert!(p.ends_with("plain")),
+        other => panic!("unexpected {other:?}"),
+    }
+    assert!(reg.groups().is_empty());
+    assert!(reg.projects().is_empty());
+}
+
+#[test]
+fn a_group_needs_a_repository_and_a_free_name() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    assert!(matches!(
+        reg.add_group("Acme", &[], &env),
+        Err(RegistryError::EmptyGroup)
+    ));
+    assert!(matches!(
+        reg.add_group("  ", std::slice::from_ref(&fx.repo), &env),
+        Err(RegistryError::UnnamedGroup)
+    ));
+    reg.add_group("Acme", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(matches!(
+        reg.add_group("ACME", std::slice::from_ref(&fx.repo), &env),
+        Err(RegistryError::GroupExists(_))
+    ));
+    assert_eq!(reg.groups().len(), 1);
+}
+
+#[test]
+fn moving_the_last_repository_out_removes_the_old_group() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    reg.add_group("A", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    reg.add_group("B", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let names: Vec<&str> = reg.groups().iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["B"]);
+    assert_eq!(reg.projects().len(), 1);
+    assert_eq!(reg.projects()[0].group.as_deref(), Some("b"));
+}
+
+#[test]
+fn dissolving_a_group_keeps_projects_and_worktrees() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let mut reg = registry(&fx);
+    let slug = reg
+        .add_group("Acme", std::slice::from_ref(&fx.repo), &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let project = reg.projects()[0].slug.clone();
+    reg.create_worktree(&project, "feature", &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    reg.dissolve_group(&slug).unwrap_or_else(|e| panic!("{e}"));
+
+    assert!(reg.groups().is_empty());
+    assert_eq!(group_of(&reg, &project), None);
+    assert_eq!(reg.worktrees().len(), 1);
+    assert!(reg.tags().is_empty());
+    assert!(matches!(
+        reg.dissolve_group(&slug),
+        Err(RegistryError::UnknownGroup(_))
+    ));
+}
+
+#[test]
+fn a_state_file_without_groups_loads_with_everything_standalone() {
+    let tmp = TempDir::new().unwrap_or_else(|e| panic!("{e}"));
+    let file = tmp.path().join("state.json");
+    let old = r#"{
+      "schema_version": 1,
+      "projects": [
+        {"slug": "api", "name": "api", "path": "/tmp/api", "base_branch": "main", "remote": "origin"}
+      ],
+      "worktrees": [
+        {"id": "api/fix", "project": "api", "name": "fix", "branch": "fix", "path": "/tmp/wt",
+         "agent": "claude", "permission": null, "session_id": null}
+      ]
+    }"#;
+    std::fs::write(&file, old).unwrap_or_else(|e| panic!("{e}"));
+
+    let loaded = Registry::load(&file).unwrap_or_else(|e| panic!("{e}"));
+
+    assert!(loaded.warning.is_none());
+    let reg = loaded.registry;
+    assert!(reg.groups().is_empty());
+    assert_eq!(reg.projects().len(), 1);
+    assert_eq!(reg.projects()[0].group, None);
+    assert_eq!(reg.worktrees().len(), 1);
+    reg.save(&file).unwrap_or_else(|e| panic!("{e}"));
+    let saved = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{e}"));
+    assert!(saved.contains("\"schema_version\": 2"), "{saved}");
+}
+
+#[test]
+fn repositories_with_the_same_name_get_distinct_tags() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let other = local_repo(&fx, "elsewhere/repo");
+    let mut reg = registry(&fx);
+    let paths = [fx.repo, other];
+    reg.add_group("X", &paths, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let tags = reg.tags();
+    let mut seen: Vec<&String> = tags.values().collect();
+    seen.sort();
+    seen.dedup();
+    assert_eq!(seen.len(), 2, "{tags:?}");
+}

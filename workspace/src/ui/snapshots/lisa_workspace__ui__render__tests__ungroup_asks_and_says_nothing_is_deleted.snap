@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                                                                       "
+"▐▾ B-Metric                 │                                                                       "
+"   ◉ fix-ingest-lag     api │                                                                       "
+"   ◆ dashboard-filter   web │       ┌ Ungroup ─────────────────────────────────────────────┐        "
+" ▾ bloom                    │       │  Ungroup B-Metric?                                   │        "
+"   no worktrees · n         │       │  Its repositories become standalone projects.        │        "
+" ▾ lisa                     │       │  Nothing is deleted.                                 │        "
+"   ✔ sidebar-groups         │       │                                                      │        "
+"                            │       │  y ungroup · esc cancel                              │        "
+"                            │       └──────────────────────────────────────────────────────┘        "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                                                                                                    "

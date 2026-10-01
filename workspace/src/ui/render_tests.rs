@@ -1,6 +1,6 @@
 use super::*;
 use crate::protocol::work::{
-    AgentOption, AgentState, CursorPos, DaemonMsg, Line, Modes, ProjectView, Snapshot,
+    AgentOption, AgentState, CursorPos, DaemonMsg, GroupView, Line, Modes, ProjectView, Snapshot,
     WorkspaceState, WorktreeView,
 };
 use crate::ui::app::App;
@@ -27,24 +27,31 @@ fn wt(id: &str, state: AgentState, running: bool) -> WorktreeView {
 
 fn workspace() -> WorkspaceState {
     WorkspaceState {
+        groups: Vec::new(),
         projects: vec![
             ProjectView {
                 slug: "api".into(),
                 name: "api".into(),
                 path: "/r/api".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
             ProjectView {
                 slug: "web".into(),
                 name: "web".into(),
                 path: "/r/web".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
             ProjectView {
                 slug: "lisa".into(),
                 name: "lisa".into(),
                 path: "/r/lisa".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
         ],
         worktrees: vec![
@@ -548,4 +555,334 @@ fn project_picker_fits_the_smallest_terminal() {
     let tmp = projects_home(30);
     let a = picker_app(&tmp, 60, 12);
     insta::assert_snapshot!(draw(&a).backend());
+}
+
+// ---- Grupos ----
+
+fn project(slug: &str, group: Option<&str>, tag: &str) -> ProjectView {
+    ProjectView {
+        slug: slug.into(),
+        name: slug.into(),
+        path: format!("/r/{slug}"),
+        base_branch: "main".into(),
+        group: group.map(str::to_owned),
+        tag: tag.into(),
+    }
+}
+
+fn grouped_workspace() -> WorkspaceState {
+    WorkspaceState {
+        groups: vec![GroupView {
+            slug: "b-metric".into(),
+            name: "B-Metric".into(),
+        }],
+        projects: vec![
+            project("lisa", None, ""),
+            project("b-metric-web", Some("b-metric"), "web"),
+            project("bloom", None, ""),
+            project("b-metric-api", Some("b-metric"), "api"),
+            project("b-metric-consumer", Some("b-metric"), "consumer"),
+        ],
+        worktrees: vec![
+            wt("b-metric-web/dashboard-filter", AgentState::NeedsYou, true),
+            wt("b-metric-api/fix-ingest-lag", AgentState::Working, true),
+            wt("lisa/sidebar-groups", AgentState::Done, true),
+        ],
+        agents: workspace().agents,
+    }
+}
+
+fn grouped(cols: u16, rows: u16, ws: WorkspaceState) -> App {
+    let mut a = App::new(cols, rows);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a
+}
+
+/// Texto de uma linha da tela, da coluna 0 até `width`.
+fn row_text(t: &Terminal<TestBackend>, y: u16, width: u16) -> String {
+    let buf = t.backend().buffer();
+    (0..width)
+        .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().to_owned()))
+        .collect()
+}
+
+#[test]
+fn grouped_agents_carry_a_dim_repository_tag() {
+    let a = grouped(100, 14, grouped_workspace());
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 2, 28), "   ◉ fix-ingest-lag     api ");
+    let buf = t.backend().buffer();
+    let cell = buf.cell((24, 2)).unwrap_or_else(|| panic!("cell"));
+    assert!(cell.modifier.contains(Modifier::DIM), "tag is not dim");
+}
+
+#[test]
+fn a_long_agent_name_is_cut_before_the_tag() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/dev-2368-atividades-do-projeto",
+        AgentState::Working,
+        true,
+    ));
+    let a = grouped(100, 14, ws);
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 3, 29), "   ◉ dev-2368-ati… consumer │");
+}
+
+#[test]
+fn a_folded_group_shows_its_most_urgent_state() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Enter));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 1, 29), "▐▸ B-Metric               ◆ │");
+}
+
+#[test]
+fn a_group_without_agents_shows_a_hint() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.retain(|w| w.project == "lisa");
+    let a = grouped(100, 14, ws);
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn narrow_terminal_keeps_groups_in_the_glyph_rail() {
+    let mut a = grouped(80, 12, grouped_workspace());
+    open(&mut a, "b-metric-api/fix-ingest-lag");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn a_tag_never_reaches_the_separator_and_wide_characters_do_not_panic() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/correção-🚀-login-com-nome-comprido",
+        AgentState::Working,
+        true,
+    ));
+    let a = grouped(100, 14, ws);
+    let t = draw(&a);
+    let buf = t.backend().buffer();
+    for y in 0..13 {
+        let sep = buf.cell((28, y)).unwrap_or_else(|| panic!("cell"));
+        assert_eq!(sep.symbol(), "│", "row {y}");
+    }
+    let line = row_text(&t, 3, 28);
+    assert!(line.contains('…'), "{line}");
+    assert!(line.trim_end().ends_with("consumer"), "{line}");
+}
+
+// ---- Largura da lateral ----
+
+#[test]
+fn sidebar_at_its_narrowest_keeps_the_tag_whole() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/dev-2368-atividades-do-projeto",
+        AgentState::Working,
+        true,
+    ));
+    let mut a = grouped(100, 14, ws);
+    a.set_sidebar_width(Some(20));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 3, 21), "   ◉ dev-… consumer │");
+}
+
+#[test]
+fn sidebar_at_its_widest() {
+    let mut a = grouped(120, 14, grouped_workspace());
+    a.set_sidebar_width(Some(48));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(a.pane_size(), (71, 13));
+}
+
+// ---- Lançar pelo grupo ----
+
+fn text_of(t: &Terminal<TestBackend>) -> String {
+    let area = t.backend().buffer().area;
+    (0..area.height)
+        .map(|y| row_text(t, y, area.width))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn new_worktree_from_a_group_starts_with_the_repo_field() {
+    let mut a = grouped(100, 24, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Right));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("New worktree in B-Metric"), "{screen}");
+    assert!(
+        screen.contains("› Repo    ‹ consumer ›  2 of 3"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_worktree_from_a_group_fits_the_smallest_terminal() {
+    let mut a = grouped(60, 12, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('n')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("› Repo    ‹ api ›  1 of 3"), "{screen}");
+    assert!(screen.contains("⏎ create"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+// ---- Criar e desfazer grupos ----
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
+#[test]
+fn project_picker_offers_groups_on_a_plain_folder() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "arch");
+    let t = draw(&a);
+    assert!(text_of(&t).contains("⏎ open · ^f as group · ^n new group · esc cancel"));
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn a_folder_without_repositories_says_why_it_cannot_be_a_group() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    type_text(&mut a, "arch");
+    a.on_key(ctrl('f'));
+    let t = draw(&a);
+    assert!(text_of(&t).contains("no repositories in this folder"));
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_asks_for_a_name() {
+    let tmp = projects_home(0);
+    let mut a = picker_app(&tmp, 100, 20);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("┌ New group "), "{screen}");
+    assert!(screen.contains("› Name  Glowz"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_marks_repositories_across_folders() {
+    let tmp = projects_home(0);
+    std::fs::create_dir_all(tmp.path().join("Workspace/archive/old-api/.git"))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut a = picker_app(&tmp, 100, 20);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    a.on_key(key(KeyCode::Enter));
+    a.on_key(key(KeyCode::Char(' ')));
+    type_text(&mut a, "arch");
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::Char(' ')));
+    a.on_key(key(KeyCode::Left));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Glowz · 2 marked"), "{screen}");
+    assert!(screen.contains("✔ glowz"), "{screen}");
+    assert!(
+        screen.contains("space mark · → open · ← up · ⏎ create · esc cancel"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_group_fits_the_smallest_terminal() {
+    let tmp = projects_home(12);
+    let mut a = picker_app(&tmp, 60, 12);
+    a.on_key(ctrl('n'));
+    type_text(&mut a, "Glowz");
+    a.on_key(key(KeyCode::Enter));
+    a.on_key(key(KeyCode::Enter));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("mark at least one repository"), "{screen}");
+    assert!(screen.contains("space mark"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn ungroup_asks_and_says_nothing_is_deleted() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('d')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Ungroup B-Metric?"), "{screen}");
+    assert!(screen.contains("Nothing is deleted."), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn help_lists_groups_and_resize() {
+    let mut a = grouped(100, 24, grouped_workspace());
+    a.on_key(key(KeyCode::Char('?')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    for line in [
+        "open worktree / fold project or group",
+        "new worktree in this project or group",
+        "add project or group",
+        "remove worktree / ungroup",
+        "resize the sidebar",
+    ] {
+        assert!(screen.contains(line), "missing {line:?} in {screen}");
+    }
+    insta::assert_snapshot!(t.backend());
+}
+
+// ---- Achados da revisão final ----
+
+#[test]
+fn long_tags_keep_their_ends_so_they_stay_apart() {
+    let mut ws = grouped_workspace();
+    ws.projects.push(project(
+        "b-metric-bo-web",
+        Some("b-metric"),
+        "backoffice-web",
+    ));
+    ws.projects.push(project(
+        "b-metric-bo-api",
+        Some("b-metric"),
+        "backoffice-api",
+    ));
+    ws.worktrees
+        .push(wt("b-metric-bo-web/a", AgentState::Working, true));
+    ws.worktrees
+        .push(wt("b-metric-bo-api/b", AgentState::Working, true));
+    let a = grouped(100, 14, ws);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("…ice-web"), "{screen}");
+    assert!(screen.contains("…ice-api"), "{screen}");
+}
+
+#[test]
+fn the_footer_says_ungroup_on_a_group_row() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("d ungroup"), "{screen}");
+    a.select_row(1);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("d remove"), "{screen}");
 }

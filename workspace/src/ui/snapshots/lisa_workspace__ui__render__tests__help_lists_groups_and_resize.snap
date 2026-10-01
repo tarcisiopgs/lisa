@@ -1,0 +1,28 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                                                                       "
+"▐▾ B-Metric                 │                                                                       "
+"   ◉ fix-ingest-lag     api │                                                                       "
+"   ◆ dashboard-filter   web │                                                                       "
+" ▾ bloom                    │       ┌ Keys ────────────────────────────────────────────────┐        "
+"   no worktrees · n         │       │  ^a      switch between the agent and the sidebar    │        "
+" ▾ lisa                     │       │  ^a ^a   send ctrl-a to the agent                    │        "
+"   ✔ sidebar-groups         │       │  ↑↓ j k  move                                        │        "
+"                            │       │  ⏎       open worktree / fold project or group       │        "
+"                            │       │  tab     next worktree that needs you                │        "
+"                            │       │  n       new worktree in this project or group       │        "
+"                            │       │  p       add project or group                        │        "
+"                            │       │  b       change base branch                          │        "
+"                            │       │  d       remove worktree / ungroup                   │        "
+"                            │       │  r / s   restart / stop agent                        │        "
+"                            │       │  < >     resize the sidebar                          │        "
+"                            │       │  q       detach (agents keep running)                │        "
+"                            │       └──────────────────────────────────────────────────────┘        "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                                                                                                    "

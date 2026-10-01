@@ -14,8 +14,8 @@ use super::{SessionHost, UiSink};
 use crate::agents::{self, AgentId, Effort, LaunchOptions, Permission, SessionMode};
 use crate::git::{self, RemovalBlock};
 use crate::protocol::work::{
-    AgentOption, AgentState, ClientMsg, DaemonMsg, PermissionWire, ProjectView, Snapshot,
-    WorkspaceState, WorktreeView,
+    AgentOption, AgentState, ClientMsg, DaemonMsg, GroupView, PermissionWire, ProjectView,
+    Snapshot, WorkspaceState, WorktreeView,
 };
 use crate::registry::{Registry, RegistryError, execute_plan};
 use crate::session::hooks::write_claude_settings;
@@ -231,6 +231,7 @@ impl Inner {
     fn state(&self) -> WorkspaceState {
         let registry = lock(&self.registry);
         let trackers = lock(&self.trackers);
+        let mut tags = registry.tags();
         let projects = registry
             .projects()
             .iter()
@@ -239,6 +240,16 @@ impl Inner {
                 name: p.name.clone(),
                 path: p.path.display().to_string(),
                 base_branch: p.base_branch.clone(),
+                group: p.group.clone(),
+                tag: tags.remove(&p.slug).unwrap_or_default(),
+            })
+            .collect();
+        let groups = registry
+            .groups()
+            .iter()
+            .map(|g| GroupView {
+                slug: g.slug.clone(),
+                name: g.name.clone(),
             })
             .collect();
         let worktrees = registry
@@ -279,6 +290,7 @@ impl Inner {
             projects,
             worktrees,
             agents,
+            groups,
         }
     }
 
@@ -746,6 +758,23 @@ impl Inner {
                     .add_project(std::path::Path::new(&path), &git::Env::default());
                 match result {
                     Ok(_) => self.save(),
+                    Err(e) => self.error(e),
+                }
+                self.broadcast_state();
+            }
+            ClientMsg::AddGroup { name, paths } => {
+                let paths: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
+                let result = lock(&self.registry).add_group(&name, &paths, &git::Env::default());
+                match result {
+                    Ok(_) => self.save(),
+                    Err(e) => self.error(e),
+                }
+                self.broadcast_state();
+            }
+            ClientMsg::DissolveGroup { group } => {
+                let result = lock(&self.registry).dissolve_group(&group);
+                match result {
+                    Ok(()) => self.save(),
                     Err(e) => self.error(e),
                 }
                 self.broadcast_state();

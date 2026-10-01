@@ -240,3 +240,219 @@ fn the_total_counts_what_is_listed_without_a_filter() {
     type_text(&mut p, "api");
     assert_eq!(p.total(), 4);
 }
+
+// ---- Grupos ----
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
+/// `work/` do `tree`, mais `work/acme/` com dois repositórios e `other/tool` fora dela.
+fn group_tree() -> TempDir {
+    let tmp = tree();
+    for dir in [
+        "work/acme/acme-api/.git",
+        "work/acme/acme-web/.git",
+        "work/acme/drafts",
+        "other/tool/.git",
+    ] {
+        mkdir(tmp.path(), dir);
+    }
+    tmp
+}
+
+fn select_name(p: &mut Picker, name: &str) {
+    let at = names(p)
+        .iter()
+        .position(|n| n == name)
+        .unwrap_or_else(|| panic!("no entry {name}"));
+    while p.selected() < at {
+        p.on_key(key(KeyCode::Down));
+    }
+    while p.selected() > at {
+        p.on_key(key(KeyCode::Up));
+    }
+}
+
+fn pick_mode(p: &mut Picker, name: &str) {
+    p.on_key(ctrl('n'));
+    type_text(p, name);
+    assert_eq!(p.on_key(key(KeyCode::Enter)), Outcome::Stay);
+}
+
+#[test]
+fn ctrl_f_on_a_folder_with_repositories_returns_a_group_named_after_it() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    select_name(&mut p, "acme");
+    let acme = tmp.path().join("work/acme");
+    assert_eq!(
+        p.on_key(ctrl('f')),
+        Outcome::Group {
+            name: "acme".into(),
+            paths: vec![
+                acme.join("acme-api").display().to_string(),
+                acme.join("acme-web").display().to_string(),
+            ],
+        }
+    );
+}
+
+#[test]
+fn ctrl_f_on_a_folder_without_repositories_explains_and_stays() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    select_name(&mut p, "docs");
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
+    assert_eq!(p.problem(), Some("no repositories in this folder"));
+    // A explicação some na tecla seguinte
+    p.on_key(key(KeyCode::Down));
+    assert_eq!(p.problem(), None);
+}
+
+#[test]
+fn ctrl_f_on_a_repository_does_nothing() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    select_name(&mut p, "api");
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
+    assert_eq!(p.problem(), None);
+}
+
+#[test]
+fn ctrl_f_refuses_a_name_that_is_already_a_group() {
+    let tmp = group_tree();
+    let mut p = open(&tmp).with_groups(&["Acme".to_owned()]);
+    select_name(&mut p, "acme");
+    assert_eq!(p.on_key(ctrl('f')), Outcome::Stay);
+    assert_eq!(p.problem(), Some("a group named acme already exists"));
+}
+
+#[test]
+fn ctrl_n_asks_for_a_name_then_lets_space_mark_repositories() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    p.on_key(ctrl('n'));
+    assert_eq!(
+        *p.mode(),
+        Mode::GroupName {
+            name: String::new()
+        }
+    );
+    type_text(&mut p, "Backend");
+    p.on_key(key(KeyCode::Enter));
+    select_name(&mut p, "api");
+    p.on_key(key(KeyCode::Char(' ')));
+    assert!(p.current().is_some_and(|e| p.is_marked(e)));
+    assert_eq!(
+        p.on_key(key(KeyCode::Enter)),
+        Outcome::Group {
+            name: "Backend".into(),
+            paths: vec![tmp.path().join("work/api").display().to_string()],
+        }
+    );
+}
+
+#[test]
+fn marks_survive_moving_between_folders() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    pick_mode(&mut p, "Mixed");
+    select_name(&mut p, "web");
+    p.on_key(key(KeyCode::Char(' ')));
+    p.on_key(key(KeyCode::Left));
+    select_name(&mut p, "other");
+    p.on_key(key(KeyCode::Right));
+    select_name(&mut p, "tool");
+    p.on_key(key(KeyCode::Char(' ')));
+    assert_eq!(
+        p.on_key(key(KeyCode::Enter)),
+        Outcome::Group {
+            name: "Mixed".into(),
+            paths: vec![
+                tmp.path().join("work/web").display().to_string(),
+                tmp.path().join("other/tool").display().to_string(),
+            ],
+        }
+    );
+}
+
+#[test]
+fn space_in_pick_mode_never_reaches_the_filter_and_unmarks_on_the_second_press() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    pick_mode(&mut p, "G");
+    select_name(&mut p, "api");
+    p.on_key(key(KeyCode::Char(' ')));
+    p.on_key(key(KeyCode::Char(' ')));
+    assert_eq!(p.query(), "");
+    assert!(p.current().is_some_and(|e| !p.is_marked(e)));
+    // Sobre uma pasta comum, a barra de espaço não marca nada
+    select_name(&mut p, "docs");
+    p.on_key(key(KeyCode::Char(' ')));
+    assert_eq!(p.on_key(key(KeyCode::Enter)), Outcome::Stay);
+}
+
+#[test]
+fn enter_without_marks_explains_and_stays() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    pick_mode(&mut p, "G");
+    assert_eq!(p.on_key(key(KeyCode::Enter)), Outcome::Stay);
+    assert_eq!(p.problem(), Some("mark at least one repository"));
+}
+
+#[test]
+fn an_empty_or_taken_group_name_is_refused_inline() {
+    let tmp = group_tree();
+    let mut p = open(&tmp).with_groups(&["Acme".to_owned()]);
+    p.on_key(ctrl('n'));
+    type_text(&mut p, "  ");
+    p.on_key(key(KeyCode::Enter));
+    assert_eq!(p.problem(), Some("give the group a name"));
+    type_text(&mut p, "ACME");
+    p.on_key(key(KeyCode::Enter));
+    assert_eq!(p.problem(), Some("a group named ACME already exists"));
+    assert!(matches!(p.mode(), Mode::GroupName { .. }));
+}
+
+#[test]
+fn a_mapped_repository_can_be_marked_for_a_group() {
+    let tmp = group_tree();
+    let mut p = Picker::open(
+        &tmp.path().join("work"),
+        Some(tmp.path().to_path_buf()),
+        &[tmp.path().join("work/api")],
+    );
+    pick_mode(&mut p, "G");
+    select_name(&mut p, "api");
+    assert!(p.current().is_some_and(|e| e.added));
+    p.on_key(key(KeyCode::Char(' ')));
+    assert!(matches!(
+        p.on_key(key(KeyCode::Enter)),
+        Outcome::Group { paths, .. } if paths.len() == 1
+    ));
+}
+
+#[test]
+fn typing_still_filters_in_pick_mode() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    pick_mode(&mut p, "G");
+    type_text(&mut p, "we");
+    assert_eq!(names(&p), ["web"]);
+}
+
+#[test]
+fn pasting_while_naming_a_group_goes_to_the_name() {
+    let tmp = group_tree();
+    let mut p = open(&tmp);
+    p.on_key(ctrl('n'));
+    p.paste("Backend\n");
+    assert_eq!(
+        *p.mode(),
+        Mode::GroupName {
+            name: "Backend".into()
+        }
+    );
+}

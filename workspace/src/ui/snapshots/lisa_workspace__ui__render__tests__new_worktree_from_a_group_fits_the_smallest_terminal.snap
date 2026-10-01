@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJE┌ New worktree in B-Metric ────────────────────────┐  "
+"▐▾ B-M│› Repo    ‹ api ›  1 of 3                         │  "
+"   ◉ f│  Name                                            │  "
+"   ◆ d│          branch: —                               │  "
+" ▾ blo│  Task    what should the agent do? (optional)    │  "
+"   no │  Agent   ● claude                                │  "
+" ▾ lis│          ○ opencode  no full autonomy            │  "
+"   ✔ s│  Model   ‹ default ›                             │  "
+"      │  Mode    (•) normal   ( ) full autonomy          │  "
+"      │  ⏎ create · tab next field · ←→ change · esc     │  "
+"      └──────────────────────────────────────────────────┘  "
+"                                                            "

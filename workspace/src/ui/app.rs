@@ -1,5 +1,6 @@
 //! Estado e lógica da UI, sem terminal: teclas e mensagens do daemon viram ações.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -10,13 +11,17 @@ use super::picker::{Outcome, Picker};
 use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
 use crate::protocol::work::AgentOption;
 use crate::protocol::work::{
-    AgentState, ClientMsg, Color, CursorPos, DaemonMsg, Line, Modes, PermissionWire, Snapshot,
-    WorkspaceState, WorktreeView,
+    AgentState, ClientMsg, Color, CursorPos, DaemonMsg, GroupView, Line, Modes, PermissionWire,
+    ProjectView, Snapshot, WorkspaceState, WorktreeView,
 };
 use crate::router::{self, Answers, RouteError, RouterConfig, Size};
 
 /// Largura da lateral completa, sem o separador.
-pub const SIDEBAR_WIDTH: u16 = 28;
+pub const SIDEBAR_DEFAULT: u16 = 28;
+pub const SIDEBAR_MIN: u16 = 20;
+pub const SIDEBAR_MAX: u16 = 48;
+/// Colunas que o painel do agente mantém, qualquer que seja a largura da lateral.
+pub const PANE_MIN: u16 = 40;
 /// Largura do trilho de glifos em terminais estreitos, sem o separador.
 pub const RAIL_WIDTH: u16 = 3;
 /// Abaixo desta largura a lateral vira trilho.
@@ -45,11 +50,21 @@ pub enum Action {
     Bell,
     /// Guarda a permissão escolhida como padrão para os próximos worktrees (R9).
     RememberAutonomy(bool),
+    /// Guarda a largura da lateral para a próxima abertura.
+    RememberSidebarWidth(u16),
+    /// Guarda o repositório usado, para o grupo oferecê-lo primeiro da próxima vez.
+    RememberRepo {
+        group: String,
+        project: String,
+    },
     Quit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Row {
+    Group {
+        slug: String,
+    },
     Project {
         slug: String,
     },
@@ -60,10 +75,21 @@ pub enum Row {
     Empty {
         project: String,
     },
+    /// Grupo sem nenhum agente.
+    EmptyGroup {
+        group: String,
+    },
+}
+
+/// Chave de um grupo em `collapsed`. Slug de projeto nunca tem `/`, então não colide.
+pub fn group_key(slug: &str) -> String {
+    format!("group/{slug}")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
+    /// Repositório do grupo; só existe quando o diálogo nasce de um grupo.
+    Repo,
     Name,
     Task,
     Agent,
@@ -90,6 +116,8 @@ pub enum Route {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewWorktree {
+    /// Grupo de onde o diálogo foi aberto; `None` em projeto solto.
+    pub group: Option<String>,
     pub project: String,
     pub name: String,
     /// Tarefa inicial; em branco, o agente sobe vazio como antes.
@@ -148,7 +176,11 @@ fn selected_model(agent: &str, index: usize) -> Option<&'static agents::ModelSpe
 /// Campos por onde o Tab passa, na ordem, para o agente e o modelo selecionados.
 fn fields(d: &NewWorktree, agents: &[AgentOption]) -> Vec<Field> {
     let agent = agents.get(d.agent).map_or("", |a| a.name.as_str());
-    let mut order = vec![Field::Name, Field::Task, Field::Agent];
+    let mut order = Vec::new();
+    if d.group.is_some() {
+        order.push(Field::Repo);
+    }
+    order.extend([Field::Name, Field::Task, Field::Agent]);
     if !model_options(agent).is_empty() {
         order.push(Field::Model);
         if !effort_options(agent, d.model).is_empty() {
@@ -209,6 +241,10 @@ pub enum Dialog {
         sent: bool,
         refused: Option<String>,
     },
+    /// Desfazer o grupo: os repositórios viram projetos soltos.
+    ConfirmDissolve {
+        group: String,
+    },
     Help,
 }
 
@@ -242,6 +278,10 @@ pub struct App {
     exit_message: Option<String>,
     /// Permissão pré-selecionada ao criar um worktree (R9).
     default_autonomy: bool,
+    /// Largura preferida da lateral; a efetiva sai de `sidebar_width`.
+    sidebar_pref: u16,
+    /// Slug do grupo → último projeto em que um worktree foi criado por ele.
+    last_repos: BTreeMap<String, String>,
     router: RouterConfig,
     /// Id da última consulta ao roteador; respostas com outro id são descartadas.
     route_seq: u64,
@@ -266,6 +306,8 @@ impl App {
             window_focused: false,
             exit_message: None,
             default_autonomy: false,
+            sidebar_pref: SIDEBAR_DEFAULT,
+            last_repos: BTreeMap::new(),
             router: RouterConfig::default(),
             route_seq: 0,
             start_dir: PathBuf::from("/"),
@@ -277,6 +319,51 @@ impl App {
     pub fn set_dirs(&mut self, start: PathBuf, home: Option<PathBuf>) {
         self.start_dir = start;
         self.home = home;
+    }
+
+    pub fn set_last_repos(&mut self, last: BTreeMap<String, String>) {
+        self.last_repos = last;
+    }
+
+    /// Largura guardada nas preferências; `None` volta ao padrão.
+    pub fn set_sidebar_width(&mut self, width: Option<u16>) {
+        self.sidebar_pref = width.unwrap_or(SIDEBAR_DEFAULT);
+    }
+
+    /// Largura da lateral completa: a preferida, dentro dos limites e sem deixar o painel
+    /// do agente com menos de `PANE_MIN` colunas.
+    pub fn sidebar_width(&self) -> u16 {
+        let ceiling = if self.wide() {
+            SIDEBAR_MAX
+                .min(self.cols.saturating_sub(PANE_MIN + 1))
+                .max(SIDEBAR_MIN)
+        } else {
+            SIDEBAR_MAX
+        };
+        self.sidebar_pref.clamp(SIDEBAR_MIN, ceiling)
+    }
+
+    /// `<` e `>`: uma coluna por toque. No limite, nada acontece.
+    fn resize_sidebar(&mut self, wider: bool) -> Vec<Action> {
+        let before = self.sidebar_width();
+        self.sidebar_pref = if wider {
+            before.saturating_add(1)
+        } else {
+            before.saturating_sub(1)
+        };
+        let after = self.sidebar_width();
+        self.sidebar_pref = after;
+        if after == before {
+            return Vec::new();
+        }
+        let mut actions = Vec::new();
+        // Em terminal estreito a lateral é uma sobreposição: o painel não muda de tamanho
+        if self.wide() {
+            let (cols, rows) = self.pane_size();
+            actions.push(Action::Send(ClientMsg::Resize { cols, rows }));
+        }
+        actions.push(Action::RememberSidebarWidth(after));
+        actions
     }
 
     pub fn set_default_autonomy(&mut self, autonomy: bool) {
@@ -357,7 +444,7 @@ impl App {
     /// Tamanho do painel do agente.
     pub fn pane_size(&self) -> (u16, u16) {
         let side = if self.wide() {
-            SIDEBAR_WIDTH
+            self.sidebar_width()
         } else {
             RAIL_WIDTH
         } + 1;
@@ -400,33 +487,129 @@ impl App {
         self.exit_message.as_deref()
     }
 
-    pub fn is_collapsed(&self, slug: &str) -> bool {
-        self.collapsed.iter().any(|c| c == slug)
+    /// `key`: slug do projeto ou `group_key` do grupo.
+    pub fn is_collapsed(&self, key: &str) -> bool {
+        self.collapsed.iter().any(|c| c == key)
     }
 
+    fn toggle_collapsed(&mut self, key: String) {
+        if self.is_collapsed(&key) {
+            self.collapsed.retain(|c| *c != key);
+        } else {
+            self.collapsed.push(key);
+        }
+    }
+
+    fn group_exists(&self, slug: &str) -> bool {
+        self.workspace.groups.iter().any(|g| g.slug == slug)
+    }
+
+    /// Grupo do projeto, se o grupo existir.
+    fn group_of(&self, project: &str) -> Option<&str> {
+        self.workspace
+            .projects
+            .iter()
+            .find(|p| p.slug == project)
+            .and_then(|p| p.group.as_deref())
+            .filter(|g| self.group_exists(g))
+    }
+
+    /// Projetos do grupo, em ordem alfabética da marca.
+    pub fn group_repos(&self, group: &str) -> Vec<&ProjectView> {
+        let mut repos: Vec<&ProjectView> = self
+            .workspace
+            .projects
+            .iter()
+            .filter(|p| p.group.as_deref() == Some(group))
+            .collect();
+        repos.sort_by_key(|p| (p.tag.to_lowercase(), p.slug.clone()));
+        repos
+    }
+
+    /// Marca do repositório do worktree, quando ele pertence a um grupo.
+    pub fn tag(&self, worktree: &WorktreeView) -> Option<&str> {
+        self.group_of(&worktree.project)?;
+        self.workspace
+            .projects
+            .iter()
+            .find(|p| p.slug == worktree.project)
+            .map(|p| p.tag.as_str())
+    }
+
+    /// Worktrees do grupo, na ordem em que aparecem no menu.
+    pub fn group_worktrees(&self, group: &str) -> Vec<&WorktreeView> {
+        self.group_repos(group)
+            .into_iter()
+            .flat_map(|p| {
+                self.workspace
+                    .worktrees
+                    .iter()
+                    .filter(move |w| w.project == p.slug)
+            })
+            .collect()
+    }
+
+    /// Grupos e projetos soltos numa lista só, em ordem alfabética; sob um grupo aberto,
+    /// os agentes de todos os seus repositórios.
     pub fn rows(&self) -> Vec<Row> {
+        enum Top<'a> {
+            Group(&'a GroupView),
+            Project(&'a ProjectView),
+        }
+        let ws = &self.workspace;
+        let mut tops: Vec<(String, &str, Top)> = ws
+            .groups
+            .iter()
+            .map(|g| (g.name.to_lowercase(), g.slug.as_str(), Top::Group(g)))
+            .chain(
+                ws.projects
+                    .iter()
+                    .filter(|p| self.group_of(&p.slug).is_none())
+                    .map(|p| (p.name.to_lowercase(), p.slug.as_str(), Top::Project(p))),
+            )
+            .collect();
+        tops.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+
         let mut rows = Vec::new();
-        for p in &self.workspace.projects {
-            rows.push(Row::Project {
-                slug: p.slug.clone(),
-            });
-            if self.is_collapsed(&p.slug) {
-                continue;
-            }
-            let mut any = false;
-            for w in self
-                .workspace
-                .worktrees
-                .iter()
-                .filter(|w| w.project == p.slug)
-            {
-                rows.push(Row::Worktree { id: w.id.clone() });
-                any = true;
-            }
-            if !any {
-                rows.push(Row::Empty {
-                    project: p.slug.clone(),
-                });
+        for (_, _, top) in tops {
+            match top {
+                Top::Group(g) => {
+                    rows.push(Row::Group {
+                        slug: g.slug.clone(),
+                    });
+                    if self.is_collapsed(&group_key(&g.slug)) {
+                        continue;
+                    }
+                    let worktrees = self.group_worktrees(&g.slug);
+                    if worktrees.is_empty() {
+                        rows.push(Row::EmptyGroup {
+                            group: g.slug.clone(),
+                        });
+                    }
+                    rows.extend(
+                        worktrees
+                            .into_iter()
+                            .map(|w| Row::Worktree { id: w.id.clone() }),
+                    );
+                }
+                Top::Project(p) => {
+                    rows.push(Row::Project {
+                        slug: p.slug.clone(),
+                    });
+                    if self.is_collapsed(&p.slug) {
+                        continue;
+                    }
+                    let mut any = false;
+                    for w in ws.worktrees.iter().filter(|w| w.project == p.slug) {
+                        rows.push(Row::Worktree { id: w.id.clone() });
+                        any = true;
+                    }
+                    if !any {
+                        rows.push(Row::Empty {
+                            project: p.slug.clone(),
+                        });
+                    }
+                }
             }
         }
         rows
@@ -455,6 +638,20 @@ impl App {
             Row::Project { slug } => Some(slug),
             Row::Empty { project } => Some(project),
             Row::Worktree { id } => self.worktree(&id).map(|w| w.project.clone()),
+            Row::Group { .. } | Row::EmptyGroup { .. } => None,
+        }
+    }
+
+    /// Grupo da linha selecionada: a do grupo, a vazia ou um agente de um repositório dele.
+    pub fn selected_group(&self) -> Option<String> {
+        match self.selected_row()? {
+            Row::Group { slug } => Some(slug),
+            Row::EmptyGroup { group } => Some(group),
+            Row::Worktree { id } => {
+                let project = &self.worktree(&id)?.project;
+                self.group_of(project).map(str::to_owned)
+            }
+            Row::Project { .. } | Row::Empty { .. } => None,
         }
     }
 
@@ -616,6 +813,7 @@ impl App {
         {
             d.agent = index;
         }
+        self.follow_group_changes();
         let mut actions = Vec::new();
 
         // Worktree recém-criado: fecha o diálogo e abre no painel
@@ -651,6 +849,46 @@ impl App {
             .and_then(|r| rows.iter().position(|x| *x == r))
             .unwrap_or_else(|| self.selected.min(rows.len().saturating_sub(1)));
         actions
+    }
+
+    /// O grupo ou o repositório do diálogo de novo worktree podem mudar por baixo dele:
+    /// o diálogo nunca fica apontando para um repositório que não existe mais.
+    fn follow_group_changes(&mut self) {
+        let Some(Dialog::NewWorktree(d)) = &self.dialog else {
+            return;
+        };
+        if d.pending {
+            return;
+        }
+        let project = self.workspace.projects.iter().find(|p| p.slug == d.project);
+        let Some(project) = project else {
+            self.dialog = None;
+            self.set_notice(NoticeKind::Warn, "the repository is no longer mapped");
+            return;
+        };
+        let Some(group) = d.group.clone() else {
+            return;
+        };
+        let still_member = project.group.as_deref() == Some(group.as_str());
+        let first = self
+            .group_repos(&group)
+            .first()
+            .map(|p| p.slug.clone())
+            .filter(|_| self.group_exists(&group));
+        if let Some(Dialog::NewWorktree(d)) = self.dialog.as_mut() {
+            match first {
+                // O repositório saiu do grupo: o diálogo segue no primeiro que ficou
+                Some(first) if !still_member => d.project = first,
+                Some(_) => {}
+                // O grupo sumiu: o diálogo continua, como de projeto solto
+                None => {
+                    d.group = None;
+                    if d.field == Field::Repo {
+                        d.field = Field::Name;
+                    }
+                }
+            }
+        }
     }
 
     /// Abre o worktree no painel e informa o foco ao daemon.
@@ -721,18 +959,33 @@ impl App {
             }
             KeyCode::Enter => match self.selected_row() {
                 Some(Row::Worktree { id }) => return self.open(&id),
-                Some(Row::Project { slug }) => {
-                    if self.is_collapsed(&slug) {
-                        self.collapsed.retain(|c| *c != slug);
-                    } else {
-                        self.collapsed.push(slug);
-                    }
-                }
+                Some(Row::Project { slug }) => self.toggle_collapsed(slug),
+                Some(Row::Group { slug }) => self.toggle_collapsed(group_key(&slug)),
                 _ => {}
             },
-            KeyCode::Char('n') => match self.selected_project() {
-                Some(project) => self.open_new_worktree(project),
-                None => self.set_notice(NoticeKind::Info, "add a project first (p)"),
+            KeyCode::Char('n') => match (self.selected_group(), self.selected_project()) {
+                // Agente de um grupo: já vem no repositório dele
+                (Some(group), Some(project)) => {
+                    self.open_new_worktree(project, Some(group), Field::Name);
+                }
+                // Linha do grupo: o último repositório usado ou o primeiro
+                (Some(group), None) => {
+                    let repos = self.group_repos(&group);
+                    let last = self.last_repos.get(&group);
+                    let project = repos
+                        .iter()
+                        .find(|p| Some(&p.slug) == last)
+                        .or(repos.first())
+                        .map(|p| p.slug.clone());
+                    match project {
+                        Some(project) => {
+                            self.open_new_worktree(project, Some(group), Field::Repo);
+                        }
+                        None => self.set_notice(NoticeKind::Info, "this group has no repositories"),
+                    }
+                }
+                (None, Some(project)) => self.open_new_worktree(project, None, Field::Name),
+                (None, None) => self.set_notice(NoticeKind::Info, "add a project first (p)"),
             },
             KeyCode::Char('p') => self.open_add_project(),
             KeyCode::Char('b') => {
@@ -748,7 +1001,11 @@ impl App {
                 }
             }
             KeyCode::Char('d') => {
-                if let Some(w) = self.selected_worktree() {
+                if let Some(Row::Group { slug: group } | Row::EmptyGroup { group }) =
+                    self.selected_row()
+                {
+                    self.dialog = Some(Dialog::ConfirmDissolve { group });
+                } else if let Some(w) = self.selected_worktree() {
                     self.dialog = Some(Dialog::ConfirmRemove {
                         id: w.id,
                         sent: false,
@@ -770,6 +1027,8 @@ impl App {
                     return vec![Action::Send(ClientMsg::StopAgent { id: w.id })];
                 }
             }
+            KeyCode::Char('<') => return self.resize_sidebar(false),
+            KeyCode::Char('>') => return self.resize_sidebar(true),
             KeyCode::Char('?') => self.dialog = Some(Dialog::Help),
             KeyCode::Char('q') => return vec![Action::Quit],
             _ => {}
@@ -807,14 +1066,18 @@ impl App {
             .find(|dir| dir.is_dir())
             .unwrap_or_else(|| PathBuf::from("/"));
         let added: Vec<PathBuf> = projects.iter().map(|p| PathBuf::from(&p.path)).collect();
-        self.dialog = Some(Dialog::AddProject(Picker::open(
-            &start,
-            self.home.clone(),
-            &added,
-        )));
+        let groups: Vec<String> = self
+            .workspace
+            .groups
+            .iter()
+            .map(|g| g.name.clone())
+            .collect();
+        self.dialog = Some(Dialog::AddProject(
+            Picker::open(&start, self.home.clone(), &added).with_groups(&groups),
+        ));
     }
 
-    fn open_new_worktree(&mut self, project: String) {
+    fn open_new_worktree(&mut self, project: String, group: Option<String>, field: Field) {
         let agent = self
             .workspace
             .agents
@@ -827,6 +1090,7 @@ impl App {
             .get(agent)
             .is_some_and(|a| a.autonomy_supported);
         self.dialog = Some(Dialog::NewWorktree(NewWorktree {
+            group,
             project,
             name: String::new(),
             task: String::new(),
@@ -834,7 +1098,7 @@ impl App {
             model: 0,
             effort: None,
             autonomy: self.default_autonomy && supported,
-            field: Field::Name,
+            field,
             pending: false,
             error: None,
             route: Route::Idle,
@@ -847,6 +1111,20 @@ impl App {
 
     fn on_dialog_key(&mut self, key: KeyEvent) -> Vec<Action> {
         let agents = self.workspace.agents.clone();
+        // Repositórios do grupo do diálogo: (slug, marca), na ordem do menu
+        let repos: Vec<(String, String)> = match &self.dialog {
+            Some(Dialog::NewWorktree(d)) => d
+                .group
+                .as_deref()
+                .map(|g| {
+                    self.group_repos(g)
+                        .iter()
+                        .map(|p| (p.slug.clone(), p.tag.clone()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
         let Some(dialog) = self.dialog.as_mut() else {
             return Vec::new();
         };
@@ -862,10 +1140,23 @@ impl App {
                 self.dialog = None;
                 Vec::new()
             }
+            Dialog::ConfirmDissolve { group } => {
+                let group = group.clone();
+                self.dialog = None;
+                if key.code == KeyCode::Char('y') {
+                    vec![Action::Send(ClientMsg::DissolveGroup { group })]
+                } else {
+                    Vec::new()
+                }
+            }
             Dialog::AddProject(picker) => match picker.on_key(key) {
                 Outcome::Add(path) => {
                     self.dialog = None;
                     vec![Action::Send(ClientMsg::AddProject { path })]
+                }
+                Outcome::Group { name, paths } => {
+                    self.dialog = None;
+                    vec![Action::Send(ClientMsg::AddGroup { name, paths })]
                 }
                 Outcome::Stay => Vec::new(),
             },
@@ -922,6 +1213,40 @@ impl App {
                         d.field = order[next];
                         if leaving_task {
                             return route_request(d, &mut self.route_seq).into_iter().collect();
+                        }
+                    }
+                    (Field::Repo, KeyCode::Left | KeyCode::Right) => {
+                        let slugs: Vec<&str> =
+                            repos.iter().map(|(slug, _)| slug.as_str()).collect();
+                        if !slugs.is_empty() {
+                            let here = slugs.iter().position(|s| *s == d.project).unwrap_or(0);
+                            let next = if key.code == KeyCode::Right {
+                                (here + 1) % slugs.len()
+                            } else {
+                                (here + slugs.len() - 1) % slugs.len()
+                            };
+                            d.project = slugs[next].to_owned();
+                        }
+                    }
+                    // Uma letra pula para o próximo repositório cuja marca começa com ela
+                    (Field::Repo, KeyCode::Char(c))
+                        if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        let here = repos
+                            .iter()
+                            .position(|(slug, _)| *slug == d.project)
+                            .unwrap_or(0);
+                        let wanted: Vec<char> = c.to_lowercase().collect();
+                        let hit =
+                            (1..=repos.len())
+                                .map(|step| (here + step) % repos.len())
+                                .find(|i| {
+                                    repos[*i].1.chars().next().is_some_and(|f| {
+                                        f.to_lowercase().eq(wanted.iter().copied())
+                                    })
+                                });
+                        if let Some(i) = hit {
+                            d.project = repos[i].0.clone();
                         }
                     }
                     (Field::Name, _) if edit_text(&mut d.name, key) => {}
@@ -984,7 +1309,14 @@ impl App {
                         let task = d.task.trim();
                         let prompt = (!task.is_empty() && task_delivered(&agent.name))
                             .then(|| task.to_owned());
-                        return vec![
+                        let remember = d.group.clone().map(|group| Action::RememberRepo {
+                            group,
+                            project: d.project.clone(),
+                        });
+                        if let Some(Action::RememberRepo { group, project }) = &remember {
+                            self.last_repos.insert(group.clone(), project.clone());
+                        }
+                        let mut actions = vec![
                             Action::Send(ClientMsg::CreateWorktree {
                                 project: d.project.clone(),
                                 name: d.name.trim().to_owned(),
@@ -1000,6 +1332,8 @@ impl App {
                             }),
                             Action::RememberAutonomy(autonomy),
                         ];
+                        actions.extend(remember);
+                        return actions;
                     }
                     _ => {}
                 }

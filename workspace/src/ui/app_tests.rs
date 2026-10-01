@@ -1,5 +1,5 @@
 use super::*;
-use crate::protocol::work::{AgentOption, AgentState, ProjectView, WorktreeView};
+use crate::protocol::work::{AgentOption, AgentState, GroupView, ProjectView, WorktreeView};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -28,18 +28,23 @@ fn wt(id: &str, state: AgentState, running: bool) -> WorktreeView {
 
 fn workspace() -> WorkspaceState {
     WorkspaceState {
+        groups: Vec::new(),
         projects: vec![
             ProjectView {
                 slug: "api".into(),
                 name: "api".into(),
                 path: "/r/api".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
             ProjectView {
                 slug: "web".into(),
                 name: "web".into(),
                 path: "/r/web".into(),
                 base_branch: "main".into(),
+                group: None,
+                tag: String::new(),
             },
         ],
         worktrees: vec![
@@ -1075,4 +1080,535 @@ fn pasting_a_path_into_the_picker_selects_that_repository() {
     a.on_key(key(KeyCode::Char('p')));
     a.on_paste(&format!("{}/work/api\n", tmp.path().display()));
     assert!(picker(&a).current().is_some_and(|e| e.name == "api"));
+}
+
+// ---- Grupos ----
+
+fn project(slug: &str, name: &str, group: Option<&str>, tag: &str) -> ProjectView {
+    ProjectView {
+        slug: slug.into(),
+        name: name.into(),
+        path: format!("/r/{slug}"),
+        base_branch: "main".into(),
+        group: group.map(str::to_owned),
+        tag: tag.into(),
+    }
+}
+
+fn group(slug: &str, name: &str) -> GroupView {
+    GroupView {
+        slug: slug.into(),
+        name: name.into(),
+    }
+}
+
+/// Grupo B-Metric (web e api, nessa ordem no registro), mais bloom e Lisa soltos.
+fn workspace_with_groups() -> WorkspaceState {
+    WorkspaceState {
+        groups: vec![group("b-metric", "B-Metric")],
+        projects: vec![
+            project("lisa", "Lisa", None, ""),
+            project("b-metric-web", "b-metric-web", Some("b-metric"), "web"),
+            project("bloom", "bloom", None, ""),
+            project("b-metric-api", "b-metric-api", Some("b-metric"), "api"),
+        ],
+        worktrees: vec![
+            wt("b-metric-web/dashboard", AgentState::Working, true),
+            wt("b-metric-api/ingest", AgentState::NeedsYou, true),
+            wt("lisa/sidebar", AgentState::Done, true),
+        ],
+        agents: workspace().agents,
+    }
+}
+
+fn grouped() -> App {
+    let mut a = App::new(120, 30);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace_with_groups()));
+    a
+}
+
+fn top_level(a: &App) -> Vec<Row> {
+    a.rows()
+        .into_iter()
+        .filter(|r| matches!(r, Row::Group { .. } | Row::Project { .. }))
+        .collect()
+}
+
+#[test]
+fn groups_and_projects_share_one_alphabetical_list() {
+    assert_eq!(
+        top_level(&grouped()),
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Project {
+                slug: "bloom".into()
+            },
+            Row::Project {
+                slug: "lisa".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_group_lists_its_agents_by_repository_tag() {
+    let rows = grouped().rows();
+    assert_eq!(
+        rows[..3],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Worktree {
+                id: "b-metric-api/ingest".into()
+            },
+            Row::Worktree {
+                id: "b-metric-web/dashboard".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_repository_without_agents_takes_no_row() {
+    let mut ws = workspace_with_groups();
+    ws.worktrees.retain(|w| w.project != "b-metric-api");
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    let rows = a.rows();
+    assert!(!rows.iter().any(|r| matches!(
+        r,
+        Row::Project { slug } | Row::Empty { project: slug } if slug.starts_with("b-metric")
+    )));
+    assert_eq!(
+        rows[..2],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Worktree {
+                id: "b-metric-web/dashboard".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_group_without_agents_shows_one_hint_row() {
+    let mut ws = workspace_with_groups();
+    ws.worktrees.retain(|w| w.project == "lisa");
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    assert_eq!(
+        a.rows()[..3],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::EmptyGroup {
+                group: "b-metric".into()
+            },
+            Row::Project {
+                slug: "bloom".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn folding_a_group_does_not_fold_a_project_with_the_same_slug() {
+    let mut ws = workspace_with_groups();
+    ws.groups.push(group("lisa", "Lisa tools"));
+    ws.projects
+        .push(project("lisa-cli", "lisa-cli", Some("lisa"), "cli"));
+    ws.worktrees
+        .push(wt("lisa-cli/flags", AgentState::Working, true));
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| {
+            *r == Row::Group {
+                slug: "lisa".into(),
+            }
+        })
+        .unwrap_or_else(|| panic!("no group row"));
+    a.select_row(at);
+    a.on_key(key(KeyCode::Enter));
+    let rows = a.rows();
+    assert!(!rows.contains(&Row::Worktree {
+        id: "lisa-cli/flags".into()
+    }));
+    assert!(rows.contains(&Row::Worktree {
+        id: "lisa/sidebar".into()
+    }));
+}
+
+#[test]
+fn the_selection_stays_on_the_same_row_when_groups_arrive() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    let mut ws = workspace_with_groups();
+    ws.groups.push(group("acme", "Acme"));
+    ws.projects
+        .push(project("acme-api", "acme-api", Some("acme"), "api"));
+    a.on_daemon(DaemonMsg::State(ws));
+    assert_eq!(
+        a.selected_row(),
+        Some(Row::Worktree {
+            id: "lisa/sidebar".into()
+        })
+    );
+}
+
+#[test]
+fn a_project_whose_group_is_gone_is_listed_standalone() {
+    let mut ws = workspace_with_groups();
+    ws.groups.clear();
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    assert!(a.rows().contains(&Row::Project {
+        slug: "b-metric-api".into()
+    }));
+    let w = wt("b-metric-api/ingest", AgentState::Working, true);
+    assert_eq!(a.tag(&w), None);
+}
+
+// ---- Largura da lateral ----
+
+fn ch(c: char) -> KeyEvent {
+    key(KeyCode::Char(c))
+}
+
+#[test]
+fn angle_keys_resize_the_sidebar_one_column_and_resize_the_pane() {
+    let mut a = app();
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+    let actions = a.on_key(ch('>'));
+    assert_eq!(a.sidebar_width(), 29);
+    assert_eq!(
+        actions,
+        [
+            Action::Send(ClientMsg::Resize { cols: 90, rows: 29 }),
+            Action::RememberSidebarWidth(29),
+        ]
+    );
+    let actions = a.on_key(ch('<'));
+    assert_eq!(a.sidebar_width(), 28);
+    assert_eq!(
+        actions,
+        [
+            Action::Send(ClientMsg::Resize { cols: 91, rows: 29 }),
+            Action::RememberSidebarWidth(28),
+        ]
+    );
+}
+
+#[test]
+fn the_sidebar_width_stops_at_its_limits() {
+    let mut a = app();
+    for _ in 0..48 {
+        a.on_key(ch('>'));
+    }
+    assert_eq!(a.sidebar_width(), SIDEBAR_MAX);
+    assert!(a.on_key(ch('>')).is_empty());
+    for _ in 0..48 {
+        a.on_key(ch('<'));
+    }
+    assert_eq!(a.sidebar_width(), SIDEBAR_MIN);
+    assert!(a.on_key(ch('<')).is_empty());
+}
+
+#[test]
+fn a_stored_width_outside_the_limits_is_clamped() {
+    let mut a = app();
+    a.set_sidebar_width(Some(200));
+    assert_eq!(a.sidebar_width(), SIDEBAR_MAX);
+    a.set_sidebar_width(Some(3));
+    assert_eq!(a.sidebar_width(), SIDEBAR_MIN);
+    a.set_sidebar_width(None);
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+}
+
+#[test]
+fn the_pane_never_gets_narrower_than_its_minimum() {
+    let mut a = App::new(100, 30);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace()));
+    a.set_sidebar_width(Some(SIDEBAR_MAX));
+    let (cols, _) = a.pane_size();
+    assert!(cols >= PANE_MIN, "{cols}");
+}
+
+#[test]
+fn angle_keys_send_nothing_to_the_agent_and_do_nothing_under_a_dialog() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    // No painel, a tecla é do agente
+    let actions = a.on_key(ch('>'));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::Input { .. }]
+    ));
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+    a.on_key(ctrl('a'));
+    a.on_key(ch('?'));
+    assert!(a.on_key(ch('>')).is_empty());
+    assert_eq!(a.sidebar_width(), SIDEBAR_DEFAULT);
+}
+
+#[test]
+fn in_a_narrow_terminal_the_overlay_resizes_without_resizing_the_pane() {
+    let mut a = App::new(80, 20);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace()));
+    let before = a.pane_size();
+    let actions = a.on_key(ch('>'));
+    assert_eq!(actions, [Action::RememberSidebarWidth(29)]);
+    assert_eq!(a.pane_size(), before);
+}
+
+// ---- Lançar pelo grupo ----
+
+fn select_row(a: &mut App, row: &Row) {
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| r == row)
+        .unwrap_or_else(|| panic!("no row {row:?}"));
+    a.select_row(at);
+}
+
+fn group_row() -> Row {
+    Row::Group {
+        slug: "b-metric".into(),
+    }
+}
+
+#[test]
+fn n_on_a_group_asks_for_the_repository_first() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.field, Field::Repo);
+    assert_eq!(d.project, "b-metric-api");
+}
+
+#[test]
+fn n_on_a_grouped_agent_preselects_its_repository() {
+    let mut a = grouped();
+    select(&mut a, "b-metric-web/dashboard");
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.project, "b-metric-web");
+    assert_eq!(d.field, Field::Name);
+}
+
+#[test]
+fn n_on_a_standalone_project_has_no_repo_field() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).group, None);
+    for _ in 0..8 {
+        a.on_key(key(KeyCode::Tab));
+        assert_ne!(new_worktree(&a).field, Field::Repo);
+    }
+}
+
+#[test]
+fn arrows_cycle_the_repositories_and_a_letter_jumps_by_tag() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    a.on_key(key(KeyCode::Left));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    a.on_key(ch('A'));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    a.on_key(ch('w'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    // Letra que nenhuma marca usa não muda nada nem vira texto
+    a.on_key(ch('z'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    assert_eq!(new_worktree(&a).name, "");
+}
+
+#[test]
+fn the_last_repository_used_in_a_group_is_offered_first() {
+    let mut a = grouped();
+    a.set_last_repos(BTreeMap::from([(
+        "b-metric".to_owned(),
+        "b-metric-web".to_owned(),
+    )]));
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+
+    a.on_key(key(KeyCode::Esc));
+    a.set_last_repos(BTreeMap::from([(
+        "b-metric".to_owned(),
+        "bloom".to_owned(),
+    )]));
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+}
+
+#[test]
+fn creating_from_a_group_targets_the_chosen_repository_and_remembers_it() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::Tab));
+    type_text(&mut a, "filters");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::CreateWorktree { project, name, .. }]
+            if project == "b-metric-web" && name == "filters"
+    ));
+    assert!(actions.contains(&Action::RememberRepo {
+        group: "b-metric".into(),
+        project: "b-metric-web".into(),
+    }));
+}
+
+#[test]
+fn creating_from_a_standalone_project_remembers_no_repository() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('n'));
+    type_text(&mut a, "x");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(
+        !actions
+            .iter()
+            .any(|a| matches!(a, Action::RememberRepo { .. }))
+    );
+}
+
+#[test]
+fn a_group_dissolved_under_the_dialog_keeps_the_dialog_on_its_project() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    ws.groups.clear();
+    for p in &mut ws.projects {
+        p.group = None;
+        p.tag.clear();
+    }
+    a.on_daemon(DaemonMsg::State(ws));
+    let d = new_worktree(&a);
+    assert_eq!(d.group, None);
+    assert_eq!(d.project, "b-metric-api");
+    assert_eq!(d.field, Field::Name);
+}
+
+#[test]
+fn a_repository_leaving_the_group_moves_the_dialog_to_the_first_one() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    for p in &mut ws.projects {
+        if p.slug == "b-metric-api" {
+            p.group = None;
+            p.tag.clear();
+        }
+    }
+    a.on_daemon(DaemonMsg::State(ws));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.project, "b-metric-web");
+}
+
+#[test]
+fn a_removed_repository_closes_the_dialog_with_a_notice() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    ws.projects.retain(|p| p.slug != "b-metric-api");
+    a.on_daemon(DaemonMsg::State(ws));
+    assert!(a.dialog().is_none());
+    assert!(
+        a.notice()
+            .is_some_and(|n| n.text.contains("no longer mapped"))
+    );
+}
+
+// ---- Criar e desfazer grupos ----
+
+#[test]
+fn a_group_from_the_picker_is_sent_to_the_daemon() {
+    let tmp = tempfile::TempDir::new().unwrap_or_else(|e| panic!("{e}"));
+    for dir in ["acme/acme-api/.git", "acme/acme-web/.git"] {
+        std::fs::create_dir_all(tmp.path().join(dir)).unwrap_or_else(|e| panic!("{e}"));
+    }
+    let mut a = App::new(120, 30);
+    a.on_focus(true);
+    a.set_dirs(tmp.path().to_path_buf(), None);
+    a.on_key(ch('p'));
+    let actions = a.on_key(ctrl('f'));
+    let acme = tmp.path().join("acme");
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::AddGroup {
+            name: "acme".into(),
+            paths: vec![
+                acme.join("acme-api").display().to_string(),
+                acme.join("acme-web").display().to_string(),
+            ],
+        }]
+    );
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn d_on_a_group_asks_before_ungrouping_and_y_sends_it() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    assert!(a.on_key(ch('d')).is_empty());
+    assert_eq!(
+        a.dialog(),
+        Some(&Dialog::ConfirmDissolve {
+            group: "b-metric".into()
+        })
+    );
+    let actions = a.on_key(ch('y'));
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::DissolveGroup {
+            group: "b-metric".into()
+        }]
+    );
+    assert!(a.dialog().is_none());
+
+    // Qualquer outra tecla desiste
+    a.on_key(ch('d'));
+    assert!(a.on_key(ch('n')).is_empty());
+    assert!(a.dialog().is_none());
+}
+
+#[test]
+fn d_on_a_grouped_agent_still_removes_the_worktree() {
+    let mut a = grouped();
+    select(&mut a, "b-metric-api/ingest");
+    a.on_key(ch('d'));
+    assert!(matches!(
+        a.dialog(),
+        Some(Dialog::ConfirmRemove { id, .. }) if id == "b-metric-api/ingest"
+    ));
 }

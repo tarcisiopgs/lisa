@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+" PROJECTS                   │                                                                       "
+"▐▾ B-Metric                 │                                                                       "
+"   no worktrees · n         │                                                                       "
+" ▾ bloom                    │                                                                       "
+"   no worktrees · n         │                                                                       "
+" ▾ lisa                     │                                                                       "
+"   ✔ sidebar-groups         │                     ⏎ opens the selected worktree                     "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                              ⏎ open · n new · p project · d ungroup · r restart · ? help · q quit  "

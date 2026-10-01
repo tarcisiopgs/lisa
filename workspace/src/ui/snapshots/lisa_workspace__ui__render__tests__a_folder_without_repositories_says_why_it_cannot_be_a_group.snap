@@ -1,25 +1,21 @@
 ---
 source: src/ui/render_tests.rs
-expression: draw(&a).backend()
+expression: t.backend()
 ---
 " PROJECTS                   │                                                                       "
 "▐▾ api                      │                                                                       "
 "   ◉ fix-login              │                                                                       "
-"   ◆ rate-limit             │       ┌ New worktree in api ─────────────────────────────────┐        "
-"   ○ docs-update            │       │› Name    ▏                                           │        "
-" ▾ lisa                     │       │          branch: —                                   │        "
+"   ◆ rate-limit             │       ┌ Add project ─────────────────────────────────────────┐        "
+"   ○ docs-update            │       │  ~/Workspace/                                        │        "
+" ▾ lisa                     │       │  › arch▏                                             │        "
 "   no worktrees · n         │       │                                                      │        "
-" ▾ web                      │       │  Task    what should the agent do? (optional)        │        "
+" ▾ web                      │       │  ▐   archive/                                        │        "
 "   ✔ new-checkout           │       │                                                      │        "
-"                            │       │  Agent   ● claude                                    │        "
-"                            │       │          ○ opencode  no full autonomy                │        "
-"                            │       │          ○ gemini  not installed                     │        "
 "                            │       │                                                      │        "
-"                            │       │  Model   ‹ default ›                                 │        "
 "                            │       │                                                      │        "
-"                            │       │  Mode    (•) normal   ( ) full autonomy              │        "
 "                            │       │                                                      │        "
-"                            │       │  ⏎ create · tab next field · ←→ change · esc cancel  │        "
+"                            │       │  no repositories in this folder                      │        "
+"                            │       │  ⏎ open · ^f as group · ^n new group · esc cancel    │        "
 "                            │       └──────────────────────────────────────────────────────┘        "
 "                            │                                                                       "
 "                            │                                                                       "
