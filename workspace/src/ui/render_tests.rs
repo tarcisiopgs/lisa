@@ -249,3 +249,192 @@ fn tiny_terminal_says_so() {
     let a = app(50, 10);
     insta::assert_snapshot!(draw(&a).backend());
 }
+
+// ---- Diálogo de novo worktree com tarefa e sugestão ----
+
+use crate::router::{Answers, Kind, RouteError, Size};
+use crate::ui::app::Action;
+
+fn text(a: &App) -> String {
+    format!("{}", draw(a).backend())
+}
+
+fn type_in(a: &mut App, s: &str) {
+    for c in s.chars() {
+        a.on_key(key(KeyCode::Char(c)));
+    }
+}
+
+/// Diálogo aberto, com nome e tarefa digitados e o foco já fora da tarefa.
+/// Devolve o id da consulta pedida ao roteador.
+fn with_task(cols: u16, rows: u16, task: &str) -> (App, u64) {
+    let mut a = app(cols, rows);
+    a.on_key(key(KeyCode::Char('n')));
+    type_in(&mut a, "fix-login-redirect");
+    a.on_key(key(KeyCode::Tab));
+    type_in(&mut a, task);
+    let id = a
+        .on_key(key(KeyCode::Tab))
+        .iter()
+        .find_map(|x| match x {
+            Action::Route { id, .. } => Some(*id),
+            _ => None,
+        })
+        .unwrap_or(0);
+    (a, id)
+}
+
+fn answers(size: Size, depth: f32, kind: Kind, kind_confidence: f32) -> Answers {
+    let mut size_probs = [0.0; 4];
+    size_probs[size as usize] = 1.0;
+    Answers {
+        size_probs,
+        size_confidence: 0.9,
+        depth,
+        kind,
+        kind_confidence,
+    }
+}
+
+const TASK: &str = "Fix the redirect loop on login when the session cookie has expired";
+
+#[test]
+fn new_worktree_dialog_shows_the_task_field() {
+    let mut a = app(100, 24);
+    a.on_key(key(KeyCode::Char('n')));
+    let screen = text(&a);
+    assert!(screen.contains("Task"), "{screen}");
+    assert!(
+        screen.contains("⏎ create · tab next field · ←→ change · esc cancel"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn routing_shows_on_the_selected_agent_row() {
+    let (a, _) = with_task(100, 24, TASK);
+    let screen = text(&a);
+    assert!(screen.contains("● claude  routing…"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn suggestion_marks_the_agent_and_fills_the_model() {
+    let (mut a, id) = with_task(100, 24, TASK);
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    let screen = text(&a);
+    assert!(screen.contains("● claude  suggested · 86%"), "{screen}");
+    assert!(screen.contains("‹ opus ›   effort ‹ high ›"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn unsure_suggestion_says_so() {
+    let (mut a, id) = with_task(100, 24, TASK);
+    a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.2)));
+    let screen = text(&a);
+    assert!(
+        screen.contains("● claude  unsure · your default"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn failure_reason_sits_under_the_task() {
+    let (mut a, id) = with_task(100, 24, TASK);
+    a.on_route(id, Err(RouteError::NoKey));
+    let screen = text(&a);
+    assert!(
+        screen.contains("no TYPESAFE_API_KEY · choosing manually"),
+        "{screen}"
+    );
+    assert!(!screen.contains("routing…"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn model_without_effort_hides_the_effort() {
+    let (mut a, id) = with_task(100, 24, "rename foo to bar");
+    a.on_route(id, Ok(answers(Size::Trivial, 0.1, Kind::Other, 0.9)));
+    let screen = text(&a);
+    assert!(screen.contains("‹ haiku ›"), "{screen}");
+    assert!(!screen.contains("effort"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn agent_without_a_catalog_hides_the_model_and_warns() {
+    let (mut a, id) = with_task(100, 24, TASK);
+    a.on_route(id, Err(RouteError::Timeout));
+    a.on_key(key(KeyCode::Down));
+    let screen = text(&a);
+    assert!(screen.contains("● opencode"), "{screen}");
+    assert!(screen.contains("task is not sent to opencode"), "{screen}");
+    assert!(!screen.contains("Model"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn cost_note_shows_for_models_that_have_one() {
+    let (mut a, id) = with_task(100, 26, TASK);
+    a.on_route(id, Ok(answers(Size::Open, 0.1, Kind::Other, 0.9)));
+    let screen = text(&a);
+    assert!(screen.contains("‹ fable ›   effort ‹ high ›"), "{screen}");
+    assert!(screen.contains("fable may bill usage credits"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn long_task_wraps_without_splitting_characters() {
+    let mut a = app(100, 26);
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Tab));
+    a.on_paste("Corrigir a ação de publicação 🚀 que falha em produção quando o usuário não tem permissão\nsegunda linha: validar também o fluxo de reenvio e a paginação da listagem de pedidos");
+    let screen = text(&a);
+    // Em foco, a tarefa mostra o fim do texto, com o cursor
+    assert!(screen.contains("pedidos▏"), "{screen}");
+    assert!(!screen.contains('\u{fffd}'), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn unfocused_long_task_shows_its_start_with_an_ellipsis() {
+    let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five";
+    let (a, _) = with_task(100, 26, long);
+    let screen = text(&a);
+    assert!(screen.contains("one two three"), "{screen}");
+    assert!(screen.contains('…'), "{screen}");
+    assert!(!screen.contains("twenty-five"), "{screen}");
+}
+
+#[test]
+fn short_terminal_keeps_the_focused_field_and_the_hints() {
+    let (mut a, id) = with_task(100, 14, TASK);
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    a.on_key(key(KeyCode::Tab));
+    let screen = text(&a);
+    assert!(screen.contains("› Model"), "{screen}");
+    assert!(screen.contains("‹ opus ›"), "{screen}");
+    assert!(screen.contains("● claude"), "{screen}");
+    assert!(screen.contains("⏎ create"), "{screen}");
+    assert!(screen.contains("New worktree in api"), "{screen}");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn very_short_terminal_still_shows_the_selected_agent_and_the_hints() {
+    let (mut a, id) = with_task(100, 12, TASK);
+    a.on_route(id, Err(RouteError::Timeout));
+    a.on_key(key(KeyCode::Down));
+    let screen = text(&a);
+    assert!(screen.contains("● opencode"), "{screen}");
+    assert!(screen.contains("⏎ create"), "{screen}");
+}

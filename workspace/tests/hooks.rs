@@ -327,6 +327,9 @@ fn a_slow_git_fetch_does_not_freeze_other_worktrees() {
         name: "late".into(),
         agent: "claude".into(),
         permission: lisa_workspace::protocol::work::PermissionWire::Normal,
+        model: None,
+        effort: None,
+        prompt: None,
     })
     .unwrap_or_else(|e| panic!("{e}"));
     std::thread::sleep(Duration::from_millis(300));

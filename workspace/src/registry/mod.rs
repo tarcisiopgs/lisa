@@ -47,6 +47,11 @@ pub struct Worktree {
     pub agent: Option<String>,
     pub permission: Option<String>,
     pub session_id: Option<String>,
+    /// Modelo e effort escolhidos na criação; ausentes em estados da 2.0.0.
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub effort: Option<String>,
     /// Diretório ou branch sumiram fora da Lisa; calculado, não persistido.
     #[serde(skip)]
     pub broken: bool,
@@ -254,6 +259,8 @@ impl Registry {
             agent: None,
             permission: None,
             session_id: None,
+            model: None,
+            effort: None,
             broken: false,
         };
         self.worktrees.push(worktree.clone());

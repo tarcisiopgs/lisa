@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::pty::Launch;
-use crate::agents::{self, AgentId, LaunchError, Permission, SessionMode};
+use crate::agents::{self, AgentId, Effort, LaunchError, LaunchOptions, Permission, SessionMode};
 
 /// Script que troca o shell pelo agente, recebendo programa e argumentos como `$0 "$@"`
 /// (sem montar string de comando, então nada precisa de escape).
@@ -13,6 +13,12 @@ pub struct LaunchRequest<'a> {
     pub agent: AgentId,
     pub permission: Permission,
     pub session: SessionMode,
+    pub model: Option<String>,
+    pub effort: Option<Effort>,
+    /// Tarefa inicial; só entra em sessão nova.
+    pub prompt: Option<String>,
+    /// Argumentos do daemon (ex.: `--settings` dos hooks); entram antes do prompt.
+    pub extra_args: Vec<String>,
     pub cwd: &'a Path,
     pub env: Vec<(String, String)>,
     pub cols: u16,
@@ -45,6 +51,17 @@ pub fn build_launch(req: LaunchRequest<'_>) -> Result<Launch, LaunchError> {
         req.agent,
         req.permission,
         &req.session,
+        &LaunchOptions {
+            model: req.model.as_deref(),
+            effort: req.effort,
+            prompt: None,
+        },
+    )?);
+    args.extend(req.extra_args);
+    args.extend(agents::prompt_args(
+        req.agent,
+        &req.session,
+        req.prompt.as_deref(),
     )?);
     Ok(Launch {
         program: login_shell(&req.env),
@@ -67,6 +84,10 @@ mod tests {
             session: SessionMode::New {
                 session_id: Some("abc".into()),
             },
+            model: None,
+            effort: None,
+            prompt: None,
+            extra_args: Vec::new(),
             cwd: Path::new("/tmp"),
             env,
             cols: 80,
@@ -83,6 +104,26 @@ mod tests {
             launch.args,
             ["-lc", EXEC_SCRIPT, "claude", "--session-id", "abc"]
         );
+    }
+
+    #[test]
+    fn prompt_reaches_the_agent_as_one_untouched_argument() {
+        let prompt = "a 'b' \"c\" `d` $(e)\nf";
+        let mut req = request(vec![("SHELL".into(), "/bin/zsh".into())]);
+        req.prompt = Some(prompt.to_owned());
+        let launch = build_launch(req).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(launch.args[1], EXEC_SCRIPT);
+        assert_eq!(launch.args.last().map(String::as_str), Some(prompt));
+    }
+
+    #[test]
+    fn daemon_arguments_come_before_the_prompt_separator() {
+        let mut req = request(Vec::new());
+        req.prompt = Some("do it".to_owned());
+        req.extra_args = vec!["--settings".to_owned(), "/s.json".to_owned()];
+        let launch = build_launch(req).unwrap_or_else(|e| panic!("{e}"));
+        let tail = &launch.args[launch.args.len() - 4..];
+        assert_eq!(tail, ["--settings", "/s.json", "--", "do it"]);
     }
 
     #[test]

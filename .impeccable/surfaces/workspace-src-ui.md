@@ -38,7 +38,9 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
   - `?` help overlay
   - `q` detach (agents keep running)
 - Dialogs are centred single-border boxes with a cyan title.
-  - New worktree: name (with a dim `branch: <sanitized>` preview), agent list (unavailable ones dim with `not installed`), permission (normal / full autonomy; disabled with a reason when unsupported), a `fetching origin/main…` line while the daemon works.
+  - New worktree: name (with a dim `branch: <sanitized>` preview), task (optional, up to three wrapped rows, dim placeholder when empty), agent list (unavailable ones dim with `not installed`), model (`‹ opus ›   effort ‹ high ›`, only for agents with a verified catalog; arrows turn yellow in focus), permission (normal / full autonomy; disabled with a reason when unsupported), a `fetching origin/main…` line while the daemon works.
+  - Routing marks sit dim on the agent row: `routing…` (yellow) while waiting, `suggested · 86%`, `unsure · your default`. A failure reason or `task is not sent to <agent>` takes one dim line under the task; a documented cost note takes one dim line under the model.
+  - On short terminals the dialog shrinks in this order: task to one row, blank separators removed, agent list windowed around the selection. The focused field and the hint line always stay.
   - Remove: `y/N` confirmation. A refusal shows the reason in red with `f force · esc cancel`.
 
 ## Empty and edge states

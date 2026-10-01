@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"                                                                       │ PROJECTS                   "
+"       ┌ New worktree in api ─────────────────────────────────┐        │▐▾ api                      "
+"       │  Name    fix-login-redirect                          │        │   ◉ fix-login              "
+"       │          branch: fix-login-redirect                  │        │   ◆ rate-limit             "
+"       │  Task    Fix the redirect loop on login when the…    │        │   ○ docs-update            "
+"       │  Agent   ● claude  suggested · 86%                   │        │ ▾ web                      "
+"       │          ○ opencode  no full autonomy                │        │   ✔ new-checkout           "
+"       │          ○ gemini  not installed                     │        │ ▾ lisa                     "
+"       │› Model   ‹ opus ›   effort ‹ high ›                  │        │   no worktrees · n         "
+"       │  Mode    (•) normal   ( ) full autonomy              │        │                            "
+"       │  ⏎ create · tab next field · ←→ change · esc cancel  │        │                            "
+"       └──────────────────────────────────────────────────────┘        │                            "
+"                                                                       │                            "
+"                                                                                                    "

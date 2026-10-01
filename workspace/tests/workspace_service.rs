@@ -152,6 +152,9 @@ fn creating_with_an_agent_missing_from_path_fails_before_creating_the_worktree()
         name: "nope".into(),
         agent: "gemini".into(),
         permission: PermissionWire::Normal,
+        model: None,
+        effort: None,
+        prompt: None,
     })
     .unwrap_or_else(|e| panic!("{e}"));
     let err = until(&mut conn, |m| match m {
@@ -160,4 +163,117 @@ fn creating_with_an_agent_missing_from_path_fails_before_creating_the_worktree()
     });
     assert!(err.contains("gemini"), "{err}");
     assert!(!env.root.join("workspaces/repo/nope").exists());
+}
+
+const TASK: &str = "fix 'it' $(now) `x`\nplease";
+
+#[test]
+fn chosen_model_effort_and_prompt_reach_the_agent() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    create_full(
+        &mut conn,
+        &env,
+        "routed",
+        "claude",
+        Some("opus"),
+        Some("high"),
+        Some(TASK),
+    );
+    let args = argv(&env, "routed");
+    let joined = args.join(" ");
+    assert!(joined.contains("--model opus --effort high"), "{joined}");
+    // A tarefa fecha a linha de comando: nada do daemon pode vir depois do `--`
+    assert_eq!(&args[args.len() - 2..], ["--", TASK]);
+    assert!(args.iter().any(|a| a == "--settings"), "{joined}");
+}
+
+#[test]
+fn restart_keeps_model_and_effort_and_drops_the_prompt() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create_full(
+        &mut conn,
+        &env,
+        "again",
+        "claude",
+        Some("opus"),
+        Some("high"),
+        Some(TASK),
+    );
+    argv(&env, "again");
+    conn.send(&ClientMsg::StopAgent { id: id.clone() })
+        .unwrap_or_else(|e| panic!("{e}"));
+    state(&mut conn, |s| {
+        s.worktrees.iter().any(|w| w.id == id && !w.running)
+    });
+    forget_argv(&env, "again");
+    conn.send(&ClientMsg::RestartAgent { id })
+        .unwrap_or_else(|e| panic!("{e}"));
+    let args = argv(&env, "again");
+    let joined = args.join(" ");
+    assert!(joined.contains("--model opus --effort high"), "{joined}");
+    assert!(!args.iter().any(|a| a == "--" || a == TASK), "{joined}");
+}
+
+fn refused(model: Option<&str>, agent: &str, prompt: Option<&str>, name: &str) -> (String, Env) {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let project = project(&mut conn, &env);
+    conn.send(&ClientMsg::CreateWorktree {
+        project,
+        name: name.into(),
+        agent: agent.into(),
+        permission: PermissionWire::Normal,
+        model: model.map(str::to_owned),
+        effort: None,
+        prompt: prompt.map(str::to_owned),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let err = until(&mut conn, |m| match m {
+        DaemonMsg::Error(e) => Some(e.clone()),
+        _ => None,
+    });
+    (err, env)
+}
+
+#[test]
+fn unknown_model_is_refused_before_any_worktree_exists() {
+    let (err, env) = refused(Some("gpt-9"), "claude", None, "badmodel");
+    assert!(err.contains("gpt-9"), "{err}");
+    assert!(!env.root.join("workspaces/repo/badmodel").exists());
+}
+
+#[test]
+fn prompt_for_an_agent_without_delivery_is_refused() {
+    let (err, env) = refused(None, "aider", Some("do it"), "notask");
+    assert!(err.contains("aider"), "{err}");
+    assert!(!env.root.join("workspaces/repo/notask").exists());
+}
+
+#[test]
+fn state_from_2_0_0_loads_without_model_fields() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "old");
+    drop(conn);
+    let file = env.root.join("state/state.json");
+    let raw = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{e}"));
+    let mut json: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{e}"));
+    // Como a 2.0.0 gravava: sem os campos de modelo e effort
+    for wt in json["worktrees"].as_array_mut().into_iter().flatten() {
+        if let Some(o) = wt.as_object_mut() {
+            o.remove("model");
+            o.remove("effort");
+        }
+    }
+    let other = env.root.join("old-state.json");
+    std::fs::write(&other, json.to_string()).unwrap_or_else(|e| panic!("{e}"));
+    let reopened =
+        Workspace::open(other, env.root.join("workspaces")).unwrap_or_else(|e| panic!("{e}"));
+    assert!(reopened.state().worktrees.iter().any(|w| w.id == id));
 }

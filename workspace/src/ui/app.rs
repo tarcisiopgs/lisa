@@ -5,10 +5,13 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::input::{encode_key, encode_paste};
+use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
+use crate::protocol::work::AgentOption;
 use crate::protocol::work::{
     AgentState, ClientMsg, Color, CursorPos, DaemonMsg, Line, Modes, PermissionWire, Snapshot,
     WorkspaceState, WorktreeView,
 };
+use crate::router::{self, Answers, RouteError, RouterConfig, Size};
 
 /// Largura da lateral completa, sem o separador.
 pub const SIDEBAR_WIDTH: u16 = 28;
@@ -31,6 +34,11 @@ pub enum Zone {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Send(ClientMsg),
+    /// Consulta o roteador sobre a tarefa; a resposta volta por `App::on_route` com o mesmo id.
+    Route {
+        id: u64,
+        task: String,
+    },
     /// Toca o sino do terminal hospedeiro (atenção sem duplicar a notificação do sistema).
     Bell,
     /// Guarda a permissão escolhida como padrão para os próximos worktrees (R9).
@@ -55,19 +63,135 @@ pub enum Row {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Name,
+    Task,
     Agent,
+    Model,
+    Effort,
     Permission,
+}
+
+/// Situação da sugestão do roteador para a tarefa digitada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    Idle,
+    Pending {
+        id: u64,
+    },
+    /// O agente vai pelo nome: a lista do daemon pode mudar de ordem.
+    Suggested {
+        agent: String,
+        percent: u8,
+        unsure: bool,
+    },
+    Failed(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewWorktree {
     pub project: String,
     pub name: String,
+    /// Tarefa inicial; em branco, o agente sobe vazio como antes.
+    pub task: String,
     pub agent: usize,
+    /// Índice em `model_options` do agente; 0 é `default`, sem argumento de modelo.
+    pub model: usize,
+    pub effort: Option<Effort>,
     pub autonomy: bool,
     pub field: Field,
     pub pending: bool,
     pub error: Option<String>,
+    pub route: Route,
+    /// Tamanho e reforço de effort da última sugestão, para acompanhar a troca de agente.
+    pub sized: Option<(Size, bool)>,
+    /// Último texto enviado ao roteador.
+    routed_task: Option<String>,
+    touched_agent: bool,
+    touched_model: bool,
+}
+
+/// Modelos que o diálogo oferece para um agente: `default` e os do catálogo conferido.
+/// Vazio quando o agente não tem catálogo conferido.
+pub fn model_options(agent: &str) -> Vec<&'static str> {
+    let Some(catalog) = verified_catalog(agent) else {
+        return Vec::new();
+    };
+    std::iter::once("default")
+        .chain(catalog.models.iter().map(|m| m.id))
+        .collect()
+}
+
+/// A tarefa é entregue a este agente no lançamento?
+pub fn task_delivered(agent: &str) -> bool {
+    verified_catalog(agent).is_some_and(|c| c.prompt.is_some())
+}
+
+/// Níveis de effort do modelo `index` do agente; vazio para `default` e modelos sem effort.
+pub fn effort_options(agent: &str, index: usize) -> &'static [Effort] {
+    selected_model(agent, index).map_or(&[], |m| m.efforts)
+}
+
+/// Aviso de custo do modelo `index`, quando o fornecedor documenta um.
+pub fn cost_note(agent: &str, index: usize) -> Option<&'static str> {
+    selected_model(agent, index)?.cost_note
+}
+
+fn verified_catalog(agent: &str) -> Option<&'static agents::ModelCatalog> {
+    agents::catalog(AgentId::from_name(agent)?).filter(|c| c.verified)
+}
+
+fn selected_model(agent: &str, index: usize) -> Option<&'static agents::ModelSpec> {
+    verified_catalog(agent)?.models.get(index.checked_sub(1)?)
+}
+
+/// Campos por onde o Tab passa, na ordem, para o agente e o modelo selecionados.
+fn fields(d: &NewWorktree, agents: &[AgentOption]) -> Vec<Field> {
+    let agent = agents.get(d.agent).map_or("", |a| a.name.as_str());
+    let mut order = vec![Field::Name, Field::Task, Field::Agent];
+    if !model_options(agent).is_empty() {
+        order.push(Field::Model);
+        if !effort_options(agent, d.model).is_empty() {
+            order.push(Field::Effort);
+        }
+    }
+    order.push(Field::Permission);
+    order
+}
+
+/// Modelo e effort do agente selecionado para o tamanho sugerido; sem sugestão, `default`.
+fn apply_size(d: &mut NewWorktree, agents: &[AgentOption]) {
+    let agent = agents.get(d.agent).map_or("", |a| a.name.as_str());
+    let chosen = d.sized.and_then(|(size, bump)| {
+        let id = AgentId::from_name(agent)?;
+        verified_catalog(agent)?;
+        router::selection(id, size, bump)
+    });
+    let options = model_options(agent);
+    match chosen
+        .and_then(|(model, effort)| Some((options.iter().position(|m| *m == model)?, effort)))
+    {
+        Some((index, effort)) => {
+            d.model = index;
+            d.effort = effort;
+        }
+        None => {
+            d.model = 0;
+            d.effort = None;
+        }
+    }
+    d.touched_model = false;
+}
+
+/// Vizinho de `current` em `items`, sem dar a volta.
+fn step<T: Copy + PartialEq>(items: &[T], current: T, forward: bool) -> T {
+    let Some(i) = items.iter().position(|x| *x == current) else {
+        return items.first().copied().unwrap_or(current);
+    };
+    let j = if forward {
+        (i + 1).min(items.len() - 1)
+    } else {
+        i.saturating_sub(1)
+    };
+    items[j]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +242,9 @@ pub struct App {
     exit_message: Option<String>,
     /// Permissão pré-selecionada ao criar um worktree (R9).
     default_autonomy: bool,
+    router: RouterConfig,
+    /// Id da última consulta ao roteador; respostas com outro id são descartadas.
+    route_seq: u64,
 }
 
 /// `~` no começo do caminho vira o HOME.
@@ -146,11 +273,74 @@ impl App {
             window_focused: false,
             exit_message: None,
             default_autonomy: false,
+            router: RouterConfig::default(),
+            route_seq: 0,
         }
     }
 
     pub fn set_default_autonomy(&mut self, autonomy: bool) {
         self.default_autonomy = autonomy;
+    }
+
+    pub fn set_router_config(&mut self, config: RouterConfig) {
+        self.router = config;
+    }
+
+    /// Aviso da própria UI no rodapé (ex.: `router.toml` com algo ignorado).
+    pub fn warn(&mut self, text: String) {
+        self.set_notice(NoticeKind::Warn, text);
+    }
+
+    /// Resposta do roteador à consulta `id`. Só vale se o diálogo ainda espera por ela.
+    pub fn on_route(&mut self, id: u64, result: Result<Answers, RouteError>) {
+        let agents = self.workspace.agents.clone();
+        let Some(Dialog::NewWorktree(d)) = self.dialog.as_mut() else {
+            return;
+        };
+        if d.route != (Route::Pending { id }) {
+            return;
+        }
+        // A tarefa mudou desde a consulta: a resposta é de outro texto, e a saída do
+        // campo pede uma nova
+        if d.routed_task.as_deref() != Some(d.task.trim()) {
+            d.route = Route::Idle;
+            d.routed_task = None;
+            return;
+        }
+        let answers = match result {
+            Ok(answers) => answers,
+            Err(err) => {
+                d.route = Route::Failed(err.reason());
+                return;
+            }
+        };
+        let usable: Vec<AgentId> = agents
+            .iter()
+            .filter(|a| a.available && verified_catalog(&a.name).is_some())
+            .filter_map(|a| AgentId::from_name(&a.name))
+            .collect();
+        let decision = router::decide(&answers, &usable, &self.router);
+        let Some(suggested) = decision.agent else {
+            d.route = Route::Failed("no routable agent installed · choosing manually");
+            return;
+        };
+        d.sized = Some((decision.size, decision.bump));
+        // Quem mexeu no agente ou no modelo fica com a escolha; a sugestão vira só marca
+        if !d.touched_agent
+            && !d.touched_model
+            && let Some(index) = agents.iter().position(|a| a.name == suggested.name())
+        {
+            d.agent = index;
+            fix_autonomy(d, &agents);
+        }
+        if !d.touched_model {
+            apply_size(d, &agents);
+        }
+        d.route = Route::Suggested {
+            agent: suggested.name().to_owned(),
+            percent: decision.percent,
+            unsure: decision.unsure,
+        };
     }
 
     // ---- Leitura (render) ----
@@ -328,8 +518,15 @@ impl App {
 
     pub fn on_paste(&mut self, text: &str) -> Vec<Action> {
         if let Some(dialog) = self.dialog.as_mut() {
+            // Na tarefa, as quebras de linha coladas ficam, normalizadas
+            let multiline = matches!(dialog, Dialog::NewWorktree(d) if d.field == Field::Task);
             if let Some(buf) = dialog_text(dialog) {
-                buf.push_str(text.trim_end_matches(['\r', '\n']));
+                let text = text.trim_end_matches(['\r', '\n']);
+                if multiline {
+                    buf.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+                } else {
+                    buf.push_str(text);
+                }
             }
             return Vec::new();
         }
@@ -401,7 +598,19 @@ impl App {
 
     fn on_state(&mut self, state: WorkspaceState) -> Vec<Action> {
         let selected_before = self.selected_row();
+        // O agente escolhido no diálogo vai pelo nome: a lista pode chegar em outra ordem
+        let chosen_agent = match &self.dialog {
+            Some(Dialog::NewWorktree(d)) => {
+                self.workspace.agents.get(d.agent).map(|a| a.name.clone())
+            }
+            _ => None,
+        };
         self.workspace = state;
+        if let (Some(name), Some(Dialog::NewWorktree(d))) = (chosen_agent, self.dialog.as_mut())
+            && let Some(index) = self.workspace.agents.iter().position(|a| a.name == name)
+        {
+            d.agent = index;
+        }
         let mut actions = Vec::new();
 
         // Worktree recém-criado: fecha o diálogo e abre no painel
@@ -599,11 +808,19 @@ impl App {
         self.dialog = Some(Dialog::NewWorktree(NewWorktree {
             project,
             name: String::new(),
+            task: String::new(),
             agent,
+            model: 0,
+            effort: None,
             autonomy: self.default_autonomy && supported,
             field: Field::Name,
             pending: false,
             error: None,
+            route: Route::Idle,
+            sized: None,
+            routed_task: None,
+            touched_agent: false,
+            touched_model: false,
         }));
     }
 
@@ -674,35 +891,55 @@ impl App {
                 if d.pending {
                     return Vec::new();
                 }
+                let agent_name = agents.get(d.agent).map_or("", |a| a.name.as_str());
                 match (d.field, key.code) {
-                    (_, KeyCode::Tab) => {
-                        d.field = match d.field {
-                            Field::Name => Field::Agent,
-                            Field::Agent => Field::Permission,
-                            Field::Permission => Field::Name,
+                    (_, KeyCode::Tab | KeyCode::BackTab) => {
+                        let leaving_task = d.field == Field::Task;
+                        let order = fields(d, &agents);
+                        let here = order.iter().position(|f| *f == d.field).unwrap_or(0);
+                        let next = if key.code == KeyCode::Tab {
+                            (here + 1) % order.len()
+                        } else {
+                            (here + order.len() - 1) % order.len()
                         };
-                    }
-                    (_, KeyCode::BackTab) => {
-                        d.field = match d.field {
-                            Field::Name => Field::Permission,
-                            Field::Agent => Field::Name,
-                            Field::Permission => Field::Agent,
-                        };
+                        d.field = order[next];
+                        if leaving_task {
+                            return route_request(d, &mut self.route_seq).into_iter().collect();
+                        }
                     }
                     (Field::Name, _) if edit_text(&mut d.name, key) => {}
+                    (Field::Task, _) if edit_text(&mut d.task, key) => {}
                     (Field::Agent, KeyCode::Down | KeyCode::Char('j')) => {
                         if let Some(next) =
                             (d.agent + 1..agents.len()).find(|i| agents[*i].available)
                         {
                             d.agent = next;
+                            d.touched_agent = true;
+                            apply_size(d, &agents);
                         }
                         fix_autonomy(d, &agents);
                     }
                     (Field::Agent, KeyCode::Up | KeyCode::Char('k')) => {
                         if let Some(prev) = (0..d.agent).rev().find(|i| agents[*i].available) {
                             d.agent = prev;
+                            d.touched_agent = true;
+                            apply_size(d, &agents);
                         }
                         fix_autonomy(d, &agents);
+                    }
+                    (Field::Model, KeyCode::Left | KeyCode::Right) => {
+                        let indices: Vec<usize> = (0..model_options(agent_name).len()).collect();
+                        d.model = step(&indices, d.model, key.code == KeyCode::Right);
+                        d.effort =
+                            selected_model(agent_name, d.model).and_then(|m| m.default_effort);
+                        d.touched_model = true;
+                    }
+                    (Field::Effort, KeyCode::Left | KeyCode::Right) => {
+                        let levels = effort_options(agent_name, d.model);
+                        if let Some(current) = d.effort.or(levels.first().copied()) {
+                            d.effort = Some(step(levels, current, key.code == KeyCode::Right));
+                            d.touched_model = true;
+                        }
                     }
                     (Field::Permission, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
                         let supported = agents.get(d.agent).is_some_and(|a| a.autonomy_supported);
@@ -718,9 +955,18 @@ impl App {
                             d.field = Field::Name;
                             return Vec::new();
                         }
+                        if d.task.len() > MAX_PROMPT_BYTES {
+                            d.error = Some("task is too long (max 100,000 bytes)".into());
+                            d.field = Field::Task;
+                            return Vec::new();
+                        }
                         d.pending = true;
                         d.error = None;
                         let autonomy = d.autonomy && agent.autonomy_supported;
+                        let model = selected_model(&agent.name, d.model);
+                        let task = d.task.trim();
+                        let prompt = (!task.is_empty() && task_delivered(&agent.name))
+                            .then(|| task.to_owned());
                         return vec![
                             Action::Send(ClientMsg::CreateWorktree {
                                 project: d.project.clone(),
@@ -731,6 +977,9 @@ impl App {
                                 } else {
                                     PermissionWire::Normal
                                 },
+                                model: model.map(|m| m.id.to_owned()),
+                                effort: model.and(d.effort).map(|e| e.name().to_owned()),
+                                prompt,
                             }),
                             Action::RememberAutonomy(autonomy),
                         ];
@@ -743,7 +992,29 @@ impl App {
     }
 }
 
-fn fix_autonomy(d: &mut NewWorktree, agents: &[crate::protocol::work::AgentOption]) {
+/// Ao sair do campo da tarefa: pede uma sugestão se o texto mudou desde a última.
+fn route_request(d: &mut NewWorktree, seq: &mut u64) -> Option<Action> {
+    let task = d.task.trim();
+    if task.is_empty() {
+        d.route = Route::Idle;
+        d.sized = None;
+        d.routed_task = None;
+        return None;
+    }
+    // Tarefa grande demais é recusada ao criar; não vale a consulta
+    if task.len() > MAX_PROMPT_BYTES || d.routed_task.as_deref() == Some(task) {
+        return None;
+    }
+    *seq += 1;
+    d.routed_task = Some(task.to_owned());
+    d.route = Route::Pending { id: *seq };
+    Some(Action::Route {
+        id: *seq,
+        task: task.to_owned(),
+    })
+}
+
+fn fix_autonomy(d: &mut NewWorktree, agents: &[AgentOption]) {
     if !agents.get(d.agent).is_some_and(|a| a.autonomy_supported) {
         d.autonomy = false;
     }
@@ -754,7 +1025,11 @@ fn dialog_text(dialog: &mut Dialog) -> Option<&mut String> {
     match dialog {
         Dialog::AddProject { path } => Some(path),
         Dialog::BaseBranch { value, .. } => Some(value),
-        Dialog::NewWorktree(d) if d.field == Field::Name && !d.pending => Some(&mut d.name),
+        Dialog::NewWorktree(d) if !d.pending => match d.field {
+            Field::Name => Some(&mut d.name),
+            Field::Task => Some(&mut d.task),
+            _ => None,
+        },
         _ => None,
     }
 }

@@ -1,8 +1,15 @@
 //! Catálogo de agentes: como cada CLI sobe em modo interativo, com autonomia
-//! total e com resume. Espelha os nomes de provider da Lisa em TypeScript.
+//! total e com resume. Os dez primeiros espelham os nomes de provider da Lisa em
+//! TypeScript; os demais só existem aqui, ainda sem modo interativo conferido.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
+
+mod catalog;
+
+pub use catalog::{
+    Effort, EffortArg, MAX_PROMPT_BYTES, ModelCatalog, ModelSpec, PromptArg, catalog, model,
+};
 
 /// Agentes que a Lisa conhece. Os nomes batem com `src/providers/` do lado Node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,10 +24,15 @@ pub enum AgentId {
     Codex,
     Kilo,
     Mimo,
+    Grok,
+    Codebuddy,
+    Antigravity,
+    Muse,
+    Omp,
 }
 
 impl AgentId {
-    pub const ALL: [AgentId; 10] = [
+    pub const ALL: [AgentId; 15] = [
         AgentId::Claude,
         AgentId::Gemini,
         AgentId::Opencode,
@@ -31,6 +43,11 @@ impl AgentId {
         AgentId::Codex,
         AgentId::Kilo,
         AgentId::Mimo,
+        AgentId::Grok,
+        AgentId::Codebuddy,
+        AgentId::Antigravity,
+        AgentId::Muse,
+        AgentId::Omp,
     ];
 
     pub fn name(self) -> &'static str {
@@ -64,6 +81,23 @@ pub enum LaunchError {
     InvalidSessionId(String),
     #[error("{} has no full-autonomy flag in interactive mode", .0.name())]
     AutonomyUnsupported(AgentId),
+    #[error("unknown model {0:?}")]
+    UnknownModel(String),
+    #[error("model {model} does not support effort {effort}")]
+    UnsupportedEffort { model: String, effort: &'static str },
+    #[error("{} cannot receive a task at launch", .0.name())]
+    PromptUnsupported(AgentId),
+    #[error("task is too long (max 100,000 bytes)")]
+    PromptTooLarge,
+}
+
+/// Escolhas opcionais de um lançamento; vazio mantém os padrões da CLI.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LaunchOptions<'a> {
+    pub model: Option<&'a str>,
+    pub effort: Option<Effort>,
+    /// Entregue só em sessão nova.
+    pub prompt: Option<&'a str>,
 }
 
 /// Como uma CLI de agente sobe em modo interativo.
@@ -99,7 +133,7 @@ pub enum Resume {
     HistoryOnly(&'static [&'static str]),
 }
 
-static SPECS: [AgentSpec; 10] = [
+static SPECS: [AgentSpec; 15] = [
     AgentSpec {
         name: "claude",
         binaries: &["claude"],
@@ -217,6 +251,67 @@ static SPECS: [AgentSpec; 10] = [
         },
         interactive_verified: true,
     },
+    // Daqui para baixo: linhas de comando tiradas da documentação, nunca executadas
+    AgentSpec {
+        name: "grok",
+        binaries: &["grok"],
+        base_args: &[],
+        autonomy_args: Some(&["--always-approve"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "codebuddy",
+        binaries: &["codebuddy", "cbc"],
+        base_args: &[],
+        autonomy_args: Some(&["--dangerously-skip-permissions"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "antigravity",
+        binaries: &["agy"],
+        base_args: &[],
+        autonomy_args: Some(&["--dangerously-skip-permissions"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--conversation",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "muse",
+        binaries: &["muse"],
+        base_args: &[],
+        autonomy_args: Some(&["--yolo"]),
+        new_session_flag: None,
+        resume: Resume::Subcommand {
+            sub: "resume",
+            last: &[],
+        },
+        interactive_verified: false,
+    },
+    AgentSpec {
+        name: "omp",
+        binaries: &["omp"],
+        base_args: &[],
+        autonomy_args: Some(&["--yolo"]),
+        new_session_flag: None,
+        resume: Resume::Flag {
+            by_id: "--resume",
+            last: &["--continue"],
+        },
+        interactive_verified: false,
+    },
 ];
 
 pub fn spec(id: AgentId) -> &'static AgentSpec {
@@ -251,6 +346,7 @@ pub fn launch_args(
     id: AgentId,
     permission: Permission,
     session: &SessionMode,
+    opts: &LaunchOptions<'_>,
 ) -> Result<Vec<String>, LaunchError> {
     let spec = spec(id);
     let mut args: Vec<String> = spec.base_args.iter().map(|a| (*a).to_owned()).collect();
@@ -291,6 +387,8 @@ pub fn launch_args(
         }
     }
 
+    args.extend(model_args(id, opts)?);
+
     if permission == Permission::FullAutonomy {
         let flags = spec
             .autonomy_args
@@ -298,6 +396,71 @@ pub fn launch_args(
         args.extend(flags.iter().map(|a| (*a).to_owned()));
     }
 
+    args.extend(prompt_args(id, session, opts.prompt)?);
+    Ok(args)
+}
+
+/// Argumentos do prompt inicial: sempre os últimos da linha de comando (nada pode vir
+/// depois do `--`), e só em sessão nova.
+pub fn prompt_args(
+    id: AgentId,
+    session: &SessionMode,
+    prompt: Option<&str>,
+) -> Result<Vec<String>, LaunchError> {
+    let Some(prompt) = prompt else {
+        return Ok(Vec::new());
+    };
+    let form = catalog(id)
+        .and_then(|c| c.prompt)
+        .ok_or(LaunchError::PromptUnsupported(id))?;
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return Err(LaunchError::PromptTooLarge);
+    }
+    if !matches!(session, SessionMode::New { .. }) {
+        return Ok(Vec::new());
+    }
+    Ok(match form {
+        PromptArg::Positional => vec!["--".to_owned(), prompt.to_owned()],
+        PromptArg::Flag(flag) => vec![format!("{flag}={prompt}")],
+    })
+}
+
+/// Argumentos de modelo e effort, conferidos contra o catálogo.
+fn model_args(id: AgentId, opts: &LaunchOptions<'_>) -> Result<Vec<String>, LaunchError> {
+    let mut args = Vec::new();
+    let Some(name) = opts.model else {
+        return match opts.effort {
+            Some(effort) => Err(LaunchError::UnsupportedEffort {
+                model: "default".to_owned(),
+                effort: effort.name(),
+            }),
+            None => Ok(args),
+        };
+    };
+    let unknown = || LaunchError::UnknownModel(name.to_owned());
+    let catalog = catalog(id).ok_or_else(unknown)?;
+    let model = model(id, name).ok_or_else(unknown)?;
+    args.push(catalog.model_flag.to_owned());
+    args.push(model.id.to_owned());
+    if let Some(effort) = opts.effort {
+        let form = catalog
+            .effort_arg
+            .filter(|_| model.efforts.contains(&effort))
+            .ok_or_else(|| LaunchError::UnsupportedEffort {
+                model: model.id.to_owned(),
+                effort: effort.name(),
+            })?;
+        match form {
+            EffortArg::Flag(flag) => {
+                args.push(flag.to_owned());
+                args.push(effort.name().to_owned());
+            }
+            EffortArg::ConfigKey(key) => {
+                args.push("-c".to_owned());
+                args.push(format!("{key}={}", effort.name()));
+            }
+        }
+    }
     Ok(args)
 }
 

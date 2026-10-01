@@ -176,7 +176,8 @@ src/
 workspace/                # Workspace mode (Rust crate `lisa-workspace`, one binary: daemon | ui | hook)
 └── src/
     ├── main.rs           # clap subcommands: `daemon`, `ui`, `hook <event>`
-    ├── agents/           # Per-agent catalog: interactive command, full-autonomy flag, resume args
+    ├── agents/           # Per-agent catalog: interactive command, full-autonomy flag, resume args, models and effort
+    ├── router/           # Jev (TypeSafe) routing: questions, pure decision, router.toml, HTTP client
     ├── git/              # Base branch detection, fetch, non-destructive worktree add/remove, removal checks
     ├── registry/         # Projects + worktrees in ~/.lisa/workspace/state.json (atomic writes, daemon-only)
     ├── protocol/         # u32-LE framed postcard messages; frozen control layer (Hello/HelloReply/Shutdown)
@@ -246,8 +247,9 @@ Reads Claude Code's JSONL session files (`~/.claude/projects/<encoded-path>/*.js
 - **Entry:** `lisa workspace` (`src/cli/commands/workspace.ts`) resolves the binary bundled in the package at `bin/workspace/<os>-<arch>/lisa-workspace`. `LISA_WORKSPACE_BIN` wins, for development. It then runs `lisa-workspace ui`.
 - **Mode selector:** bare `lisa` shows it only with stdin+stdout TTY, outside CI and without `LISA_MODE` (`src/cli/mode-selector.ts`).
 - **Daemon:** the UI connects over a Unix socket in `/tmp/lisa-<uid>/` (macOS) or `$XDG_RUNTIME_DIR/lisa/` (Linux). When none is running, it re-execs the binary as `daemon` with `setsid`. The daemon holds a `flock` for its whole life, and only the lock holder touches the socket. A daemon from a different binary is replaced silently when no agents run; otherwise the UI asks whether to keep it or restart the agents.
-- **Protocol:** the control layer (`Hello`, `HelloReply`, `Shutdown`) is frozen forever, and `protocol/tests.rs` pins its bytes. Work messages evolve with `PROTOCOL_VERSION`. Only one `ui` client is attached at a time; `hook`/`cli` connections never evict it.
+- **Protocol:** the control layer (`Hello`, `HelloReply`, `Shutdown`) is frozen forever, and `protocol/tests.rs` pins its bytes. Work messages evolve with `PROTOCOL_VERSION` (currently 2). Only one `ui` client is attached at a time; `hook`/`cli` connections never evict it.
 - **Sessions:** agents run through the user's login shell with the UI's environment. The daemon emulates each screen and streams the focused pane as snapshots and row diffs (coalesced to ~25 ms). Scrollback is 2,000 lines per agent. Stopping kills the whole process group.
+- **Routing:** the new worktree dialog takes an optional task. With `TYPESAFE_API_KEY` set, the UI asks Jev in a background thread (3 s timeout, no retry) and fills agent, model and effort; the user confirms. `router::decide` is pure. Only catalogs marked `verified` in `agents/catalog.rs` are routed (Claude Code and Codex); a catalog becomes `verified` only after its command line ran on a real install. The task reaches the agent as one argv element, always last (`-- <task>`), never through a shell string. Model and effort are stored per worktree; the task is not.
 - **States:** four per agent (working, needs you, done, idle), fed by:
   - Claude Code hooks injected per session with `--settings`, calling `lisa-workspace hook`
   - OSC 777/9 notifications and title classification

@@ -8,7 +8,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{
-    App, Dialog, Field, MIN_COLS, MIN_ROWS, NoticeKind, RAIL_WIDTH, Row, SIDEBAR_WIDTH, Zone,
+    App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row,
+    SIDEBAR_WIDTH, Zone, cost_note, effort_options, model_options, task_delivered,
 };
 use crate::protocol::work::{
     ATTR_BOLD, ATTR_DIM, ATTR_HIDDEN, ATTR_INVERSE, ATTR_ITALIC, ATTR_STRIKE, ATTR_UNDERLINE,
@@ -460,6 +461,319 @@ fn field_label(label: &str, active: bool) -> Vec<Span<'static>> {
     ]
 }
 
+/// Largura do diálogo e do texto ao lado dos rótulos.
+const DIALOG_WIDTH: u16 = 56;
+const LABEL_WIDTH: usize = 10;
+/// Linhas que a tarefa ocupa quando há espaço.
+const TASK_ROWS: usize = 3;
+
+fn cursor() -> Span<'static> {
+    Span::styled("▏", Style::default().fg(TuiColor::Yellow))
+}
+
+fn indent() -> Span<'static> {
+    Span::raw(" ".repeat(LABEL_WIDTH))
+}
+
+/// Quebra a tarefa por largura de exibição (acentos, emoji e CJK contam certo), sem
+/// partir caractere; quebras de linha do texto são respeitadas.
+fn wrap_task(text: &str, width: usize) -> Vec<String> {
+    let mut rows = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut row = String::new();
+        let mut used = 0;
+        for word in paragraph.split_inclusive(' ') {
+            let w = Span::raw(word).width();
+            if used + w > width && used > 0 {
+                rows.push(std::mem::take(&mut row));
+                used = 0;
+            }
+            // Palavra maior que a linha: parte entre caracteres
+            if w > width {
+                for ch in word.chars() {
+                    let cw = Span::raw(ch.to_string()).width();
+                    if used + cw > width && used > 0 {
+                        rows.push(std::mem::take(&mut row));
+                        used = 0;
+                    }
+                    row.push(ch);
+                    used += cw;
+                }
+            } else {
+                row.push_str(word);
+                used += w;
+            }
+        }
+        rows.push(row);
+    }
+    rows
+}
+
+/// Linhas do campo da tarefa: em foco, o fim do texto com o cursor; fora de foco, o
+/// começo, com reticências quando não cabe.
+fn task_lines(d: &NewWorktree, width: usize, max: usize) -> Vec<Line<'static>> {
+    let active = d.field == Field::Task;
+    let label = |i: usize| {
+        if i == 0 {
+            field_label("Task", active)
+        } else {
+            vec![indent()]
+        }
+    };
+    if d.task.is_empty() {
+        let mut spans = label(0);
+        if active {
+            spans.push(cursor());
+        } else {
+            spans.push(Span::styled("what should the agent do? (optional)", dim()));
+        }
+        return vec![Line::from(spans)];
+    }
+    // Uma coluna fica para o cursor ou para as reticências
+    let rows = wrap_task(&d.task, width.saturating_sub(1).max(1));
+    let shown: Vec<String> = if active {
+        rows[rows.len().saturating_sub(max)..].to_vec()
+    } else {
+        let mut head = rows[..rows.len().min(max)].to_vec();
+        if rows.len() > max
+            && let Some(last) = head.last_mut()
+        {
+            *last = format!("{}…", last.trim_end());
+        }
+        head
+    };
+    let last = shown.len().saturating_sub(1);
+    shown
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let mut spans = label(i);
+            spans.push(Span::raw(row));
+            if active && i == last {
+                spans.push(cursor());
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// Valor trocável pelas setas: `‹ valor ›`, com as setas acesas quando em foco.
+fn stepper(value: &str, active: bool) -> Vec<Span<'static>> {
+    let arrow = if active {
+        Style::default().fg(TuiColor::Yellow)
+    } else {
+        dim()
+    };
+    vec![
+        Span::styled("‹ ", arrow),
+        Span::styled(
+            value.to_owned(),
+            if active { bold() } else { Style::default() },
+        ),
+        Span::styled(" ›", arrow),
+    ]
+}
+
+/// Linhas do diálogo de novo worktree, encolhendo para caber em `max_lines`: primeiro a
+/// tarefa cai para uma linha, depois saem os espaços e, por fim, a lista de agentes vira
+/// uma janela em volta do selecionado. O campo em foco e as dicas sempre aparecem.
+fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line<'static>>) {
+    let project = app
+        .workspace()
+        .projects
+        .iter()
+        .find(|p| p.slug == d.project);
+    let title = format!(
+        "New worktree in {}",
+        project.map_or(d.project.as_str(), |p| p.name.as_str())
+    );
+    let agents = app.workspace().agents.len();
+    let max = usize::from(max_lines);
+    let mut layouts = vec![
+        (TASK_ROWS, agents, true),
+        (1, agents, true),
+        (1, agents, false),
+    ];
+    layouts.extend((1..agents).rev().map(|shown| (1, shown, false)));
+    let mut lines = Vec::new();
+    for (task_rows, agent_rows, spaced) in layouts {
+        lines = new_worktree_lines(app, d, task_rows, agent_rows, spaced);
+        if lines.len() <= max {
+            break;
+        }
+    }
+    (title, lines)
+}
+
+fn new_worktree_lines(
+    app: &App,
+    d: &NewWorktree,
+    task_rows: usize,
+    agent_rows: usize,
+    spaced: bool,
+) -> Vec<Line<'static>> {
+    let agents = &app.workspace().agents;
+    let selected = agents.get(d.agent);
+    let selected_name = selected.map_or("", |a| a.name.as_str());
+    let text_width = usize::from(DIALOG_WIDTH).saturating_sub(2 + LABEL_WIDTH);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let gap = |lines: &mut Vec<Line<'static>>| {
+        if spaced {
+            lines.push(Line::default());
+        }
+    };
+
+    let mut name = field_label("Name", d.field == Field::Name);
+    name.push(Span::raw(d.name.clone()));
+    if d.field == Field::Name {
+        name.push(cursor());
+    }
+    lines.push(Line::from(name));
+    let preview = crate::git::sanitize_branch(&d.name).unwrap_or_default();
+    lines.push(Line::styled(
+        format!(
+            "          branch: {}",
+            if preview.is_empty() {
+                "—"
+            } else {
+                preview.as_str()
+            }
+        ),
+        dim(),
+    ));
+    gap(&mut lines);
+
+    lines.extend(task_lines(d, text_width, task_rows));
+    // Uma linha de aviso sob a tarefa: o que muda o resultado vem antes do motivo da falha
+    let has_task = !d.task.trim().is_empty();
+    if has_task && selected.is_some() && !task_delivered(selected_name) {
+        lines.push(Line::from(vec![
+            indent(),
+            Span::styled(format!("task is not sent to {selected_name}"), dim()),
+        ]));
+    } else if let Route::Failed(reason) = &d.route {
+        lines.push(Line::from(vec![indent(), Span::styled(*reason, dim())]));
+    }
+    gap(&mut lines);
+
+    // Janela da lista de agentes em volta do selecionado
+    let first = d
+        .agent
+        .saturating_sub(agent_rows.saturating_sub(1))
+        .min(agents.len().saturating_sub(agent_rows));
+    for (i, agent) in agents.iter().enumerate().skip(first).take(agent_rows) {
+        let mut spans = if i == first {
+            field_label("Agent", d.field == Field::Agent)
+        } else {
+            vec![indent()]
+        };
+        let chosen = i == d.agent;
+        spans.push(Span::styled(
+            if chosen { "● " } else { "○ " },
+            if chosen {
+                Style::default().fg(TuiColor::Yellow)
+            } else {
+                dim()
+            },
+        ));
+        let style = if !agent.available {
+            dim()
+        } else if chosen {
+            bold()
+        } else {
+            Style::default()
+        };
+        spans.push(Span::styled(agent.name.clone(), style));
+        if !agent.available {
+            spans.push(Span::styled("  not installed", dim()));
+        } else if !agent.autonomy_supported {
+            spans.push(Span::styled("  no full autonomy", dim()));
+        }
+        match &d.route {
+            Route::Pending { .. } if chosen => {
+                spans.push(Span::styled(
+                    "  routing…",
+                    Style::default().fg(TuiColor::Yellow),
+                ));
+            }
+            Route::Suggested {
+                agent: suggested,
+                percent,
+                unsure,
+            } if *suggested == agent.name => {
+                let mark = if *unsure {
+                    "  unsure · your default".to_owned()
+                } else {
+                    format!("  suggested · {percent}%")
+                };
+                spans.push(Span::styled(mark, dim()));
+            }
+            _ => {}
+        }
+        lines.push(Line::from(spans));
+    }
+    gap(&mut lines);
+
+    let models = model_options(selected_name);
+    if let Some(model) = models.get(d.model) {
+        let mut spans = field_label("Model", d.field == Field::Model);
+        spans.extend(stepper(model, d.field == Field::Model));
+        if let Some(effort) = d
+            .effort
+            .filter(|_| !effort_options(selected_name, d.model).is_empty())
+        {
+            let active = d.field == Field::Effort;
+            spans.push(Span::styled(
+                "   effort ",
+                if active { bold() } else { dim() },
+            ));
+            spans.extend(stepper(effort.name(), active));
+        }
+        lines.push(Line::from(spans));
+        if let Some(note) = cost_note(selected_name, d.model) {
+            lines.push(Line::from(vec![
+                indent(),
+                Span::styled(format!("{model} {note}"), dim()),
+            ]));
+        }
+        gap(&mut lines);
+    }
+
+    let supported = selected.is_some_and(|a| a.autonomy_supported);
+    let mut mode = field_label("Mode", d.field == Field::Permission);
+    let radio = |on: bool| if on { "(•) " } else { "( ) " };
+    mode.push(Span::raw(format!("{}normal   ", radio(!d.autonomy))));
+    let full = format!("{}full autonomy", radio(d.autonomy));
+    mode.push(if supported {
+        Span::raw(full)
+    } else {
+        Span::styled(full, dim())
+    });
+    lines.push(Line::from(mode));
+    gap(&mut lines);
+
+    let base = app
+        .workspace()
+        .projects
+        .iter()
+        .find(|p| p.slug == d.project)
+        .map_or("main", |p| p.base_branch.as_str());
+    lines.push(if d.pending {
+        Line::styled(
+            format!("  creating… fetching {base}"),
+            Style::default().fg(TuiColor::Yellow),
+        )
+    } else if let Some(err) = &d.error {
+        Line::styled(format!("  {err}"), Style::default().fg(TuiColor::Red))
+    } else {
+        Line::styled(
+            "  ⏎ create · tab next field · ←→ change · esc cancel",
+            dim(),
+        )
+    });
+    lines
+}
+
 fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
     let (title, lines): (String, Vec<Line>) = match dialog {
         Dialog::Help => (
@@ -545,106 +859,9 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             }
             ("Remove worktree".into(), lines)
         }
-        Dialog::NewWorktree(d) => {
-            let project = app
-                .workspace()
-                .projects
-                .iter()
-                .find(|p| p.slug == d.project);
-            let base = project.map_or("main", |p| p.base_branch.as_str());
-            let mut lines = Vec::new();
-            let mut name = field_label("Name", d.field == Field::Name);
-            name.push(Span::raw(d.name.clone()));
-            if d.field == Field::Name {
-                name.push(Span::styled("▏", Style::default().fg(TuiColor::Yellow)));
-            }
-            lines.push(Line::from(name));
-            let preview = crate::git::sanitize_branch(&d.name).unwrap_or_default();
-            lines.push(Line::styled(
-                format!(
-                    "          branch: {}",
-                    if preview.is_empty() {
-                        "—"
-                    } else {
-                        preview.as_str()
-                    }
-                ),
-                dim(),
-            ));
-            lines.push(Line::default());
-            for (i, agent) in app.workspace().agents.iter().enumerate() {
-                let mut spans = if i == 0 {
-                    field_label("Agent", d.field == Field::Agent)
-                } else {
-                    vec![Span::raw("          ")]
-                };
-                let chosen = i == d.agent;
-                spans.push(Span::styled(
-                    if chosen { "● " } else { "○ " },
-                    if chosen {
-                        Style::default().fg(TuiColor::Yellow)
-                    } else {
-                        dim()
-                    },
-                ));
-                let style = if !agent.available {
-                    dim()
-                } else if chosen {
-                    bold()
-                } else {
-                    Style::default()
-                };
-                spans.push(Span::styled(agent.name.clone(), style));
-                if !agent.available {
-                    spans.push(Span::styled("  not installed", dim()));
-                } else if !agent.autonomy_supported {
-                    spans.push(Span::styled("  no full autonomy", dim()));
-                }
-                lines.push(Line::from(spans));
-            }
-            lines.push(Line::default());
-            let supported = app
-                .workspace()
-                .agents
-                .get(d.agent)
-                .is_some_and(|a| a.autonomy_supported);
-            let mut mode = field_label("Mode", d.field == Field::Permission);
-            let radio = |on: bool| if on { "(•) " } else { "( ) " };
-            mode.push(Span::raw(format!("{}normal   ", radio(!d.autonomy))));
-            let full = format!("{}full autonomy", radio(d.autonomy));
-            mode.push(if supported {
-                Span::raw(full)
-            } else {
-                Span::styled(full, dim())
-            });
-            lines.push(Line::from(mode));
-            lines.push(Line::default());
-            if d.pending {
-                lines.push(Line::styled(
-                    format!("  creating… fetching {base}"),
-                    Style::default().fg(TuiColor::Yellow),
-                ));
-            } else if let Some(err) = &d.error {
-                lines.push(Line::styled(
-                    format!("  {err}"),
-                    Style::default().fg(TuiColor::Red),
-                ));
-            } else {
-                lines.push(Line::styled(
-                    "  ⏎ create · tab next field · esc cancel",
-                    dim(),
-                ));
-            }
-            (
-                format!(
-                    "New worktree in {}",
-                    project.map_or(d.project.as_str(), |p| p.name.as_str())
-                ),
-                lines,
-            )
-        }
+        Dialog::NewWorktree(d) => new_worktree(app, d, body.height.saturating_sub(2)),
     };
-    let width = 56.min(body.width.saturating_sub(4));
+    let width = DIALOG_WIDTH.min(body.width.saturating_sub(4));
     let height = u16::try_from(lines.len()).unwrap_or(0) + 2;
     let rect = centered(body, width, height);
     f.render_widget(Clear, rect);
