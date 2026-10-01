@@ -286,6 +286,11 @@ impl App {
         self.router = config;
     }
 
+    /// Aviso da própria UI no rodapé (ex.: `router.toml` com algo ignorado).
+    pub fn warn(&mut self, text: String) {
+        self.set_notice(NoticeKind::Warn, text);
+    }
+
     /// Resposta do roteador à consulta `id`. Só vale se o diálogo ainda espera por ela.
     pub fn on_route(&mut self, id: u64, result: Result<Answers, RouteError>) {
         let agents = self.workspace.agents.clone();

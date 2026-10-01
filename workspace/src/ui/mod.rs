@@ -1,7 +1,8 @@
 //! Interface do modo Workspace: loop de terminal sobre o `App`.
 
 use std::io::{self, Write};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::Duration;
 
@@ -13,6 +14,8 @@ use crossterm::execute;
 
 use crate::daemon::client::{Connector, Handshake};
 use crate::protocol::{ClientKind, Conn, DaemonMsg};
+use crate::router::jev::{Decider, HttpJev};
+use crate::router::{Answers, RouteError, config};
 
 pub mod app;
 pub mod input;
@@ -100,6 +103,17 @@ fn spawn_reader(conn: Conn) -> Receiver<Option<DaemonMsg>> {
     rx
 }
 
+/// Resposta do roteador a uma consulta, com o id dela.
+type RouteAnswer = (u64, Result<Answers, RouteError>);
+
+/// Consulta o roteador numa thread, para o diálogo nunca travar esperando a rede.
+fn spawn_route(decider: Arc<dyn Decider>, tx: Sender<RouteAnswer>, id: u64, task: String) {
+    thread::spawn(move || {
+        // A UI pode ter saído: a resposta só é descartada
+        let _ = tx.send((id, decider.ask(&task)));
+    });
+}
+
 fn ui_env() -> Vec<(String, String)> {
     std::env::vars().collect()
 }
@@ -128,6 +142,13 @@ pub fn run() -> anyhow::Result<()> {
     let size = terminal.size()?;
     let mut app = App::new(size.width, size.height);
     app.set_default_autonomy(terminal::load_default_autonomy(&terminal::prefs_path()));
+    let (router_config, config_warning) = config::load(&config::config_path());
+    app.set_router_config(router_config);
+    if let Some(warning) = config_warning {
+        app.warn(warning);
+    }
+    let decider: Arc<dyn Decider> = Arc::new(HttpJev::from_env());
+    let (route_tx, route_rx) = mpsc::channel::<RouteAnswer>();
     for msg in app.attach_msgs(ui_env()) {
         writer.send(&msg)?;
     }
@@ -165,6 +186,10 @@ pub fn run() -> anyhow::Result<()> {
             }
         }
 
+        while let Ok((id, answer)) = route_rx.try_recv() {
+            app.on_route(id, answer);
+        }
+
         if event::poll(TICK)? {
             match event::read()? {
                 Event::Key(key) if key.kind != KeyEventKind::Release => {
@@ -186,7 +211,9 @@ pub fn run() -> anyhow::Result<()> {
                         continue;
                     }
                 }
-                Action::Route { .. } => {}
+                Action::Route { id, task } => {
+                    spawn_route(Arc::clone(&decider), route_tx.clone(), id, task);
+                }
                 Action::Bell => {
                     let _ = out.write_all(b"\x07");
                     let _ = out.flush();
@@ -207,4 +234,53 @@ pub fn run() -> anyhow::Result<()> {
         eprintln!("{msg}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    struct Fixed(Duration);
+
+    impl Decider for Fixed {
+        fn ask(&self, _task: &str) -> Result<Answers, RouteError> {
+            thread::sleep(self.0);
+            Err(RouteError::NoKey)
+        }
+    }
+
+    #[test]
+    fn a_route_request_answers_on_the_channel_with_its_id() {
+        let (tx, rx) = mpsc::channel();
+        spawn_route(Arc::new(Fixed(Duration::ZERO)), tx, 7, "t".to_owned());
+        let answer = rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(answer, (7, Err(RouteError::NoKey)));
+    }
+
+    #[test]
+    fn a_slow_decider_does_not_block_the_caller() {
+        let (tx, rx) = mpsc::channel();
+        let started = Instant::now();
+        spawn_route(
+            Arc::new(Fixed(Duration::from_millis(300))),
+            tx,
+            1,
+            "t".to_owned(),
+        );
+        assert!(started.elapsed() < Duration::from_millis(50));
+        assert!(rx.try_recv().is_err());
+        assert!(rx.recv_timeout(Duration::from_secs(2)).is_ok());
+    }
+
+    #[test]
+    fn an_answer_after_the_ui_is_gone_is_dropped_quietly() {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        spawn_route(Arc::new(Fixed(Duration::ZERO)), tx, 1, "t".to_owned());
+        thread::sleep(Duration::from_millis(50));
+    }
 }
