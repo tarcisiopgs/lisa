@@ -1,5 +1,5 @@
 use super::*;
-use crate::protocol::work::{AgentOption, AgentState, ProjectView, WorktreeView};
+use crate::protocol::work::{AgentOption, AgentState, GroupView, ProjectView, WorktreeView};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -1080,4 +1080,200 @@ fn pasting_a_path_into_the_picker_selects_that_repository() {
     a.on_key(key(KeyCode::Char('p')));
     a.on_paste(&format!("{}/work/api\n", tmp.path().display()));
     assert!(picker(&a).current().is_some_and(|e| e.name == "api"));
+}
+
+// ---- Grupos ----
+
+fn project(slug: &str, name: &str, group: Option<&str>, tag: &str) -> ProjectView {
+    ProjectView {
+        slug: slug.into(),
+        name: name.into(),
+        path: format!("/r/{slug}"),
+        base_branch: "main".into(),
+        group: group.map(str::to_owned),
+        tag: tag.into(),
+    }
+}
+
+fn group(slug: &str, name: &str) -> GroupView {
+    GroupView {
+        slug: slug.into(),
+        name: name.into(),
+    }
+}
+
+/// Grupo B-Metric (web e api, nessa ordem no registro), mais bloom e Lisa soltos.
+fn workspace_with_groups() -> WorkspaceState {
+    WorkspaceState {
+        groups: vec![group("b-metric", "B-Metric")],
+        projects: vec![
+            project("lisa", "Lisa", None, ""),
+            project("b-metric-web", "b-metric-web", Some("b-metric"), "web"),
+            project("bloom", "bloom", None, ""),
+            project("b-metric-api", "b-metric-api", Some("b-metric"), "api"),
+        ],
+        worktrees: vec![
+            wt("b-metric-web/dashboard", AgentState::Working, true),
+            wt("b-metric-api/ingest", AgentState::NeedsYou, true),
+            wt("lisa/sidebar", AgentState::Done, true),
+        ],
+        agents: workspace().agents,
+    }
+}
+
+fn grouped() -> App {
+    let mut a = App::new(120, 30);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace_with_groups()));
+    a
+}
+
+fn top_level(a: &App) -> Vec<Row> {
+    a.rows()
+        .into_iter()
+        .filter(|r| matches!(r, Row::Group { .. } | Row::Project { .. }))
+        .collect()
+}
+
+#[test]
+fn groups_and_projects_share_one_alphabetical_list() {
+    assert_eq!(
+        top_level(&grouped()),
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Project {
+                slug: "bloom".into()
+            },
+            Row::Project {
+                slug: "lisa".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_group_lists_its_agents_by_repository_tag() {
+    let rows = grouped().rows();
+    assert_eq!(
+        rows[..3],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Worktree {
+                id: "b-metric-api/ingest".into()
+            },
+            Row::Worktree {
+                id: "b-metric-web/dashboard".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_repository_without_agents_takes_no_row() {
+    let mut ws = workspace_with_groups();
+    ws.worktrees.retain(|w| w.project != "b-metric-api");
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    let rows = a.rows();
+    assert!(!rows.iter().any(|r| matches!(
+        r,
+        Row::Project { slug } | Row::Empty { project: slug } if slug.starts_with("b-metric")
+    )));
+    assert_eq!(
+        rows[..2],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::Worktree {
+                id: "b-metric-web/dashboard".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_group_without_agents_shows_one_hint_row() {
+    let mut ws = workspace_with_groups();
+    ws.worktrees.retain(|w| w.project == "lisa");
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    assert_eq!(
+        a.rows()[..3],
+        [
+            Row::Group {
+                slug: "b-metric".into()
+            },
+            Row::EmptyGroup {
+                group: "b-metric".into()
+            },
+            Row::Project {
+                slug: "bloom".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn folding_a_group_does_not_fold_a_project_with_the_same_slug() {
+    let mut ws = workspace_with_groups();
+    ws.groups.push(group("lisa", "Lisa tools"));
+    ws.projects
+        .push(project("lisa-cli", "lisa-cli", Some("lisa"), "cli"));
+    ws.worktrees
+        .push(wt("lisa-cli/flags", AgentState::Working, true));
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| {
+            *r == Row::Group {
+                slug: "lisa".into(),
+            }
+        })
+        .unwrap_or_else(|| panic!("no group row"));
+    a.select_row(at);
+    a.on_key(key(KeyCode::Enter));
+    let rows = a.rows();
+    assert!(!rows.contains(&Row::Worktree {
+        id: "lisa-cli/flags".into()
+    }));
+    assert!(rows.contains(&Row::Worktree {
+        id: "lisa/sidebar".into()
+    }));
+}
+
+#[test]
+fn the_selection_stays_on_the_same_row_when_groups_arrive() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    let mut ws = workspace_with_groups();
+    ws.groups.push(group("acme", "Acme"));
+    ws.projects
+        .push(project("acme-api", "acme-api", Some("acme"), "api"));
+    a.on_daemon(DaemonMsg::State(ws));
+    assert_eq!(
+        a.selected_row(),
+        Some(Row::Worktree {
+            id: "lisa/sidebar".into()
+        })
+    );
+}
+
+#[test]
+fn a_project_whose_group_is_gone_is_listed_standalone() {
+    let mut ws = workspace_with_groups();
+    ws.groups.clear();
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    assert!(a.rows().contains(&Row::Project {
+        slug: "b-metric-api".into()
+    }));
+    let w = wt("b-metric-api/ingest", AgentState::Working, true);
+    assert_eq!(a.tag(&w), None);
 }

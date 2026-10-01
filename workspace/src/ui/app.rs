@@ -10,8 +10,8 @@ use super::picker::{Outcome, Picker};
 use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
 use crate::protocol::work::AgentOption;
 use crate::protocol::work::{
-    AgentState, ClientMsg, Color, CursorPos, DaemonMsg, Line, Modes, PermissionWire, Snapshot,
-    WorkspaceState, WorktreeView,
+    AgentState, ClientMsg, Color, CursorPos, DaemonMsg, GroupView, Line, Modes, PermissionWire,
+    ProjectView, Snapshot, WorkspaceState, WorktreeView,
 };
 use crate::router::{self, Answers, RouteError, RouterConfig, Size};
 
@@ -50,6 +50,9 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Row {
+    Group {
+        slug: String,
+    },
     Project {
         slug: String,
     },
@@ -60,6 +63,15 @@ pub enum Row {
     Empty {
         project: String,
     },
+    /// Grupo sem nenhum agente.
+    EmptyGroup {
+        group: String,
+    },
+}
+
+/// Chave de um grupo em `collapsed`. Slug de projeto nunca tem `/`, então não colide.
+pub fn group_key(slug: &str) -> String {
+    format!("group/{slug}")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -400,33 +412,129 @@ impl App {
         self.exit_message.as_deref()
     }
 
-    pub fn is_collapsed(&self, slug: &str) -> bool {
-        self.collapsed.iter().any(|c| c == slug)
+    /// `key`: slug do projeto ou `group_key` do grupo.
+    pub fn is_collapsed(&self, key: &str) -> bool {
+        self.collapsed.iter().any(|c| c == key)
     }
 
+    fn toggle_collapsed(&mut self, key: String) {
+        if self.is_collapsed(&key) {
+            self.collapsed.retain(|c| *c != key);
+        } else {
+            self.collapsed.push(key);
+        }
+    }
+
+    fn group_exists(&self, slug: &str) -> bool {
+        self.workspace.groups.iter().any(|g| g.slug == slug)
+    }
+
+    /// Grupo do projeto, se o grupo existir.
+    fn group_of(&self, project: &str) -> Option<&str> {
+        self.workspace
+            .projects
+            .iter()
+            .find(|p| p.slug == project)
+            .and_then(|p| p.group.as_deref())
+            .filter(|g| self.group_exists(g))
+    }
+
+    /// Projetos do grupo, em ordem alfabética da marca.
+    pub fn group_repos(&self, group: &str) -> Vec<&ProjectView> {
+        let mut repos: Vec<&ProjectView> = self
+            .workspace
+            .projects
+            .iter()
+            .filter(|p| p.group.as_deref() == Some(group))
+            .collect();
+        repos.sort_by_key(|p| (p.tag.to_lowercase(), p.slug.clone()));
+        repos
+    }
+
+    /// Marca do repositório do worktree, quando ele pertence a um grupo.
+    pub fn tag(&self, worktree: &WorktreeView) -> Option<&str> {
+        self.group_of(&worktree.project)?;
+        self.workspace
+            .projects
+            .iter()
+            .find(|p| p.slug == worktree.project)
+            .map(|p| p.tag.as_str())
+    }
+
+    /// Worktrees do grupo, na ordem em que aparecem no menu.
+    pub fn group_worktrees(&self, group: &str) -> Vec<&WorktreeView> {
+        self.group_repos(group)
+            .into_iter()
+            .flat_map(|p| {
+                self.workspace
+                    .worktrees
+                    .iter()
+                    .filter(move |w| w.project == p.slug)
+            })
+            .collect()
+    }
+
+    /// Grupos e projetos soltos numa lista só, em ordem alfabética; sob um grupo aberto,
+    /// os agentes de todos os seus repositórios.
     pub fn rows(&self) -> Vec<Row> {
+        enum Top<'a> {
+            Group(&'a GroupView),
+            Project(&'a ProjectView),
+        }
+        let ws = &self.workspace;
+        let mut tops: Vec<(String, &str, Top)> = ws
+            .groups
+            .iter()
+            .map(|g| (g.name.to_lowercase(), g.slug.as_str(), Top::Group(g)))
+            .chain(
+                ws.projects
+                    .iter()
+                    .filter(|p| self.group_of(&p.slug).is_none())
+                    .map(|p| (p.name.to_lowercase(), p.slug.as_str(), Top::Project(p))),
+            )
+            .collect();
+        tops.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+
         let mut rows = Vec::new();
-        for p in &self.workspace.projects {
-            rows.push(Row::Project {
-                slug: p.slug.clone(),
-            });
-            if self.is_collapsed(&p.slug) {
-                continue;
-            }
-            let mut any = false;
-            for w in self
-                .workspace
-                .worktrees
-                .iter()
-                .filter(|w| w.project == p.slug)
-            {
-                rows.push(Row::Worktree { id: w.id.clone() });
-                any = true;
-            }
-            if !any {
-                rows.push(Row::Empty {
-                    project: p.slug.clone(),
-                });
+        for (_, _, top) in tops {
+            match top {
+                Top::Group(g) => {
+                    rows.push(Row::Group {
+                        slug: g.slug.clone(),
+                    });
+                    if self.is_collapsed(&group_key(&g.slug)) {
+                        continue;
+                    }
+                    let worktrees = self.group_worktrees(&g.slug);
+                    if worktrees.is_empty() {
+                        rows.push(Row::EmptyGroup {
+                            group: g.slug.clone(),
+                        });
+                    }
+                    rows.extend(
+                        worktrees
+                            .into_iter()
+                            .map(|w| Row::Worktree { id: w.id.clone() }),
+                    );
+                }
+                Top::Project(p) => {
+                    rows.push(Row::Project {
+                        slug: p.slug.clone(),
+                    });
+                    if self.is_collapsed(&p.slug) {
+                        continue;
+                    }
+                    let mut any = false;
+                    for w in ws.worktrees.iter().filter(|w| w.project == p.slug) {
+                        rows.push(Row::Worktree { id: w.id.clone() });
+                        any = true;
+                    }
+                    if !any {
+                        rows.push(Row::Empty {
+                            project: p.slug.clone(),
+                        });
+                    }
+                }
             }
         }
         rows
@@ -455,6 +563,20 @@ impl App {
             Row::Project { slug } => Some(slug),
             Row::Empty { project } => Some(project),
             Row::Worktree { id } => self.worktree(&id).map(|w| w.project.clone()),
+            Row::Group { .. } | Row::EmptyGroup { .. } => None,
+        }
+    }
+
+    /// Grupo da linha selecionada: a do grupo, a vazia ou um agente de um repositório dele.
+    pub fn selected_group(&self) -> Option<String> {
+        match self.selected_row()? {
+            Row::Group { slug } => Some(slug),
+            Row::EmptyGroup { group } => Some(group),
+            Row::Worktree { id } => {
+                let project = &self.worktree(&id)?.project;
+                self.group_of(project).map(str::to_owned)
+            }
+            Row::Project { .. } | Row::Empty { .. } => None,
         }
     }
 
@@ -721,13 +843,8 @@ impl App {
             }
             KeyCode::Enter => match self.selected_row() {
                 Some(Row::Worktree { id }) => return self.open(&id),
-                Some(Row::Project { slug }) => {
-                    if self.is_collapsed(&slug) {
-                        self.collapsed.retain(|c| *c != slug);
-                    } else {
-                        self.collapsed.push(slug);
-                    }
-                }
+                Some(Row::Project { slug }) => self.toggle_collapsed(slug),
+                Some(Row::Group { slug }) => self.toggle_collapsed(group_key(&slug)),
                 _ => {}
             },
             KeyCode::Char('n') => match self.selected_project() {

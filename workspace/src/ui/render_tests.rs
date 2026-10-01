@@ -1,6 +1,6 @@
 use super::*;
 use crate::protocol::work::{
-    AgentOption, AgentState, CursorPos, DaemonMsg, Line, Modes, ProjectView, Snapshot,
+    AgentOption, AgentState, CursorPos, DaemonMsg, GroupView, Line, Modes, ProjectView, Snapshot,
     WorkspaceState, WorktreeView,
 };
 use crate::ui::app::App;
@@ -555,4 +555,124 @@ fn project_picker_fits_the_smallest_terminal() {
     let tmp = projects_home(30);
     let a = picker_app(&tmp, 60, 12);
     insta::assert_snapshot!(draw(&a).backend());
+}
+
+// ---- Grupos ----
+
+fn project(slug: &str, group: Option<&str>, tag: &str) -> ProjectView {
+    ProjectView {
+        slug: slug.into(),
+        name: slug.into(),
+        path: format!("/r/{slug}"),
+        base_branch: "main".into(),
+        group: group.map(str::to_owned),
+        tag: tag.into(),
+    }
+}
+
+fn grouped_workspace() -> WorkspaceState {
+    WorkspaceState {
+        groups: vec![GroupView {
+            slug: "b-metric".into(),
+            name: "B-Metric".into(),
+        }],
+        projects: vec![
+            project("lisa", None, ""),
+            project("b-metric-web", Some("b-metric"), "web"),
+            project("bloom", None, ""),
+            project("b-metric-api", Some("b-metric"), "api"),
+            project("b-metric-consumer", Some("b-metric"), "consumer"),
+        ],
+        worktrees: vec![
+            wt("b-metric-web/dashboard-filter", AgentState::NeedsYou, true),
+            wt("b-metric-api/fix-ingest-lag", AgentState::Working, true),
+            wt("lisa/sidebar-groups", AgentState::Done, true),
+        ],
+        agents: workspace().agents,
+    }
+}
+
+fn grouped(cols: u16, rows: u16, ws: WorkspaceState) -> App {
+    let mut a = App::new(cols, rows);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a
+}
+
+/// Texto de uma linha da tela, da coluna 0 até `width`.
+fn row_text(t: &Terminal<TestBackend>, y: u16, width: u16) -> String {
+    let buf = t.backend().buffer();
+    (0..width)
+        .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().to_owned()))
+        .collect()
+}
+
+#[test]
+fn grouped_agents_carry_a_dim_repository_tag() {
+    let a = grouped(100, 14, grouped_workspace());
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 2, 28), "   ◉ fix-ingest-lag     api ");
+    let buf = t.backend().buffer();
+    let cell = buf.cell((24, 2)).unwrap_or_else(|| panic!("cell"));
+    assert!(cell.modifier.contains(Modifier::DIM), "tag is not dim");
+}
+
+#[test]
+fn a_long_agent_name_is_cut_before_the_tag() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/dev-2368-atividades-do-projeto",
+        AgentState::Working,
+        true,
+    ));
+    let a = grouped(100, 14, ws);
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 3, 29), "   ◉ dev-2368-ati… consumer │");
+}
+
+#[test]
+fn a_folded_group_shows_its_most_urgent_state() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Enter));
+    let t = draw(&a);
+    insta::assert_snapshot!(t.backend());
+    assert_eq!(row_text(&t, 1, 29), "▐▸ B-Metric               ◆ │");
+}
+
+#[test]
+fn a_group_without_agents_shows_a_hint() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.retain(|w| w.project == "lisa");
+    let a = grouped(100, 14, ws);
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn narrow_terminal_keeps_groups_in_the_glyph_rail() {
+    let mut a = grouped(80, 12, grouped_workspace());
+    open(&mut a, "b-metric-api/fix-ingest-lag");
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn a_tag_never_reaches_the_separator_and_wide_characters_do_not_panic() {
+    let mut ws = grouped_workspace();
+    ws.worktrees.push(wt(
+        "b-metric-consumer/correção-🚀-login-com-nome-comprido",
+        AgentState::Working,
+        true,
+    ));
+    let a = grouped(100, 14, ws);
+    let t = draw(&a);
+    let buf = t.backend().buffer();
+    for y in 0..13 {
+        let sep = buf.cell((28, y)).unwrap_or_else(|| panic!("cell"));
+        assert_eq!(sep.symbol(), "│", "row {y}");
+    }
+    let line = row_text(&t, 3, 28);
+    assert!(line.contains('…'), "{line}");
+    assert!(line.trim_end().ends_with("consumer"), "{line}");
 }

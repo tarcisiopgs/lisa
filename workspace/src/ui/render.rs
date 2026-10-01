@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{
     App, Dialog, Field, MIN_COLS, MIN_ROWS, NewWorktree, NoticeKind, RAIL_WIDTH, Route, Row,
-    SIDEBAR_WIDTH, Zone, cost_note, effort_options, model_options, task_delivered,
+    SIDEBAR_WIDTH, Zone, cost_note, effort_options, group_key, model_options, task_delivered,
 };
 use super::picker::Picker;
 use crate::protocol::work::{
@@ -54,6 +54,48 @@ pub fn state_glyph(w: &WorktreeView) -> (&'static str, Style) {
         AgentState::Done => ("✔", Style::default().fg(TuiColor::Green)),
         AgentState::Idle => ("○", dim()),
     }
+}
+
+/// Colunas que a marca do repositório ocupa, no máximo.
+pub const TAG_WIDTH: usize = 8;
+
+/// Glifo do estado mais urgente entre os agentes do grupo: precisa de você, trabalhando,
+/// concluído. Nada quando todos estão ociosos ou parados.
+pub fn group_glyph(app: &App, group: &str) -> Option<(&'static str, Style)> {
+    let worktrees = app.group_worktrees(group);
+    [AgentState::NeedsYou, AgentState::Working, AgentState::Done]
+        .into_iter()
+        .find_map(|state| {
+            worktrees
+                .iter()
+                .find(|w| w.running && !w.broken && w.state == state)
+                .map(|w| state_glyph(w))
+        })
+}
+
+/// Largura em colunas do terminal (caracteres largos contam dois).
+fn cols(text: &str) -> usize {
+    Span::raw(text).width()
+}
+
+/// Corta por colunas, sem partir caractere: o que não cabe vira `…`.
+fn clip(text: &str, width: usize) -> String {
+    if cols(text) <= width {
+        return text.to_owned();
+    }
+    let mut out = String::new();
+    for ch in text.chars() {
+        let mut next = out.clone();
+        next.push(ch);
+        if cols(&next) + 1 > width {
+            break;
+        }
+        out = next;
+    }
+    if width > 0 {
+        out.push('…');
+    }
+    out
 }
 
 fn truncate(text: &str, width: usize) -> String {
@@ -310,6 +352,30 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
             Span::raw(" ")
         };
         let line = match row {
+            Row::Group { slug } => {
+                let name = app
+                    .workspace()
+                    .groups
+                    .iter()
+                    .find(|g| g.slug == *slug)
+                    .map_or(slug.as_str(), |g| g.name.as_str());
+                let folded = app.is_collapsed(&group_key(slug));
+                let arrow = if folded { "▸ " } else { "▾ " };
+                // Fechado, o grupo resume os agentes num glifo na última coluna útil
+                let summary = folded.then(|| group_glyph(app, slug)).flatten();
+                let room = width.saturating_sub(if summary.is_some() { 6 } else { 4 });
+                let name = clip(name, room);
+                let mut spans = vec![bar, Span::raw(arrow)];
+                if let Some((glyph, style)) = summary {
+                    let pad = width.saturating_sub(5 + cols(&name));
+                    spans.push(Span::styled(name, bold()));
+                    spans.push(Span::raw(" ".repeat(pad)));
+                    spans.push(Span::styled(glyph, style));
+                } else {
+                    spans.push(Span::styled(name, bold()));
+                }
+                Line::from(spans)
+            }
             Row::Project { slug } => {
                 let name = app
                     .workspace()
@@ -339,15 +405,32 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
                 } else {
                     Style::default()
                 };
-                Line::from(vec![
+                let mut spans = vec![
                     bar,
                     Span::raw("  "),
                     Span::styled(glyph, style),
                     Span::raw(" "),
-                    Span::styled(truncate(&w.name, width.saturating_sub(6)), name_style),
-                ])
+                ];
+                match app.tag(w) {
+                    // Agente de grupo: a marca do repositório fica inteira, à direita
+                    Some(tag) => {
+                        let tag = clip(tag, TAG_WIDTH);
+                        let room = width.saturating_sub(7 + cols(&tag));
+                        let name = clip(&w.name, room);
+                        let pad = width.saturating_sub(6 + cols(&name) + cols(&tag));
+                        spans.push(Span::styled(name, name_style));
+                        spans.push(Span::raw(" ".repeat(pad)));
+                        spans.push(Span::styled(tag, dim()));
+                    }
+                    None => spans.push(Span::styled(
+                        truncate(&w.name, width.saturating_sub(6)),
+                        name_style,
+                    )),
+                }
+                Line::from(spans)
             }
             Row::Empty { .. } => Line::from(vec![bar, Span::styled("  no worktrees · n", dim())]),
+            Row::EmptyGroup { .. } => Line::from(vec![bar, Span::styled("  no agents · n", dim())]),
         };
         lines.push(line);
     }
