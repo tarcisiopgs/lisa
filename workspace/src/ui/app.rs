@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
-use super::input::{encode_key, encode_paste};
+use super::input::{encode_key, encode_mouse, encode_paste};
 use super::picker::{Outcome, Picker};
 use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
 use crate::naming;
@@ -27,6 +27,8 @@ pub const PANE_MIN: u16 = 40;
 pub const RAIL_WIDTH: u16 = 3;
 /// Abaixo desta largura a lateral vira trilho.
 pub const WIDE_MIN: u16 = 100;
+/// Linhas que um passo da roda do mouse rola.
+pub const WHEEL_LINES: i32 = 3;
 /// Tamanho mínimo utilizável.
 pub const MIN_COLS: u16 = 60;
 pub const MIN_ROWS: u16 = 12;
@@ -773,6 +775,101 @@ impl App {
         }
         self.window_focused = focused;
         vec![self.focus_msg()]
+    }
+
+    /// Primeira linha do menu à vista: a seleção nunca sai da tela. É a mesma conta do
+    /// desenho, para o clique cair na linha que se vê.
+    pub fn sidebar_offset(&self) -> usize {
+        let height = usize::from(self.rows.saturating_sub(2));
+        self.selected.saturating_sub(height.saturating_sub(1))
+    }
+
+    /// Clique e roda. No menu, selecionam e abrem; no painel, vão para o agente quando ele
+    /// pede mouse e, quando não pede, a roda rola o histórico.
+    pub fn on_mouse(&mut self, mouse: MouseEvent) -> Vec<Action> {
+        if self.dialog.is_some() {
+            return Vec::new();
+        }
+        let body = self.rows.saturating_sub(1);
+        if mouse.row >= body {
+            return Vec::new();
+        }
+        // Em terminal estreito, a lateral completa só existe enquanto está em foco
+        let side = if self.wide() || self.zone == Zone::Sidebar {
+            self.sidebar_width()
+        } else {
+            RAIL_WIDTH
+        };
+        if mouse.column < side {
+            return self.on_sidebar_mouse(mouse);
+        }
+        let pane_x = if self.wide() { side } else { RAIL_WIDTH } + 1;
+        if mouse.column < pane_x {
+            return Vec::new();
+        }
+        self.on_pane_mouse(mouse, mouse.column - pane_x)
+    }
+
+    fn on_sidebar_mouse(&mut self, mouse: MouseEvent) -> Vec<Action> {
+        let len = self.rows().len();
+        match mouse.kind {
+            MouseEventKind::ScrollUp => self.selected = self.selected.saturating_sub(1),
+            MouseEventKind::ScrollDown => {
+                self.selected = (self.selected + 1).min(len.saturating_sub(1));
+            }
+            // A primeira linha é o título `PROJECTS`
+            MouseEventKind::Down(MouseButton::Left) if mouse.row > 0 => {
+                let index = self.sidebar_offset() + usize::from(mouse.row) - 1;
+                if index >= len {
+                    return Vec::new();
+                }
+                self.selected = index;
+                self.zone = Zone::Sidebar;
+                // O clique faz o que o ⏎ faz na linha
+                return self.on_sidebar_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn on_pane_mouse(&mut self, mouse: MouseEvent, col: u16) -> Vec<Action> {
+        let Some(pane) = self.focused.clone() else {
+            return Vec::new();
+        };
+        let modes = self.modes();
+        if matches!(mouse.kind, MouseEventKind::Down(_)) {
+            self.zone = Zone::Pane;
+        }
+        let input = |bytes: Vec<u8>| {
+            if bytes.is_empty() {
+                Vec::new()
+            } else {
+                vec![Action::Send(ClientMsg::Input {
+                    pane: pane.clone(),
+                    bytes,
+                })]
+            }
+        };
+        // O agente pediu mouse: o evento é dele, na célula do painel
+        if modes.mouse_report {
+            return input(encode_mouse(&mouse, col, mouse.row, &modes));
+        }
+        let back = match mouse.kind {
+            MouseEventKind::ScrollUp => true,
+            MouseEventKind::ScrollDown => false,
+            _ => return Vec::new(),
+        };
+        // Tela alternativa não tem histórico: a roda vira setas, como os terminais fazem
+        if modes.alt_screen {
+            let code = if back { KeyCode::Up } else { KeyCode::Down };
+            let arrow = encode_key(KeyEvent::new(code, KeyModifiers::NONE), &modes);
+            return input(arrow.repeat(usize::try_from(WHEEL_LINES).unwrap_or(1)));
+        }
+        vec![Action::Send(ClientMsg::Scroll {
+            pane,
+            lines: if back { WHEEL_LINES } else { -WHEEL_LINES },
+        })]
     }
 
     pub fn on_paste(&mut self, text: &str) -> Vec<Action> {
@@ -1595,6 +1692,7 @@ pub fn blank_screen(cols: u16, rows: u16) -> Snapshot {
         },
         title: String::new(),
         modes: Modes::default(),
+        scrolled: 0,
     }
 }
 

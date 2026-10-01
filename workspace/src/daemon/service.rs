@@ -779,6 +779,10 @@ impl Inner {
                 }
                 self.broadcast_state();
             }
+            ClientMsg::Scroll { pane, lines } => {
+                self.sessions.scroll(&pane, lines);
+                self.mark_dirty(&pane);
+            }
             ClientMsg::Rename { target, name } => {
                 let result = {
                     let mut registry = lock(&self.registry);

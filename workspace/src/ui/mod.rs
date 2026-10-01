@@ -7,8 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::event::{
-    self, EnableBracketedPaste, EnableFocusChange, Event, KeyEventKind, KeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    self, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, Event, KeyEventKind,
+    KeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 
@@ -130,7 +130,13 @@ pub fn run() -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
     let enhanced = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
     let mut out = io::stdout();
-    let _ = execute!(out, EnableBracketedPaste, EnableFocusChange);
+    // Com o mouse capturado, selecionar texto no terminal passa a pedir Shift
+    let _ = execute!(
+        out,
+        EnableBracketedPaste,
+        EnableFocusChange,
+        EnableMouseCapture
+    );
     if enhanced {
         let _ = execute!(
             out,
@@ -205,6 +211,7 @@ pub fn run() -> anyhow::Result<()> {
                     actions.extend(app.on_key(key))
                 }
                 Event::Paste(text) => actions.extend(app.on_paste(&text)),
+                Event::Mouse(mouse) => actions.extend(app.on_mouse(mouse)),
                 Event::Resize(cols, rows) => actions.extend(app.on_resize(cols, rows)),
                 Event::FocusGained => actions.extend(app.on_focus(true)),
                 Event::FocusLost => actions.extend(app.on_focus(false)),

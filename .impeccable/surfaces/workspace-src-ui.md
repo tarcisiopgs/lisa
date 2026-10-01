@@ -41,6 +41,7 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
   - `q` quit (agents keep running; on the way out Lisa prints how many and how to come back)
   - `Q` stop every agent and quit, after a confirmation
   - The help overlay lists the keys in two sections, `ANYWHERE` and `SIDEBAR`.
+- Mouse: a click on a sidebar row does what `⏎` does there (open a worktree, fold a project or group); a click on the pane focuses the agent. The wheel moves the selection over the sidebar and scrolls the agent's history over the pane; agents that ask for the mouse receive it instead. No mouse under a dialog. Selecting text is Shift + drag, done by the terminal.
 - Dialogs are centred single-border boxes with a cyan title.
   - New worktree, step 1: the task alone, always, with `⏎ continue · esc cancel` (`⏎ skip` while it is empty).
   - Rename (`e`) happens in the sidebar row itself, never in a box on the agent side: the name becomes editable in place (`▐▾ Tarcísio Pedro▏`), keeping its end and the cursor in view, and the footer speaks only about it, from the left edge: `branch: <sanitized> · ⏎ rename · esc cancel` for a worktree, `⏎ rename · empty restores the folder name · esc cancel` for a project.
@@ -64,6 +65,7 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
 - No projects: a centred message in the pane area, `No projects yet` and `p add a project`.
 - Project without worktrees: a dim `no worktrees · n` row.
 - Group without agents: the same dim `no worktrees · n` row.
+- History: while the pane shows scrollback, its last row reads `↑ N lines back · scroll down or type to return` in dim and the agent's cursor is hidden.
 - Exited agent: the last screen dimmed with a bottom banner `agent exited (code N) · r restart`.
 - Broken worktree: the pane says `Worktree missing on disk · d remove from list`.
 - Notices (yellow) and errors (red) take over the footer for 5 s.

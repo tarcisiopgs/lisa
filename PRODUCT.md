@@ -55,6 +55,7 @@ One agent runs in one worktree of one repository; work that spans several reposi
   - a group's agents are listed directly under it, each marked with its repository
   - ungrouping turns the repositories back into standalone projects and deletes nothing
 - The sidebar width is adjustable between 20 and 48 columns.
+- The mouse works: clicking selects and opens in the sidebar and focuses the agent, and the wheel scrolls the agent's history (2,000 lines per agent). Selecting text needs Shift + drag.
 - Worktree names are generated from a fixed word list and changed afterwards; projects can carry an alias, and groups and worktrees can be renamed. Renaming a worktree renames its local branch.
 - A new worktree always starts from the task; the second step picks agent, model and mode. With the router key set, that step arrives already filled in and says what the router decided.
 - Terminology:

@@ -1444,3 +1444,26 @@ fn in_a_narrow_terminal_the_empty_pane_hint_stays_clear_of_the_sidebar() {
     let hint = line.split('│').nth(1).unwrap_or_default();
     assert!(hint.trim_start().starts_with("⏎ opens "), "{line:?}");
 }
+
+// ---- Histórico ----
+
+#[test]
+fn a_scrolled_pane_says_how_far_back_it_is_and_hides_the_cursor() {
+    let mut a = app(100, 14);
+    open(&mut a, "api/fix-login");
+    let (cols, rows) = a.pane_size();
+    let mut snapshot = screen_with(&["old line"], cols, rows);
+    snapshot.scrolled = 42;
+    snapshot.cursor.visible = false;
+    a.on_daemon(DaemonMsg::Snapshot {
+        pane: "api/fix-login".into(),
+        snapshot,
+    });
+    let t = draw(&a);
+    let line = row_text(&t, 12, 100);
+    assert!(
+        line.contains(" ↑ 42 lines back · scroll down or type to return "),
+        "{line:?}"
+    );
+    insta::assert_snapshot!(t.backend());
+}

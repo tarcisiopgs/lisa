@@ -308,6 +308,24 @@ fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
     if let Some(screen) = app.screen() {
         draw_screen(f, screen, pane, !view.running);
     }
+    let last_row = Rect {
+        y: pane.y + pane.height - 1,
+        height: 1,
+        ..pane
+    };
+    // Vendo o histórico: a última linha diz onde se está e como voltar
+    if let Some(back) = app.screen().map(|s| s.scrolled).filter(|n| *n > 0) {
+        let lines = if back == 1 { "line" } else { "lines" };
+        f.render_widget(Clear, last_row);
+        f.render_widget(
+            Paragraph::new(format!(
+                " ↑ {back} {lines} back · scroll down or type to return "
+            ))
+            .style(dim()),
+            last_row,
+        );
+        return;
+    }
     if !view.running {
         let code = view
             .exit_code
@@ -388,7 +406,7 @@ fn draw_screen(f: &mut Frame, screen: &Snapshot, pane: Rect, faded: bool) {
 fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
     let rows = app.rows();
     let height = usize::from(side.height.saturating_sub(1));
-    let offset = app.selected().saturating_sub(height.saturating_sub(1));
+    let offset = app.sidebar_offset();
     let width = usize::from(side.width);
     let mut lines = vec![Line::styled(
         " PROJECTS",
@@ -528,7 +546,7 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
 fn render_rail(f: &mut Frame, app: &App, side: Rect) {
     let rows = app.rows();
     let height = usize::from(side.height.saturating_sub(1));
-    let offset = app.selected().saturating_sub(height.saturating_sub(1));
+    let offset = app.sidebar_offset();
     let mut lines = vec![Line::default()];
     for (i, row) in rows.iter().enumerate().skip(offset).take(height) {
         let bar = if i == app.selected() {
@@ -1167,6 +1185,9 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
                 [
                     ("^a", "switch between the agent and the sidebar"),
                     ("^a ^a", "send ctrl-a to the agent"),
+                    ("click", "open a row · focus the agent"),
+                    ("wheel", "move in the sidebar · scroll the agent"),
+                    ("⇧ drag", "select text, as your terminal does it"),
                 ]
                 .iter()
                 .map(key),

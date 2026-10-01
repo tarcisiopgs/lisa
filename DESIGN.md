@@ -130,6 +130,10 @@ A plain bordered box with a bold cyan title set into the top border. Fields are 
 
 Renaming edits the name in its own sidebar row, with the text cursor after it; no box opens on the agent side. The footer carries the branch preview and the keys while it lasts.
 
+### History banner
+
+While the pane shows scrollback, its last row says how far back the view is and how to return, dim, in the place the exit banner uses.
+
 ### Notices
 
 Inline, on the line where they apply: yellow for warnings, red for errors and refusals. A refusal states the reason and names the key that forces the action.

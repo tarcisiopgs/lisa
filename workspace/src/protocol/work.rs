@@ -73,6 +73,11 @@ pub enum ClientMsg {
         target: RenameTarget,
         name: String,
     },
+    /// Rola o histórico do painel: positivo volta no tempo, negativo avança.
+    Scroll {
+        pane: String,
+        lines: i32,
+    },
 }
 
 /// O que um `Rename` renomeia, pelo slug ou id.
@@ -235,6 +240,8 @@ pub struct Snapshot {
     pub cursor: CursorPos,
     pub title: String,
     pub modes: Modes,
+    /// Linhas de histórico acima do que está à vista; 0 quando a tela mostra o fim.
+    pub scrolled: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,6 +250,7 @@ pub struct SnapshotDiff {
     pub cursor: CursorPos,
     pub title: String,
     pub modes: Modes,
+    pub scrolled: u32,
 }
 
 impl Snapshot {
@@ -265,6 +273,7 @@ impl Snapshot {
             cursor: self.cursor,
             title: self.title.clone(),
             modes: self.modes,
+            scrolled: self.scrolled,
         })
     }
 
@@ -277,5 +286,6 @@ impl Snapshot {
         self.cursor = diff.cursor;
         self.title.clone_from(&diff.title);
         self.modes = diff.modes;
+        self.scrolled = diff.scrolled;
     }
 }

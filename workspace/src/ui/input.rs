@@ -1,7 +1,7 @@
 //! Teclas e colagens do terminal hospedeiro → bytes para o PTY do agente,
 //! respeitando os modos que o agente ligou no painel.
 
-use crossterm::event::{KeyEvent, KeyModifiers};
+use crossterm::event::{KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use terminput::{Encoding, KittyFlags};
 
 pub use crate::protocol::work::Modes;
@@ -46,6 +46,49 @@ pub fn encode_key(key: KeyEvent, modes: &Modes) -> Vec<u8> {
         bytes[1] = b'O';
     }
     bytes
+}
+
+/// Bytes para um evento de mouse na célula `col`×`row` do painel (a partir de zero), no
+/// protocolo que o agente ligou. Vazio para o que não tem codificação: movimento sem
+/// botão e, no protocolo antigo, posições além da coluna ou linha 223.
+pub fn encode_mouse(event: &MouseEvent, col: u16, row: u16, modes: &Modes) -> Vec<u8> {
+    let button = |b: MouseButton| match b {
+        MouseButton::Left => 0u16,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    };
+    let (code, release) = match event.kind {
+        MouseEventKind::Down(b) => (button(b), false),
+        MouseEventKind::Up(b) => (button(b), true),
+        MouseEventKind::Drag(b) => (button(b) + 32, false),
+        MouseEventKind::ScrollUp => (64, false),
+        MouseEventKind::ScrollDown => (65, false),
+        _ => return Vec::new(),
+    };
+    let mods = [
+        (KeyModifiers::SHIFT, 4),
+        (KeyModifiers::ALT, 8),
+        (KeyModifiers::CONTROL, 16),
+    ]
+    .iter()
+    .filter(|(m, _)| event.modifiers.contains(*m))
+    .map(|(_, bit)| bit)
+    .sum::<u16>();
+    let (x, y) = (col + 1, row + 1);
+    if modes.sgr_mouse {
+        let end = if release { 'm' } else { 'M' };
+        return format!("\x1b[<{};{x};{y}{end}", code + mods).into_bytes();
+    }
+    // X10: um byte por valor, com 32 somado; soltar o botão é sempre o código 3
+    let code = if release { 3 } else { code } + mods;
+    match (
+        u8::try_from(32 + code),
+        u8::try_from(32 + x),
+        u8::try_from(32 + y),
+    ) {
+        (Ok(b), Ok(x), Ok(y)) => vec![0x1b, b'[', b'M', b, x, y],
+        _ => Vec::new(),
+    }
 }
 
 pub fn encode_paste(text: &str, modes: &Modes) -> Vec<u8> {

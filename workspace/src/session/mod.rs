@@ -212,8 +212,27 @@ impl SessionManager {
     }
 
     pub fn input(&self, pane: &str, bytes: Vec<u8>) {
-        if let Some(pty) = self.get(pane).as_ref().and_then(|s| s.pty.get()) {
-            pty.write(bytes);
+        if let Some(session) = self.get(pane) {
+            // Quem digita quer ver onde está digitando: a vista volta para o fim
+            session
+                .screen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .scroll_to_bottom();
+            if let Some(pty) = session.pty.get() {
+                pty.write(bytes);
+            }
+        }
+    }
+
+    /// Rola a vista do painel pelo histórico; positivo volta no tempo.
+    pub fn scroll(&self, pane: &str, lines: i32) {
+        if let Some(session) = self.get(pane) {
+            session
+                .screen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .scroll(lines);
         }
     }
 
