@@ -1,0 +1,28 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                                                                       "
+"▐▾ B-Metric                 │                                                                       "
+"   ◉ fix-ingest-lag     api │       ┌ New worktree in B-Metric ────────────────────────────┐        "
+"   ◆ dashboard-filter   web │       │› Repo    ‹ consumer ›  2 of 3                        │        "
+" ▾ bloom                    │       │                                                      │        "
+"   no worktrees · n         │       │  Name                                                │        "
+" ▾ lisa                     │       │          branch: —                                   │        "
+"   ✔ sidebar-groups         │       │                                                      │        "
+"                            │       │  Task    what should the agent do? (optional)        │        "
+"                            │       │                                                      │        "
+"                            │       │  Agent   ● claude                                    │        "
+"                            │       │          ○ opencode  no full autonomy                │        "
+"                            │       │          ○ gemini  not installed                     │        "
+"                            │       │                                                      │        "
+"                            │       │  Model   ‹ default ›                                 │        "
+"                            │       │                                                      │        "
+"                            │       │  Mode    (•) normal   ( ) full autonomy              │        "
+"                            │       │                                                      │        "
+"                            │       │  ⏎ create · tab next field · ←→ change · esc cancel  │        "
+"                            │       └──────────────────────────────────────────────────────┘        "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                                                                                                    "

@@ -668,9 +668,16 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
         .projects
         .iter()
         .find(|p| p.slug == d.project);
+    let group = d.group.as_deref().and_then(|slug| {
+        app.workspace()
+            .groups
+            .iter()
+            .find(|g| g.slug == slug)
+            .map(|g| g.name.as_str())
+    });
     let title = format!(
         "New worktree in {}",
-        project.map_or(d.project.as_str(), |p| p.name.as_str())
+        group.unwrap_or(project.map_or(d.project.as_str(), |p| p.name.as_str()))
     );
     let agents = app.workspace().agents.len();
     let max = usize::from(max_lines);
@@ -707,6 +714,22 @@ fn new_worktree_lines(
             lines.push(Line::default());
         }
     };
+
+    if let Some(group) = d.group.as_deref() {
+        let repos = app.group_repos(group);
+        let at = repos.iter().position(|p| p.slug == d.project);
+        let tag = at.map_or(d.project.as_str(), |i| repos[i].tag.as_str());
+        let mut repo = field_label("Repo", d.field == Field::Repo);
+        repo.extend(stepper(tag, d.field == Field::Repo));
+        if let Some(i) = at {
+            repo.push(Span::styled(
+                format!("  {} of {}", i + 1, repos.len()),
+                dim(),
+            ));
+        }
+        lines.push(Line::from(repo));
+        gap(&mut lines);
+    }
 
     let mut name = field_label("Name", d.field == Field::Name);
     name.push(Span::raw(d.name.clone()));

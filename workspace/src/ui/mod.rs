@@ -148,6 +148,7 @@ pub fn run() -> anyhow::Result<()> {
     let mut prefs = terminal::Prefs::load(&terminal::prefs_path());
     app.set_default_autonomy(prefs.default_autonomy);
     app.set_sidebar_width(prefs.sidebar_width);
+    app.set_last_repos(prefs.last_repo.clone());
     let (router_config, config_warning) = config::load(&config::config_path());
     app.set_router_config(router_config);
     if let Some(warning) = config_warning {
@@ -226,6 +227,10 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 Action::RememberAutonomy(on) => {
                     prefs.default_autonomy = on;
+                    prefs.save(&terminal::prefs_path());
+                }
+                Action::RememberRepo { group, project } => {
+                    prefs.last_repo.insert(group, project);
                     prefs.save(&terminal::prefs_path());
                 }
                 Action::RememberSidebarWidth(width) => {

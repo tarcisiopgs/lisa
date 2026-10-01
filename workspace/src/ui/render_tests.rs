@@ -702,3 +702,41 @@ fn sidebar_at_its_widest() {
     insta::assert_snapshot!(t.backend());
     assert_eq!(a.pane_size(), (71, 13));
 }
+
+// ---- Lançar pelo grupo ----
+
+fn text_of(t: &Terminal<TestBackend>) -> String {
+    let area = t.backend().buffer().area;
+    (0..area.height)
+        .map(|y| row_text(t, y, area.width))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn new_worktree_from_a_group_starts_with_the_repo_field() {
+    let mut a = grouped(100, 24, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Right));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("New worktree in B-Metric"), "{screen}");
+    assert!(
+        screen.contains("› Repo    ‹ consumer ›  2 of 3"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(t.backend());
+}
+
+#[test]
+fn new_worktree_from_a_group_fits_the_smallest_terminal() {
+    let mut a = grouped(60, 12, grouped_workspace());
+    a.select_row(0);
+    a.on_key(key(KeyCode::Char('n')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("› Repo    ‹ api ›  1 of 3"), "{screen}");
+    assert!(screen.contains("⏎ create"), "{screen}");
+    insta::assert_snapshot!(t.backend());
+}

@@ -1371,3 +1371,180 @@ fn in_a_narrow_terminal_the_overlay_resizes_without_resizing_the_pane() {
     assert_eq!(actions, [Action::RememberSidebarWidth(29)]);
     assert_eq!(a.pane_size(), before);
 }
+
+// ---- Lançar pelo grupo ----
+
+fn select_row(a: &mut App, row: &Row) {
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| r == row)
+        .unwrap_or_else(|| panic!("no row {row:?}"));
+    a.select_row(at);
+}
+
+fn group_row() -> Row {
+    Row::Group {
+        slug: "b-metric".into(),
+    }
+}
+
+#[test]
+fn n_on_a_group_asks_for_the_repository_first() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.field, Field::Repo);
+    assert_eq!(d.project, "b-metric-api");
+}
+
+#[test]
+fn n_on_a_grouped_agent_preselects_its_repository() {
+    let mut a = grouped();
+    select(&mut a, "b-metric-web/dashboard");
+    a.on_key(ch('n'));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.project, "b-metric-web");
+    assert_eq!(d.field, Field::Name);
+}
+
+#[test]
+fn n_on_a_standalone_project_has_no_repo_field() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).group, None);
+    for _ in 0..8 {
+        a.on_key(key(KeyCode::Tab));
+        assert_ne!(new_worktree(&a).field, Field::Repo);
+    }
+}
+
+#[test]
+fn arrows_cycle_the_repositories_and_a_letter_jumps_by_tag() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    a.on_key(key(KeyCode::Left));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    a.on_key(ch('A'));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    a.on_key(ch('w'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    // Letra que nenhuma marca usa não muda nada nem vira texto
+    a.on_key(ch('z'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    assert_eq!(new_worktree(&a).name, "");
+}
+
+#[test]
+fn the_last_repository_used_in_a_group_is_offered_first() {
+    let mut a = grouped();
+    a.set_last_repos(BTreeMap::from([(
+        "b-metric".to_owned(),
+        "b-metric-web".to_owned(),
+    )]));
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+
+    a.on_key(key(KeyCode::Esc));
+    a.set_last_repos(BTreeMap::from([(
+        "b-metric".to_owned(),
+        "bloom".to_owned(),
+    )]));
+    a.on_key(ch('n'));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+}
+
+#[test]
+fn creating_from_a_group_targets_the_chosen_repository_and_remembers_it() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::Tab));
+    type_text(&mut a, "filters");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::CreateWorktree { project, name, .. }]
+            if project == "b-metric-web" && name == "filters"
+    ));
+    assert!(actions.contains(&Action::RememberRepo {
+        group: "b-metric".into(),
+        project: "b-metric-web".into(),
+    }));
+}
+
+#[test]
+fn creating_from_a_standalone_project_remembers_no_repository() {
+    let mut a = grouped();
+    select(&mut a, "lisa/sidebar");
+    a.on_key(ch('n'));
+    type_text(&mut a, "x");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(
+        !actions
+            .iter()
+            .any(|a| matches!(a, Action::RememberRepo { .. }))
+    );
+}
+
+#[test]
+fn a_group_dissolved_under_the_dialog_keeps_the_dialog_on_its_project() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    ws.groups.clear();
+    for p in &mut ws.projects {
+        p.group = None;
+        p.tag.clear();
+    }
+    a.on_daemon(DaemonMsg::State(ws));
+    let d = new_worktree(&a);
+    assert_eq!(d.group, None);
+    assert_eq!(d.project, "b-metric-api");
+    assert_eq!(d.field, Field::Name);
+}
+
+#[test]
+fn a_repository_leaving_the_group_moves_the_dialog_to_the_first_one() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    for p in &mut ws.projects {
+        if p.slug == "b-metric-api" {
+            p.group = None;
+            p.tag.clear();
+        }
+    }
+    a.on_daemon(DaemonMsg::State(ws));
+    let d = new_worktree(&a);
+    assert_eq!(d.group.as_deref(), Some("b-metric"));
+    assert_eq!(d.project, "b-metric-web");
+}
+
+#[test]
+fn a_removed_repository_closes_the_dialog_with_a_notice() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    let mut ws = workspace_with_groups();
+    ws.projects.retain(|p| p.slug != "b-metric-api");
+    a.on_daemon(DaemonMsg::State(ws));
+    assert!(a.dialog().is_none());
+    assert!(
+        a.notice()
+            .is_some_and(|n| n.text.contains("no longer mapped"))
+    );
+}
