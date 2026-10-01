@@ -513,3 +513,19 @@ fn a_state_file_without_groups_loads_with_everything_standalone() {
     let saved = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{e}"));
     assert!(saved.contains("\"schema_version\": 2"), "{saved}");
 }
+
+#[test]
+fn repositories_with_the_same_name_get_distinct_tags() {
+    let fx = fixture();
+    let env = git::Env::default();
+    let other = local_repo(&fx, "elsewhere/repo");
+    let mut reg = registry(&fx);
+    let paths = [fx.repo, other];
+    reg.add_group("X", &paths, &env)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let tags = reg.tags();
+    let mut seen: Vec<&String> = tags.values().collect();
+    seen.sort();
+    seen.dedup();
+    assert_eq!(seen.len(), 2, "{tags:?}");
+}

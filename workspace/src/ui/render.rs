@@ -98,6 +98,28 @@ fn clip(text: &str, width: usize) -> String {
     out
 }
 
+/// Como `clip`, mas corta o começo: em marcas compridas, é o fim que as distingue.
+fn clip_left(text: &str, width: usize) -> String {
+    if cols(text) <= width {
+        return text.to_owned();
+    }
+    let mut tail: Vec<char> = Vec::new();
+    for ch in text.chars().rev() {
+        let mut next = String::from(ch);
+        next.extend(tail.iter().rev());
+        if cols(&next) + 1 > width {
+            break;
+        }
+        tail.push(ch);
+    }
+    let kept: String = tail.iter().rev().collect();
+    if width > 0 {
+        format!("…{kept}")
+    } else {
+        kept
+    }
+}
+
 fn truncate(text: &str, width: usize) -> String {
     if text.chars().count() <= width {
         return text.to_owned();
@@ -415,7 +437,7 @@ fn render_sidebar(f: &mut Frame, app: &App, side: Rect) {
                 match app.tag(w) {
                     // Agente de grupo: a marca do repositório fica inteira, à direita
                     Some(tag) => {
-                        let tag = clip(tag, TAG_WIDTH);
+                        let tag = clip_left(tag, TAG_WIDTH);
                         let room = width.saturating_sub(7 + cols(&tag));
                         let name = clip(&w.name, room);
                         let pad = width.saturating_sub(6 + cols(&name) + cols(&tag));
@@ -492,6 +514,11 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
         }
     }
     let used: usize = left.iter().map(|s| s.content.chars().count()).sum();
+    // Sobre um grupo, `d` desfaz o grupo em vez de remover um worktree
+    let on_group = matches!(
+        app.selected_row(),
+        Some(Row::Group { .. } | Row::EmptyGroup { .. })
+    );
     let hints: &[&str] = match (app.dialog().is_some(), app.zone()) {
         (true, _) => &[],
         (false, Zone::Pane) => &["^a menu"],
@@ -499,7 +526,7 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
             "⏎ open",
             "n new",
             "p project",
-            "d remove",
+            if on_group { "d ungroup" } else { "d remove" },
             "r restart",
             "? help",
             "q quit",

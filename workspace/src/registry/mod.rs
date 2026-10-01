@@ -378,7 +378,15 @@ impl Registry {
                 .filter(|p| p.group.as_deref() == Some(&group.slug))
                 .collect();
             let names: Vec<&str> = members.iter().map(|p| p.name.as_str()).collect();
-            for (project, tag) in members.iter().zip(repo_tags(&group.name, &names)) {
+            let tags = repo_tags(&group.name, &names);
+            for (project, tag) in members.iter().zip(&tags) {
+                // Repositórios de mesmo nome em pastas diferentes: só o slug os separa
+                let unique = tags.iter().filter(|t| *t == tag).count() == 1;
+                let tag = if unique {
+                    tag.clone()
+                } else {
+                    project.slug.clone()
+                };
                 out.insert(project.slug.clone(), tag);
             }
         }

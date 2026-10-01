@@ -850,3 +850,39 @@ fn help_lists_groups_and_resize() {
     }
     insta::assert_snapshot!(t.backend());
 }
+
+// ---- Achados da revisão final ----
+
+#[test]
+fn long_tags_keep_their_ends_so_they_stay_apart() {
+    let mut ws = grouped_workspace();
+    ws.projects.push(project(
+        "b-metric-bo-web",
+        Some("b-metric"),
+        "backoffice-web",
+    ));
+    ws.projects.push(project(
+        "b-metric-bo-api",
+        Some("b-metric"),
+        "backoffice-api",
+    ));
+    ws.worktrees
+        .push(wt("b-metric-bo-web/a", AgentState::Working, true));
+    ws.worktrees
+        .push(wt("b-metric-bo-api/b", AgentState::Working, true));
+    let a = grouped(100, 14, ws);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("…ice-web"), "{screen}");
+    assert!(screen.contains("…ice-api"), "{screen}");
+}
+
+#[test]
+fn the_footer_says_ungroup_on_a_group_row() {
+    let mut a = grouped(100, 14, grouped_workspace());
+    a.select_row(0);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("d ungroup"), "{screen}");
+    a.select_row(1);
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("d remove"), "{screen}");
+}

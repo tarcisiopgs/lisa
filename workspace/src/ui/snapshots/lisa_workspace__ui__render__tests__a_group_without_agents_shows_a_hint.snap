@@ -15,4 +15,4 @@ expression: draw(&a).backend()
 "                            │                                                                       "
 "                            │                                                                       "
 "                            │                                                                       "
-"                               ⏎ open · n new · p project · d remove · r restart · ? help · q quit  "
+"                              ⏎ open · n new · p project · d ungroup · r restart · ? help · q quit  "
