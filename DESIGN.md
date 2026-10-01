@@ -75,7 +75,7 @@ The typeface, size and line height are the user's terminal's. Hierarchy comes fr
 - **Minimum:** 60×12. Smaller terminals show a single dim line asking for more room.
 - **Sidebar rows:** the first column is reserved for the selection bar and the last one stays empty. A project or group row is the bar, a `▾`/`▸` arrow and the name. A worktree row is the bar, two spaces of indent, the glyph and the name. An empty project or group shows a dim hint in the worktree position.
 - **Order:** groups and standalone projects share one alphabetical list. Under a group, agents are ordered by repository tag.
-- **Footer:** key hints sit under the zone they act on. With the agent focused, the open `project/worktree · agent` is on the left and `^a menu` on the right. With the sidebar focused, the sidebar keys start at the left edge, under the sidebar, and the open worktree moves to the right.
+- **Footer:** two legends, each under the zone it belongs to: the sidebar's on the left, the agent's on the right. The focused zone lists the keys that apply to what is selected right now (a running worktree, a stopped one, a project, a group); the other zone shows only the key that leads to it (`^a sidebar`, `^a agent`). Keys that apply everywhere live in the `?` overlay.
 - **Dialogs:** 56 columns wide, centered in the pane, with a label column of 10 cells. They drop optional rows before they drop the focused field and the hints.
 - **Truncation:** names are cut to the available width, never wrapped. Only the task text in a dialog wraps. When a name and a repository tag compete, the name is cut and the tag stays whole.
 

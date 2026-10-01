@@ -109,6 +109,22 @@ fn type_text(a: &mut App, text: &str) {
     }
 }
 
+/// Abre o diálogo de novo worktree e passa pela etapa da tarefa sem escrever nada.
+fn new_blank(a: &mut App) {
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Enter));
+}
+
+/// Nome gerado que o diálogo vai usar; sempre uma palavra da lista.
+fn generated_name(a: &App) -> String {
+    let name = match a.dialog() {
+        Some(Dialog::NewWorktree(d)) => d.name.clone(),
+        other => panic!("no new worktree dialog: {other:?}"),
+    };
+    assert!(naming::WORDS.contains(&name.as_str()), "{name}");
+    name
+}
+
 #[test]
 fn prefix_moves_focus_to_the_sidebar_without_sending_anything() {
     let mut a = app();
@@ -171,14 +187,14 @@ fn creating_a_worktree_sends_name_agent_and_permission() {
     let mut a = app();
     a.on_key(ctrl('a'));
     select(&mut a, "api/fix-login");
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "Fix Login");
+    new_blank(&mut a);
+    let name = generated_name(&a);
     let actions = a.on_key(key(KeyCode::Enter));
     assert_eq!(
         sent(&actions),
         vec![ClientMsg::CreateWorktree {
             project: "api".into(),
-            name: "Fix Login".into(),
+            name,
             agent: "claude".into(),
             permission: PermissionWire::Normal,
             model: None,
@@ -193,10 +209,7 @@ fn creating_a_worktree_sends_name_agent_and_permission() {
 fn full_autonomy_cannot_be_chosen_for_an_agent_without_it() {
     let mut a = app();
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "x");
-    a.on_key(key(KeyCode::Tab)); // campo tarefa
-    a.on_key(key(KeyCode::Tab)); // campo agente
+    new_blank(&mut a); // foco no agente
     a.on_key(key(KeyCode::Down)); // opencode
     a.on_key(key(KeyCode::Tab)); // campo permissão
     a.on_key(key(KeyCode::Char(' ')));
@@ -211,10 +224,7 @@ fn full_autonomy_cannot_be_chosen_for_an_agent_without_it() {
 fn unavailable_agents_are_skipped_when_choosing() {
     let mut a = app();
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "x");
-    a.on_key(key(KeyCode::Tab)); // campo tarefa
-    a.on_key(key(KeyCode::Tab)); // campo agente
+    new_blank(&mut a); // foco no agente
     a.on_key(key(KeyCode::Down));
     a.on_key(key(KeyCode::Down)); // gemini indisponível: fica em opencode
     let actions = a.on_key(key(KeyCode::Enter));
@@ -229,20 +239,19 @@ fn unavailable_agents_are_skipped_when_choosing() {
 fn the_created_worktree_is_opened_when_it_appears() {
     let mut a = app();
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "new-one");
+    new_blank(&mut a);
+    let id = format!("api/{}", generated_name(&a));
     a.on_key(key(KeyCode::Enter));
     let mut ws = workspace();
-    ws.worktrees
-        .push(wt("api/new-one", AgentState::Working, true));
+    ws.worktrees.push(wt(&id, AgentState::Working, true));
     let actions = a.on_daemon(DaemonMsg::State(ws));
     assert!(a.dialog().is_none());
-    assert_eq!(a.focused(), Some("api/new-one"));
+    assert_eq!(a.focused(), Some(id.as_str()));
     assert_eq!(a.zone(), Zone::Pane);
     assert!(
         sent(&actions)
             .iter()
-            .any(|m| matches!(m, ClientMsg::Focus { worktree: Some(w), .. } if w == "api/new-one"))
+            .any(|m| matches!(m, ClientMsg::Focus { worktree: Some(w), .. } if *w == id))
     );
 }
 
@@ -250,8 +259,7 @@ fn the_created_worktree_is_opened_when_it_appears() {
 fn an_error_while_creating_keeps_the_dialog_with_the_message() {
     let mut a = app();
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "taken");
+    new_blank(&mut a);
     a.on_key(key(KeyCode::Enter));
     a.on_daemon(DaemonMsg::Error("branch taken already exists".into()));
     match a.dialog() {
@@ -468,8 +476,7 @@ fn the_remembered_permission_is_preselected_and_saved_again() {
     let mut a = app();
     a.set_default_autonomy(true);
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "auto");
+    new_blank(&mut a);
     let actions = a.on_key(key(KeyCode::Enter));
     assert!(sent(&actions).iter().any(|m| matches!(
         m,
@@ -486,10 +493,7 @@ fn a_remembered_full_autonomy_is_not_applied_to_an_agent_without_it() {
     let mut a = app();
     a.set_default_autonomy(true);
     a.on_key(ctrl('a'));
-    a.on_key(key(KeyCode::Char('n')));
-    type_text(&mut a, "x");
-    a.on_key(key(KeyCode::Tab)); // campo tarefa
-    a.on_key(key(KeyCode::Tab)); // campo agente
+    new_blank(&mut a); // foco no agente
     a.on_key(key(KeyCode::Down)); // opencode
     let actions = a.on_key(key(KeyCode::Enter));
     assert!(sent(&actions).iter().any(|m| matches!(
@@ -526,7 +530,8 @@ fn option(name: &str, autonomy: bool) -> AgentOption {
     }
 }
 
-/// App com claude, codex, gemini e opencode instalados, e o diálogo de novo worktree aberto.
+/// App com claude, codex, gemini e opencode instalados, o roteador disponível e o diálogo de
+/// novo worktree aberto na etapa da tarefa.
 fn routing() -> App {
     let mut state = workspace();
     state.agents = vec![
@@ -537,6 +542,7 @@ fn routing() -> App {
     ];
     let mut a = App::new(120, 40);
     a.on_focus(true);
+    a.set_router_ready(true);
     a.on_daemon(DaemonMsg::State(state));
     a.on_key(ctrl('a'));
     select(&mut a, "api/fix-login");
@@ -562,12 +568,10 @@ fn agent_name(a: &App) -> String {
     a.workspace.agents[new_worktree(a).agent].name.clone()
 }
 
-/// Digita nome e tarefa e sai do campo `Task`; devolve as ações dessa saída.
+/// Digita a tarefa e confirma a etapa dela; devolve as ações desse ⏎. O foco fica no agente.
 fn fill(a: &mut App, task: &str) -> Vec<Action> {
-    type_text(a, "fix");
-    a.on_key(key(KeyCode::Tab));
     type_text(a, task);
-    a.on_key(key(KeyCode::Tab))
+    a.on_key(key(KeyCode::Enter))
 }
 
 fn route_id(actions: &[Action]) -> u64 {
@@ -602,10 +606,10 @@ fn created(actions: &[Action]) -> ClientMsg {
 #[test]
 fn blank_task_creates_exactly_as_before() {
     let mut a = routing();
-    type_text(&mut a, "fix");
     let tabbed = a.on_key(key(KeyCode::Tab));
-    let left_task = a.on_key(key(KeyCode::Tab));
+    let left_task = a.on_key(key(KeyCode::Enter));
     assert!(tabbed.is_empty() && left_task.is_empty());
+    assert_eq!(new_worktree(&a).route, Route::Idle);
     let msg = created(&a.on_key(key(KeyCode::Enter)));
     assert!(matches!(
         msg,
@@ -619,7 +623,7 @@ fn blank_task_creates_exactly_as_before() {
 }
 
 #[test]
-fn leaving_the_task_field_asks_for_a_route() {
+fn confirming_the_task_asks_for_a_route() {
     let mut a = routing();
     let actions = fill(&mut a, "fix login");
     assert_eq!(
@@ -630,17 +634,6 @@ fn leaving_the_task_field_asks_for_a_route() {
         }]
     );
     assert_eq!(new_worktree(&a).route, Route::Pending { id: 1 });
-}
-
-#[test]
-fn leaving_with_the_same_text_does_not_ask_twice() {
-    let mut a = routing();
-    fill(&mut a, "fix login");
-    a.on_key(key(KeyCode::BackTab));
-    assert!(a.on_key(key(KeyCode::Tab)).is_empty());
-    a.on_key(key(KeyCode::BackTab));
-    type_text(&mut a, "!");
-    assert_eq!(route_id(&a.on_key(key(KeyCode::Tab))), 2);
 }
 
 #[test]
@@ -682,12 +675,13 @@ fn accepting_sends_model_effort_and_prompt() {
         id,
         Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
     );
+    let name = generated_name(&a);
     let msg = created(&a.on_key(key(KeyCode::Enter)));
     assert_eq!(
         msg,
         ClientMsg::CreateWorktree {
             project: "api".into(),
-            name: "fix".into(),
+            name,
             agent: "claude".into(),
             permission: PermissionWire::Normal,
             model: Some("opus".into()),
@@ -738,12 +732,13 @@ fn switching_agent_keeps_the_size() {
 #[test]
 fn stale_and_orphan_answers_are_dropped() {
     let complex = || Ok(answers(Size::Complex, 0.9, Kind::Review, 0.9));
-    // Resposta de um texto que já mudou
+    // Resposta da consulta de um diálogo que já foi fechado e reaberto com outra tarefa
     let mut a = routing();
     let old = route_id(&fill(&mut a, "one"));
-    a.on_key(key(KeyCode::BackTab));
-    type_text(&mut a, " two");
-    let new = route_id(&a.on_key(key(KeyCode::Tab)));
+    a.on_key(key(KeyCode::Esc));
+    a.on_key(key(KeyCode::Char('n')));
+    let new = route_id(&fill(&mut a, "one two"));
+    assert_ne!(old, new);
     a.on_route(old, complex());
     assert_eq!(new_worktree(&a).route, Route::Pending { id: new });
     assert_eq!(agent_name(&a), "claude");
@@ -751,10 +746,14 @@ fn stale_and_orphan_answers_are_dropped() {
     a.on_key(key(KeyCode::Esc));
     a.on_route(new, complex());
     assert!(a.dialog().is_none());
-    // Resposta de um diálogo anterior não vale para o novo
+    // Resposta de um diálogo anterior não vale para o novo, na tarefa ou já na revisão
     a.on_key(key(KeyCode::Char('n')));
     a.on_route(new, complex());
     assert_eq!(new_worktree(&a).route, Route::Idle);
+    a.on_key(key(KeyCode::Enter));
+    a.on_route(new, complex());
+    assert_eq!(new_worktree(&a).route, Route::Idle);
+    assert_eq!(agent_name(&a), "claude");
 }
 
 #[test]
@@ -820,25 +819,51 @@ fn no_routable_agent_installed_is_a_failure_with_a_reason() {
 #[test]
 fn tab_walks_only_the_fields_that_apply() {
     let mut a = routing();
-    let fields = |a: &mut App| {
+    a.on_key(key(KeyCode::Enter));
+    let fields = |a: &mut App, step: KeyCode| {
         let mut seen = vec![new_worktree(a).field];
         for _ in 0..6 {
-            a.on_key(key(KeyCode::Tab));
+            a.on_key(key(step));
             seen.push(new_worktree(a).field);
         }
         seen
     };
-    // claude com o modelo `default`: sem effort
+    // claude com o modelo `default`: sem effort. A revisão não tem nome nem tarefa
     assert_eq!(
-        fields(&mut a),
+        fields(&mut a, KeyCode::Tab),
         [
-            Field::Name,
-            Field::Task,
             Field::Agent,
             Field::Model,
             Field::Permission,
-            Field::Name,
-            Field::Task
+            Field::Agent,
+            Field::Model,
+            Field::Permission,
+            Field::Agent
+        ]
+    );
+    assert_eq!(
+        fields(&mut a, KeyCode::BackTab),
+        [
+            Field::Agent,
+            Field::Permission,
+            Field::Model,
+            Field::Agent,
+            Field::Permission,
+            Field::Model,
+            Field::Agent
+        ]
+    );
+    // Com effort, o campo entra na ordem; a tarefa continua fora
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(
+        fields(&mut a, KeyCode::Tab)[..5],
+        [
+            Field::Model,
+            Field::Effort,
+            Field::Permission,
+            Field::Agent,
+            Field::Model
         ]
     );
 }
@@ -858,8 +883,7 @@ fn models_without_effort_skip_the_effort_field() {
 #[test]
 fn changing_model_takes_its_default_effort() {
     let mut a = routing();
-    a.on_key(key(KeyCode::Tab));
-    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Enter));
     a.on_key(key(KeyCode::Tab));
     assert_eq!(
         (new_worktree(&a).field, model_name(&a)),
@@ -928,24 +952,26 @@ fn agents_without_a_catalog_hide_model_and_do_not_send_the_task() {
 #[test]
 fn an_oversized_task_is_refused_with_a_reason() {
     let mut a = routing();
-    type_text(&mut a, "fix");
-    a.on_key(key(KeyCode::Tab));
     a.on_paste(&"a".repeat(crate::agents::MAX_PROMPT_BYTES + 1));
-    a.on_key(key(KeyCode::Tab));
     let actions = a.on_key(key(KeyCode::Enter));
-    assert!(sent(&actions).is_empty());
+    assert!(actions.is_empty(), "{actions:?}");
     let d = new_worktree(&a);
     assert_eq!(
         d.error.as_deref(),
         Some("task is too long (max 100,000 bytes)")
     );
-    assert_eq!(d.field, Field::Task);
+    assert_eq!((d.stage, d.field), (Stage::Ask, Field::Task));
+    assert_eq!(d.route, Route::Idle);
+    // No limite exato a tarefa passa, e o aviso some
+    a.on_key(key(KeyCode::Backspace));
+    assert_eq!(route_id(&a.on_key(key(KeyCode::Enter))), 1);
+    let d = new_worktree(&a);
+    assert_eq!((d.stage, d.error.as_deref()), (Stage::Review, None));
 }
 
 #[test]
 fn pasted_text_lands_in_the_task_with_normalised_newlines() {
     let mut a = routing();
-    a.on_key(key(KeyCode::Tab));
     a.on_paste("a\r\nb\rc\n");
     assert_eq!(new_worktree(&a).task, "a\nb\nc");
 }
@@ -959,17 +985,6 @@ fn enter_while_routing_creates_with_the_current_selection() {
         msg,
         ClientMsg::CreateWorktree { model: None, prompt: Some(p), .. } if p == "fix login"
     ));
-}
-
-#[test]
-fn clearing_the_task_forgets_the_suggestion() {
-    let mut a = routing();
-    let id = route_id(&fill(&mut a, "x"));
-    a.on_route(id, Ok(answers(Size::Complex, 0.1, Kind::Other, 0.9)));
-    a.on_key(key(KeyCode::BackTab));
-    a.on_key(key(KeyCode::Backspace));
-    assert!(a.on_key(key(KeyCode::Tab)).is_empty());
-    assert_eq!(new_worktree(&a).route, Route::Idle);
 }
 
 #[test]
@@ -994,23 +1009,6 @@ fn a_hand_picked_model_keeps_its_agent_when_the_suggestion_arrives() {
         &new_worktree(&a).route,
         Route::Suggested { agent, .. } if agent == "codex"
     ));
-}
-
-#[test]
-fn an_answer_for_text_that_changed_since_is_dropped() {
-    let mut a = routing();
-    let id = route_id(&fill(&mut a, "fix typo"));
-    a.on_key(key(KeyCode::BackTab));
-    type_text(&mut a, " and then redesign the whole storage layer");
-    // Ainda no campo da tarefa: a resposta é do texto antigo
-    a.on_route(id, Ok(answers(Size::Trivial, 0.1, Kind::Review, 0.9)));
-    assert_eq!(
-        (agent_name(&a).as_str(), model_name(&a)),
-        ("claude", "default")
-    );
-    assert_eq!(new_worktree(&a).route, Route::Idle);
-    // Ao sair do campo, o texto novo é consultado
-    assert_eq!(route_id(&a.on_key(key(KeyCode::Tab))), 2);
 }
 
 /// Pasta temporária com `work/api` e `work/web` como repositórios.
@@ -1394,6 +1392,9 @@ fn n_on_a_group_asks_for_the_repository_first() {
     let mut a = grouped();
     select_row(&mut a, &group_row());
     a.on_key(ch('n'));
+    // A tarefa vem antes; o repositório é o primeiro campo da revisão
+    assert_eq!(new_worktree(&a).field, Field::Task);
+    a.on_key(key(KeyCode::Enter));
     let d = new_worktree(&a);
     assert_eq!(d.group.as_deref(), Some("b-metric"));
     assert_eq!(d.field, Field::Repo);
@@ -1404,18 +1405,18 @@ fn n_on_a_group_asks_for_the_repository_first() {
 fn n_on_a_grouped_agent_preselects_its_repository() {
     let mut a = grouped();
     select(&mut a, "b-metric-web/dashboard");
-    a.on_key(ch('n'));
+    new_blank(&mut a);
     let d = new_worktree(&a);
     assert_eq!(d.group.as_deref(), Some("b-metric"));
     assert_eq!(d.project, "b-metric-web");
-    assert_eq!(d.field, Field::Name);
+    assert_eq!(d.field, Field::Agent);
 }
 
 #[test]
 fn n_on_a_standalone_project_has_no_repo_field() {
     let mut a = grouped();
     select(&mut a, "lisa/sidebar");
-    a.on_key(ch('n'));
+    new_blank(&mut a);
     assert_eq!(new_worktree(&a).group, None);
     for _ in 0..8 {
         a.on_key(key(KeyCode::Tab));
@@ -1427,7 +1428,7 @@ fn n_on_a_standalone_project_has_no_repo_field() {
 fn arrows_cycle_the_repositories_and_a_letter_jumps_by_tag() {
     let mut a = grouped();
     select_row(&mut a, &group_row());
-    a.on_key(ch('n'));
+    new_blank(&mut a);
     a.on_key(key(KeyCode::Right));
     assert_eq!(new_worktree(&a).project, "b-metric-web");
     a.on_key(key(KeyCode::Right));
@@ -1440,8 +1441,10 @@ fn arrows_cycle_the_repositories_and_a_letter_jumps_by_tag() {
     assert_eq!(new_worktree(&a).project, "b-metric-web");
     // Letra que nenhuma marca usa não muda nada nem vira texto
     a.on_key(ch('z'));
-    assert_eq!(new_worktree(&a).project, "b-metric-web");
-    assert!(new_worktree(&a).name_auto);
+    let d = new_worktree(&a);
+    assert_eq!(d.project, "b-metric-web");
+    assert!(d.task.is_empty(), "{:?}", d.task);
+    generated_name(&a);
 }
 
 #[test]
@@ -1468,15 +1471,15 @@ fn the_last_repository_used_in_a_group_is_offered_first() {
 fn creating_from_a_group_targets_the_chosen_repository_and_remembers_it() {
     let mut a = grouped();
     select_row(&mut a, &group_row());
-    a.on_key(ch('n'));
+    new_blank(&mut a);
     a.on_key(key(KeyCode::Right));
     a.on_key(key(KeyCode::Tab));
-    type_text(&mut a, "filters");
+    let expected = generated_name(&a);
     let actions = a.on_key(key(KeyCode::Enter));
     assert!(matches!(
         sent(&actions).as_slice(),
         [ClientMsg::CreateWorktree { project, name, .. }]
-            if project == "b-metric-web" && name == "filters"
+            if project == "b-metric-web" && *name == expected
     ));
     assert!(actions.contains(&Action::RememberRepo {
         group: "b-metric".into(),
@@ -1488,9 +1491,12 @@ fn creating_from_a_group_targets_the_chosen_repository_and_remembers_it() {
 fn creating_from_a_standalone_project_remembers_no_repository() {
     let mut a = grouped();
     select(&mut a, "lisa/sidebar");
-    a.on_key(ch('n'));
-    type_text(&mut a, "x");
+    new_blank(&mut a);
     let actions = a.on_key(key(KeyCode::Enter));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::CreateWorktree { .. }]
+    ));
     assert!(
         !actions
             .iter()
@@ -1502,18 +1508,38 @@ fn creating_from_a_standalone_project_remembers_no_repository() {
 fn a_group_dissolved_under_the_dialog_keeps_the_dialog_on_its_project() {
     let mut a = grouped();
     select_row(&mut a, &group_row());
-    a.on_key(ch('n'));
+    new_blank(&mut a);
+    assert_eq!(new_worktree(&a).field, Field::Repo);
+    a.on_daemon(DaemonMsg::State(ungrouped()));
+    let d = new_worktree(&a);
+    assert_eq!(d.group, None);
+    assert_eq!(d.project, "b-metric-api");
+    assert_eq!(d.field, Field::Agent);
+}
+
+/// O mesmo workspace, com o grupo desfeito.
+fn ungrouped() -> WorkspaceState {
     let mut ws = workspace_with_groups();
     ws.groups.clear();
     for p in &mut ws.projects {
         p.group = None;
         p.tag.clear();
     }
-    a.on_daemon(DaemonMsg::State(ws));
+    ws
+}
+
+// Falha hoje: `follow_group_changes` só corrige `field`, e na etapa da tarefa o foco da
+// revisão está guardado em `review_field`, que continua em `Repo`.
+#[test]
+fn a_group_dissolved_during_the_task_step_does_not_leave_the_focus_on_a_missing_repo_field() {
+    let mut a = grouped();
+    select_row(&mut a, &group_row());
+    a.on_key(ch('n'));
+    a.on_daemon(DaemonMsg::State(ungrouped()));
+    a.on_key(key(KeyCode::Enter));
     let d = new_worktree(&a);
-    assert_eq!(d.group, None);
-    assert_eq!(d.project, "b-metric-api");
-    assert_eq!(d.field, Field::Name);
+    assert_eq!((d.stage, d.group.as_deref()), (Stage::Review, None));
+    assert_eq!(d.field, Field::Agent);
 }
 
 #[test]
@@ -1629,64 +1655,174 @@ fn route_of(actions: &[Action]) -> Option<(u64, String)> {
 }
 
 #[test]
-fn without_the_router_the_dialog_opens_complete_with_a_generated_name() {
+fn without_the_router_the_dialog_still_asks_for_the_task_first() {
     let mut a = app();
     a.on_key(ch('n'));
     let d = new_worktree(&a);
-    assert_eq!(d.stage, Stage::Review);
-    assert_eq!(d.field, Field::Name);
-    assert!(d.name_auto);
-    assert!(naming::WORDS.contains(&d.name.as_str()), "{}", d.name);
+    assert_eq!((d.stage, d.field), (Stage::Ask, Field::Task));
+    generated_name(&a);
+    // Tab não sai da tarefa nem escreve nela
+    assert!(a.on_key(key(KeyCode::Tab)).is_empty());
+    assert!(a.on_key(key(KeyCode::BackTab)).is_empty());
+    let d = new_worktree(&a);
+    assert_eq!((d.stage, d.field), (Stage::Ask, Field::Task));
+    assert!(d.task.is_empty(), "{:?}", d.task);
+}
+
+#[test]
+fn without_the_router_enter_on_the_task_asks_nobody_and_still_sends_the_task() {
+    let mut a = app();
+    a.on_key(ch('n'));
+    type_text(&mut a, "fix login");
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(actions.is_empty(), "{actions:?}");
+    let d = new_worktree(&a);
+    assert_eq!((d.stage, d.field), (Stage::Review, Field::Agent));
+    assert_eq!(d.route, Route::Idle);
+    let name = generated_name(&a);
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(route_of(&actions).is_none(), "{actions:?}");
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::CreateWorktree {
+            project: "api".into(),
+            name,
+            agent: "claude".into(),
+            permission: PermissionWire::Normal,
+            model: None,
+            effort: None,
+            prompt: Some("fix login".into()),
+        }]
+    );
+}
+
+#[test]
+fn the_review_has_no_text_field_for_the_name_or_the_task() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    type_text(&mut a, "fix login");
+    a.on_key(key(KeyCode::Enter));
+    let name = generated_name(&a);
+    let agents = a.workspace.agents.clone();
+    assert!(
+        !fields(new_worktree(&a), &agents).contains(&Field::Task),
+        "the task is not a review field"
+    );
+    // Em nenhum campo da revisão digitar ou colar muda o nome ou a tarefa
+    for _ in 0..4 {
+        let field = new_worktree(&a).field;
+        assert_ne!(field, Field::Task);
+        type_text(&mut a, "zq");
+        a.on_key(key(KeyCode::Backspace));
+        a.on_paste("pasted");
+        let d = new_worktree(&a);
+        assert_eq!(
+            (d.name.as_str(), d.task.as_str()),
+            (name.as_str(), "fix login")
+        );
+        assert_eq!(d.field, field, "typing moved the focus");
+        a.on_key(key(KeyCode::Tab));
+    }
 }
 
 #[test]
 fn the_generated_name_skips_names_and_branches_already_in_the_project() {
     let mut a = app();
     a.on_key(ch('n'));
-    let first = new_worktree(&a).name.clone();
+    let first = generated_name(&a);
     a.on_key(key(KeyCode::Esc));
+    // Nome já usado no projeto
     let mut ws = workspace();
     ws.worktrees
         .push(wt(&format!("api/{first}"), AgentState::Idle, true));
-    a.on_daemon(DaemonMsg::State(ws));
+    a.on_daemon(DaemonMsg::State(ws.clone()));
     a.on_key(ch('n'));
-    assert_ne!(new_worktree(&a).name, first);
-}
-
-#[test]
-fn typing_replaces_a_generated_name_and_then_edits_normally() {
-    let mut a = app();
-    a.on_key(ch('n'));
-    type_text(&mut a, "fix");
-    let d = new_worktree(&a);
-    assert_eq!(d.name, "fix");
-    assert!(!d.name_auto);
-    a.on_key(key(KeyCode::Backspace));
-    assert_eq!(new_worktree(&a).name, "fi");
-}
-
-#[test]
-fn backspace_or_a_paste_also_replace_a_generated_name() {
-    let mut a = app();
-    a.on_key(ch('n'));
-    a.on_key(key(KeyCode::Backspace));
-    assert_eq!(new_worktree(&a).name, "");
+    let second = generated_name(&a);
+    assert_ne!(second, first);
     a.on_key(key(KeyCode::Esc));
+    // Branch já usada, por um worktree de outro nome
+    let mut other = wt("api/renamed", AgentState::Idle, true);
+    other.branch.clone_from(&second);
+    ws.worktrees.push(other);
+    a.on_daemon(DaemonMsg::State(ws.clone()));
     a.on_key(ch('n'));
-    a.on_paste("pasted-name");
-    assert_eq!(new_worktree(&a).name, "pasted-name");
+    let third = generated_name(&a);
+    assert!(third != first && third != second, "{third}");
+    a.on_key(key(KeyCode::Esc));
+    // O que está em uso em outro projeto não conta
+    select(&mut a, "web/checkout");
+    ws.worktrees.retain(|w| w.project != "api");
+    let free = naming::word_name("web", &[]);
+    ws.worktrees
+        .push(wt(&format!("api/{free}"), AgentState::Idle, true));
+    a.on_daemon(DaemonMsg::State(ws));
+    select(&mut a, "web/checkout");
+    a.on_key(ch('n'));
+    assert_eq!(generated_name(&a), free);
+}
+
+#[test]
+fn the_generated_name_does_not_follow_the_task() {
+    let mut a = routed();
+    a.on_key(ch('n'));
+    let before = generated_name(&a);
+    type_text(&mut a, "Fix the redirect loop on login");
+    a.on_key(key(KeyCode::Enter));
+    assert_eq!(generated_name(&a), before);
+}
+
+#[test]
+fn changing_the_repository_generates_a_name_for_that_project() {
+    let web = naming::word_name("b-metric-web", &[]);
+    let mut ws = workspace_with_groups();
+    // A primeira palavra do outro repositório já está em uso lá
+    ws.worktrees
+        .push(wt(&format!("b-metric-web/{web}"), AgentState::Idle, true));
+    let mut a = grouped();
+    a.on_daemon(DaemonMsg::State(ws));
+    select_row(&mut a, &group_row());
+    new_blank(&mut a);
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    assert_eq!(
+        generated_name(&a),
+        naming::word_name("b-metric-api", &["ingest"])
+    );
+    a.on_key(key(KeyCode::Right));
+    assert_eq!(new_worktree(&a).project, "b-metric-web");
+    let in_web = generated_name(&a);
+    assert_ne!(in_web, web, "a name already used in the new repository");
+    assert_eq!(
+        in_web,
+        naming::word_name("b-metric-web", &["dashboard", web.as_str()])
+    );
+    // A letra da marca também troca o repositório e o nome
+    a.on_key(ch('a'));
+    assert_eq!(new_worktree(&a).project, "b-metric-api");
+    assert_eq!(
+        generated_name(&a),
+        naming::word_name("b-metric-api", &["ingest"])
+    );
+    // E o worktree é criado com o nome do repositório escolhido
+    a.on_key(ch('w'));
+    let actions = a.on_key(key(KeyCode::Enter));
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::CreateWorktree { project, name, .. }]
+            if project == "b-metric-web" && *name == in_web
+    ));
 }
 
 #[test]
 fn enter_with_a_generated_name_creates_the_worktree() {
     let mut a = app();
-    a.on_key(ch('n'));
-    let name = new_worktree(&a).name.clone();
+    new_blank(&mut a);
+    let name = generated_name(&a);
     let actions = a.on_key(key(KeyCode::Enter));
     assert!(matches!(
         sent(&actions).as_slice(),
         [ClientMsg::CreateWorktree { name: n, .. }] if *n == name
     ));
+    assert!(actions.contains(&Action::RememberAutonomy(false)));
 }
 
 #[test]
@@ -1704,7 +1840,7 @@ fn with_the_router_the_dialog_asks_for_the_task_first() {
 }
 
 #[test]
-fn enter_on_the_task_routes_it_and_opens_the_dialog_named_after_it() {
+fn enter_on_the_task_routes_it_and_opens_the_review_on_the_agent() {
     let mut a = routed();
     a.on_key(ch('n'));
     type_text(&mut a, "Fix the redirect loop on login");
@@ -1716,10 +1852,10 @@ fn enter_on_the_task_routes_it_and_opens_the_dialog_named_after_it() {
     assert!(sent(&actions).is_empty(), "nothing is created yet");
     let d = new_worktree(&a);
     assert_eq!(d.stage, Stage::Review);
-    assert_eq!(d.field, Field::Name);
-    assert_eq!(d.name, "fix-redirect-loop-login");
-    assert!(d.name_auto);
+    assert_eq!(d.field, Field::Agent);
+    assert_eq!(d.task, "Fix the redirect loop on login");
     assert!(matches!(d.route, Route::Pending { .. }));
+    generated_name(&a);
 }
 
 #[test]
@@ -1735,40 +1871,6 @@ fn an_empty_task_skips_the_router_and_keeps_the_word_name() {
 }
 
 #[test]
-fn a_task_name_already_in_use_gets_a_number() {
-    let mut a = routed();
-    let mut ws = workspace();
-    ws.worktrees
-        .push(wt("api/fix-login", AgentState::Idle, true));
-    a.on_daemon(DaemonMsg::State(ws));
-    a.on_key(ch('n'));
-    type_text(&mut a, "fix login");
-    a.on_key(key(KeyCode::Enter));
-    assert_eq!(new_worktree(&a).name, "fix-login-2");
-}
-
-#[test]
-fn a_name_the_user_typed_is_never_replaced_by_the_task() {
-    let mut a = app();
-    a.on_key(ch('n'));
-    type_text(&mut a, "mine");
-    a.on_key(key(KeyCode::Tab));
-    type_text(&mut a, "fix the login");
-    a.on_key(key(KeyCode::Tab));
-    assert_eq!(new_worktree(&a).name, "mine");
-}
-
-#[test]
-fn editing_the_task_later_renames_a_still_generated_name() {
-    let mut a = app();
-    a.on_key(ch('n'));
-    a.on_key(key(KeyCode::Tab));
-    type_text(&mut a, "tune the cache");
-    a.on_key(key(KeyCode::Tab));
-    assert_eq!(new_worktree(&a).name, "tune-cache");
-}
-
-#[test]
 fn a_task_from_a_group_goes_to_the_repo_field_next() {
     let mut a = grouped();
     a.set_router_ready(true);
@@ -1778,8 +1880,9 @@ fn a_task_from_a_group_goes_to_the_repo_field_next() {
     type_text(&mut a, "tune ingest");
     a.on_key(key(KeyCode::Enter));
     let d = new_worktree(&a);
-    assert_eq!(d.field, Field::Repo);
-    assert_eq!(d.name, "tune-ingest");
+    assert_eq!((d.stage, d.field), (Stage::Review, Field::Repo));
+    assert_eq!(d.project, "b-metric-api");
+    generated_name(&a);
 }
 
 #[test]

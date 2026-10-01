@@ -91,7 +91,7 @@ pub fn group_key(slug: &str) -> String {
 pub enum Field {
     /// Repositório do grupo; só existe quando o diálogo nasce de um grupo.
     Repo,
-    Name,
+    /// Só na etapa da tarefa.
     Task,
     Agent,
     Model,
@@ -132,9 +132,8 @@ pub struct NewWorktree {
     pub stage: Stage,
     /// Campo que recebe o foco quando a etapa da tarefa termina.
     review_field: Field,
+    /// Nome gerado da lista de palavras; troca-se depois, com o rename.
     pub name: String,
-    /// O nome foi gerado e ainda não foi editado: a primeira tecla o substitui.
-    pub name_auto: bool,
     /// Tarefa inicial; em branco, o agente sobe vazio como antes.
     pub task: String,
     pub agent: usize,
@@ -198,7 +197,7 @@ fn fields(d: &NewWorktree, agents: &[AgentOption]) -> Vec<Field> {
     if d.group.is_some() {
         order.push(Field::Repo);
     }
-    order.extend([Field::Name, Field::Task, Field::Agent]);
+    order.push(Field::Agent);
     if !model_options(agent).is_empty() {
         order.push(Field::Model);
         if !effort_options(agent, d.model).is_empty() {
@@ -945,8 +944,12 @@ impl App {
                 // O grupo sumiu: o diálogo continua, como de projeto solto
                 None => {
                     d.group = None;
+                    // Na etapa da tarefa, o foco da próxima ainda está guardado
+                    if d.review_field == Field::Repo {
+                        d.review_field = Field::Agent;
+                    }
                     if d.field == Field::Repo {
-                        d.field = Field::Name;
+                        d.field = Field::Agent;
                     }
                 }
             }
@@ -1028,7 +1031,7 @@ impl App {
             KeyCode::Char('n') => match (self.selected_group(), self.selected_project()) {
                 // Agente de um grupo: já vem no repositório dele
                 (Some(group), Some(project)) => {
-                    self.open_new_worktree(project, Some(group), Field::Name);
+                    self.open_new_worktree(project, Some(group), Field::Agent);
                 }
                 // Linha do grupo: o último repositório usado ou o primeiro
                 (Some(group), None) => {
@@ -1046,7 +1049,7 @@ impl App {
                         None => self.set_notice(NoticeKind::Info, "this group has no repositories"),
                     }
                 }
-                (None, Some(project)) => self.open_new_worktree(project, None, Field::Name),
+                (None, Some(project)) => self.open_new_worktree(project, None, Field::Agent),
                 (None, None) => self.set_notice(NoticeKind::Info, "add a project first (p)"),
             },
             KeyCode::Char('p') => self.open_add_project(),
@@ -1195,28 +1198,19 @@ impl App {
         let taken = self.taken(&project);
         let taken: Vec<&str> = taken.iter().map(String::as_str).collect();
         let name = naming::word_name(&project, &taken);
-        let stage = if self.router_ready {
-            Stage::Ask
-        } else {
-            Stage::Review
-        };
         self.dialog = Some(Dialog::NewWorktree(NewWorktree {
             group,
             project,
-            stage,
+            // A tarefa vem sempre primeiro; é ela que o roteador lê
+            stage: Stage::Ask,
             review_field: field,
             name,
-            name_auto: true,
             task: String::new(),
             agent,
             model: 0,
             effort: None,
             autonomy: self.default_autonomy && supported,
-            field: if stage == Stage::Ask {
-                Field::Task
-            } else {
-                field
-            },
+            field: Field::Task,
             pending: false,
             error: None,
             route: Route::Idle,
@@ -1229,6 +1223,7 @@ impl App {
 
     fn on_dialog_key(&mut self, key: KeyEvent) -> Vec<Action> {
         let agents = self.workspace.agents.clone();
+        let router_ready = self.router_ready;
         // Repositórios do grupo do diálogo: (slug, marca), na ordem do menu
         let repos: Vec<(String, String)> = match &self.dialog {
             Some(Dialog::NewWorktree(d)) => d
@@ -1376,7 +1371,10 @@ impl App {
                         d.error = None;
                         d.stage = Stage::Review;
                         d.field = d.review_field;
-                        rename_from_task(d, &in_use(&d.project));
+                        // Sem a chave, não há a quem perguntar: a escolha é manual
+                        if !router_ready {
+                            return Vec::new();
+                        }
                         return route_request(d, &mut self.route_seq).into_iter().collect();
                     }
                     edit_text(&mut d.task, key);
@@ -1384,7 +1382,6 @@ impl App {
                 }
                 match (d.field, key.code) {
                     (_, KeyCode::Tab | KeyCode::BackTab) => {
-                        let leaving_task = d.field == Field::Task;
                         let order = fields(d, &agents);
                         let here = order.iter().position(|f| *f == d.field).unwrap_or(0);
                         let next = if key.code == KeyCode::Tab {
@@ -1393,10 +1390,6 @@ impl App {
                             (here + order.len() - 1) % order.len()
                         };
                         d.field = order[next];
-                        if leaving_task {
-                            rename_from_task(d, &in_use(&d.project));
-                            return route_request(d, &mut self.route_seq).into_iter().collect();
-                        }
                     }
                     (Field::Repo, KeyCode::Left | KeyCode::Right) => {
                         let slugs: Vec<&str> =
@@ -1409,7 +1402,7 @@ impl App {
                                 (here + slugs.len() - 1) % slugs.len()
                             };
                             d.project = slugs[next].to_owned();
-                            rename_from_task(d, &in_use(&d.project));
+                            d.name = naming::word_name(&d.project, &in_use(&d.project));
                         }
                     }
                     // Uma letra pula para o próximo repositório cuja marca começa com ela
@@ -1431,17 +1424,9 @@ impl App {
                                 });
                         if let Some(i) = hit {
                             d.project = repos[i].0.clone();
-                            rename_from_task(d, &in_use(&d.project));
+                            d.name = naming::word_name(&d.project, &in_use(&d.project));
                         }
                     }
-                    // Nome gerado: a primeira tecla o substitui, como texto selecionado
-                    (Field::Name, KeyCode::Char(_) | KeyCode::Backspace) if d.name_auto => {
-                        d.name.clear();
-                        d.name_auto = false;
-                        edit_text(&mut d.name, key);
-                    }
-                    (Field::Name, _) if edit_text(&mut d.name, key) => {}
-                    (Field::Task, _) if edit_text(&mut d.task, key) => {}
                     (Field::Agent, KeyCode::Down | KeyCode::Char('j')) => {
                         if let Some(next) =
                             (d.agent + 1..agents.len()).find(|i| agents[*i].available)
@@ -1483,16 +1468,6 @@ impl App {
                             d.error = Some("no installed agent to run".into());
                             return Vec::new();
                         };
-                        if d.name.trim().is_empty() {
-                            d.error = Some("give the worktree a name".into());
-                            d.field = Field::Name;
-                            return Vec::new();
-                        }
-                        if d.task.len() > MAX_PROMPT_BYTES {
-                            d.error = Some("task is too long (max 100,000 bytes)".into());
-                            d.field = Field::Task;
-                            return Vec::new();
-                        }
                         d.pending = true;
                         d.error = None;
                         let autonomy = d.autonomy && agent.autonomy_supported;
@@ -1570,31 +1545,11 @@ fn agents_label(n: usize) -> String {
     }
 }
 
-/// Enquanto o nome é automático, ele acompanha a tarefa e o repositório: sai das primeiras
-/// palavras da tarefa ou, sem tarefa, da lista de palavras.
-fn rename_from_task(d: &mut NewWorktree, taken: &[&str]) {
-    if !d.name_auto {
-        return;
-    }
-    d.name = match naming::task_name(&d.task) {
-        Some(name) => naming::unique(&name, taken),
-        None => naming::word_name(&d.project, taken),
-    };
-}
-
 /// Campo de texto do diálogo, se houver.
 fn dialog_text(dialog: &mut Dialog) -> Option<&mut String> {
     match dialog {
         Dialog::BaseBranch { value, .. } | Dialog::Rename { value, .. } => Some(value),
         Dialog::NewWorktree(d) if !d.pending => match d.field {
-            Field::Name => {
-                // Colar sobre um nome gerado o substitui
-                if d.name_auto {
-                    d.name.clear();
-                    d.name_auto = false;
-                }
-                Some(&mut d.name)
-            }
             Field::Task => Some(&mut d.task),
             _ => None,
         },

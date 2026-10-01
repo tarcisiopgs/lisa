@@ -254,14 +254,45 @@ fn render_pane(f: &mut Frame, app: &App, pane: Rect) {
     }
     let Some(view) = app.focused_view() else {
         if app.dialog().is_none() {
-            let hint = if app.zone() == Zone::Sidebar {
-                "⏎ opens the selected worktree"
-            } else {
-                "^a then ⏎ to open a worktree"
+            // A dica fala da linha selecionada, não de um worktree que não está sob o cursor
+            let ws = app.workspace();
+            let hint = match app.selected_row() {
+                _ if app.zone() != Zone::Sidebar => "^a then ⏎ to open a worktree".to_owned(),
+                Some(Row::Worktree { id }) => app
+                    .worktree(&id)
+                    .map(|w| format!("⏎ opens {}", w.name))
+                    .unwrap_or_default(),
+                Some(Row::Project { slug } | Row::Empty { project: slug }) => ws
+                    .projects
+                    .iter()
+                    .find(|p| p.slug == slug)
+                    .map(|p| format!("n starts a worktree in {}", p.name))
+                    .unwrap_or_default(),
+                Some(Row::Group { slug } | Row::EmptyGroup { group: slug }) => ws
+                    .groups
+                    .iter()
+                    .find(|g| g.slug == slug)
+                    .map(|g| format!("n starts a worktree in {}", g.name))
+                    .unwrap_or_default(),
+                None => String::new(),
             };
+            // Em terminal estreito a lateral cobre o começo do painel enquanto se navega
+            let covered = if !app.wide() && app.zone() == Zone::Sidebar {
+                (app.sidebar_width() + 1).saturating_sub(pane.x)
+            } else {
+                0
+            };
+            let visible = Rect {
+                x: pane.x + covered,
+                width: pane.width.saturating_sub(covered),
+                ..pane
+            };
+            let width = visible.width.saturating_sub(2);
             f.render_widget(
-                Paragraph::new(hint).style(dim()).centered(),
-                centered(pane, 40, 1),
+                Paragraph::new(clip(&hint, usize::from(width)))
+                    .style(dim())
+                    .centered(),
+                centered(visible, width, 1),
             );
         }
         return;
@@ -548,74 +579,76 @@ fn render_footer(f: &mut Frame, app: &App, footer: Rect) {
         f.render_widget(Paragraph::new(truncate(&text, width)).style(dim()), footer);
         return;
     }
-    let mut label = Vec::new();
+    // Duas legendas: à esquerda a do menu, à direita a do agente. A zona em foco mostra o
+    // que vale agora para a linha selecionada; a outra, só a tecla que leva até ela.
+    let sidebar = app.zone() == Zone::Sidebar;
+    let keys: Vec<&str> = match (app.dialog().is_some(), sidebar) {
+        (true, _) => Vec::new(),
+        (false, false) => vec!["^a sidebar"],
+        (false, true) => match app.selected_row() {
+            Some(Row::Worktree { id }) => match app.worktree(&id) {
+                Some(w) if w.broken => vec!["d remove", "? keys"],
+                Some(w) if w.running => {
+                    vec![
+                        "⏎ open", "n new", "s stop", "e rename", "d remove", "? keys",
+                    ]
+                }
+                _ => vec![
+                    "⏎ open",
+                    "n new",
+                    "r restart",
+                    "e rename",
+                    "d remove",
+                    "? keys",
+                ],
+            },
+            Some(Row::Project { .. } | Row::Empty { .. }) => {
+                vec!["⏎ fold", "n new", "e rename", "? keys"]
+            }
+            Some(Row::Group { .. } | Row::EmptyGroup { .. }) => {
+                vec!["⏎ fold", "n new", "e rename", "d ungroup", "? keys"]
+            }
+            None => vec!["p add a project", "? keys", "q quit"],
+        },
+    };
+    let mut right = Vec::new();
     if let Some(w) = app.focused_view() {
-        label.push(Span::raw(format!("{}/{}", w.project, w.name)));
+        if sidebar && app.dialog().is_none() {
+            right.push(Span::styled("^a agent · ", dim()));
+            right.push(Span::raw(w.name.clone()));
+        } else {
+            right.push(Span::raw(format!("{}/{}", w.project, w.name)));
+        }
         if let Some(agent) = &w.agent {
-            label.push(Span::styled(format!(" · {agent}"), dim()));
+            right.push(Span::styled(format!(" · {agent}"), dim()));
         }
         if w.autonomy {
-            label.push(Span::styled(
+            right.push(Span::styled(
                 " · full autonomy",
                 Style::default().fg(TuiColor::Yellow),
             ));
         }
     }
-    let label_width: usize = label.iter().map(|s| s.content.chars().count()).sum();
-    // Sobre um grupo, `d` desfaz o grupo em vez de remover um worktree
-    let on_group = matches!(
-        app.selected_row(),
-        Some(Row::Group { .. } | Row::EmptyGroup { .. })
-    );
-    let sidebar = app.dialog().is_none() && app.zone() == Zone::Sidebar;
-    let hints: &[&str] = match (app.dialog().is_some(), app.zone()) {
-        (true, _) => &[],
-        (false, Zone::Pane) => &["^a menu"],
-        (false, Zone::Sidebar) => &[
-            "⏎ open",
-            "n new",
-            "p project",
-            "e rename",
-            if on_group { "d ungroup" } else { "d remove" },
-            "r restart",
-            "? help",
-            "q quit",
-        ],
-    };
-    let fit = |room: usize| {
-        let mut text = String::new();
-        for hint in hints {
-            let next = if text.is_empty() {
-                (*hint).to_owned()
-            } else {
-                format!("{text} · {hint}")
-            };
-            if next.chars().count() > room {
-                break;
-            }
-            text = next;
-        }
-        text
-    };
-    let mut left = vec![Span::raw(" ")];
-    if sidebar {
-        // As teclas do menu ficam embaixo dele, à esquerda; o agente aberto vai para a direita
-        let text = fit(width.saturating_sub(2));
-        let used = 1 + text.chars().count();
-        left.push(Span::styled(text, dim()));
-        if label_width > 0 && used + 2 + label_width < width {
-            left.push(Span::raw(" ".repeat(width - used - label_width - 1)));
-            left.extend(label);
-        }
-    } else {
-        let used = 1 + label_width;
-        left.extend(label);
-        let room = width.saturating_sub(used + 2);
-        let text = fit(room);
-        left.push(Span::raw(
-            " ".repeat(room.saturating_sub(text.chars().count())),
-        ));
-        left.push(Span::styled(text, dim()));
+    let right_width: usize = right.iter().map(Span::width).sum();
+    // Sem espaço para as duas, a da esquerda perde teclas do meio: a primeira e `? keys`,
+    // que leva a todas as outras, ficam. A da direita só some se nem assim couber.
+    let join = |keys: &[&str]| keys.join(" · ");
+    let mut keys = keys;
+    let fits = |keys: &[&str], reserve: usize| 1 + cols(&join(keys)) + reserve < width;
+    let reserve = if right_width > 0 { 2 + right_width } else { 1 };
+    while keys.len() > 2 && !fits(&keys, reserve) {
+        keys.remove(keys.len() - 2);
+    }
+    let show_right = right_width > 0 && fits(&keys, reserve);
+    while keys.len() > 1 && !fits(&keys, 1) {
+        keys.remove(keys.len() - 2);
+    }
+    let text = clip(&join(&keys), width.saturating_sub(2));
+    let used = 1 + cols(&text);
+    let mut left = vec![Span::raw(" "), Span::styled(text, dim())];
+    if show_right {
+        left.push(Span::raw(" ".repeat(width - used - right_width - 1)));
+        left.extend(right);
     }
     f.render_widget(Paragraph::new(Line::from(left)), footer);
 }
@@ -777,7 +810,7 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
         "New worktree in {}",
         group.unwrap_or(project.map_or(d.project.as_str(), |p| p.name.as_str()))
     );
-    // Com o roteador disponível, a tarefa vem antes de tudo
+    // A tarefa vem antes de tudo
     if d.stage == Stage::Ask {
         let text_width = usize::from(DIALOG_WIDTH).saturating_sub(2 + LABEL_WIDTH);
         let mut lines = task_lines(d, text_width, TASK_ROWS);
@@ -790,17 +823,15 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
         });
         return (title, lines);
     }
+    // O nome já está decidido: aparece no título, e troca-se depois com o rename
+    let title = format!("{title} · {}", d.name);
     let agents = app.workspace().agents.len();
     let max = usize::from(max_lines);
-    let mut layouts = vec![
-        (TASK_ROWS, agents, true),
-        (1, agents, true),
-        (1, agents, false),
-    ];
-    layouts.extend((1..agents).rev().map(|shown| (1, shown, false)));
+    let mut layouts = vec![(agents, true), (agents, false)];
+    layouts.extend((1..agents).rev().map(|shown| (shown, false)));
     let mut lines = Vec::new();
-    for (task_rows, agent_rows, spaced) in layouts {
-        lines = new_worktree_lines(app, d, task_rows, agent_rows, spaced);
+    for (agent_rows, spaced) in layouts {
+        lines = new_worktree_lines(app, d, agent_rows, spaced);
         if lines.len() <= max {
             break;
         }
@@ -811,14 +842,12 @@ fn new_worktree(app: &App, d: &NewWorktree, max_lines: u16) -> (String, Vec<Line
 fn new_worktree_lines(
     app: &App,
     d: &NewWorktree,
-    task_rows: usize,
     agent_rows: usize,
     spaced: bool,
 ) -> Vec<Line<'static>> {
     let agents = &app.workspace().agents;
     let selected = agents.get(d.agent);
     let selected_name = selected.map_or("", |a| a.name.as_str());
-    let text_width = usize::from(DIALOG_WIDTH).saturating_sub(2 + LABEL_WIDTH);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let gap = |lines: &mut Vec<Line<'static>>| {
         if spaced {
@@ -842,40 +871,48 @@ fn new_worktree_lines(
         gap(&mut lines);
     }
 
-    let mut name = field_label("Name", d.field == Field::Name);
-    name.push(Span::raw(d.name.clone()));
-    if d.field == Field::Name {
-        name.push(cursor());
-    }
-    lines.push(Line::from(name));
-    let preview = crate::git::sanitize_branch(&d.name).unwrap_or_default();
-    lines.push(Line::styled(
-        format!(
-            "          branch: {}{}",
-            if preview.is_empty() {
-                "—"
-            } else {
-                preview.as_str()
-            },
-            // Nome gerado: digitar o substitui
-            if d.name_auto { " · auto" } else { "" }
-        ),
-        dim(),
-    ));
-    gap(&mut lines);
-
-    lines.extend(task_lines(d, text_width, task_rows));
-    // Uma linha de aviso sob a tarefa: o que muda o resultado vem antes do motivo da falha
+    // A decisão do roteador em uma linha, antes de tudo: é o que o diálogo já traz feito
+    let shown_model = model_options(selected_name).get(d.model).copied();
+    let verdict = match &d.route {
+        Route::Idle => None,
+        Route::Pending { .. } => Some(Line::styled(
+            "  asking Jev…",
+            Style::default().fg(TuiColor::Yellow),
+        )),
+        Route::Failed(reason) => Some(Line::styled(format!("  {reason}"), dim())),
+        Route::Suggested { unsure: true, .. } => {
+            Some(Line::styled("  Jev is unsure · using your default", dim()))
+        }
+        Route::Suggested { agent, percent, .. } => {
+            let mut text = format!("  Jev suggests {agent}");
+            // Modelo e effort só valem enquanto o agente sugerido é o selecionado
+            if agent == selected_name {
+                if let Some(model) = shown_model.filter(|_| d.model > 0) {
+                    text.push_str(&format!(" · {model}"));
+                }
+                if let Some(effort) = d
+                    .effort
+                    .filter(|_| !effort_options(selected_name, d.model).is_empty())
+                {
+                    text.push_str(&format!(" · {}", effort.name()));
+                }
+            }
+            text.push_str(&format!(" · {percent}% sure"));
+            Some(Line::from(text))
+        }
+    };
     let has_task = !d.task.trim().is_empty();
-    if has_task && selected.is_some() && !task_delivered(selected_name) {
-        lines.push(Line::from(vec![
-            indent(),
-            Span::styled(format!("task is not sent to {selected_name}"), dim()),
-        ]));
-    } else if let Route::Failed(reason) = &d.route {
-        lines.push(Line::from(vec![indent(), Span::styled(*reason, dim())]));
+    let undelivered = has_task && selected.is_some() && !task_delivered(selected_name);
+    if verdict.is_some() || undelivered {
+        lines.extend(verdict);
+        if undelivered {
+            lines.push(Line::styled(
+                format!("  task is not sent to {selected_name}"),
+                dim(),
+            ));
+        }
+        gap(&mut lines);
     }
-    gap(&mut lines);
 
     // Janela da lista de agentes em volta do selecionado
     let first = d
@@ -909,27 +946,6 @@ fn new_worktree_lines(
             spans.push(Span::styled("  not installed", dim()));
         } else if !agent.autonomy_supported {
             spans.push(Span::styled("  no full autonomy", dim()));
-        }
-        match &d.route {
-            Route::Pending { .. } if chosen => {
-                spans.push(Span::styled(
-                    "  routing…",
-                    Style::default().fg(TuiColor::Yellow),
-                ));
-            }
-            Route::Suggested {
-                agent: suggested,
-                percent,
-                unsure,
-            } if *suggested == agent.name => {
-                let mark = if *unsure {
-                    "  unsure · your default".to_owned()
-                } else {
-                    format!("  suggested · {percent}%")
-                };
-                spans.push(Span::styled(mark, dim()));
-            }
-            _ => {}
         }
         lines.push(Line::from(spans));
     }

@@ -13,4 +13,4 @@ expression: draw(&a).backend()
 " ✔ │                                                                            "
 "   │                                                                            "
 "   │                                                                            "
-" api/fix-login · claude                                                ^a menu  "
+" ^a sidebar                                              api/fix-login · claude "
