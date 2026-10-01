@@ -505,3 +505,80 @@ fn scrolling_shows_history_and_typing_returns_to_the_end() {
     let live = snapshot_of(&mut conn, &id, false);
     assert!(live.contains("echo:row-39"), "{live}");
 }
+
+// ---- Worktree apagado por fora ----
+
+/// Para o agente e apaga a pasta do worktree, como outra ferramenta faria.
+fn delete_outside(conn: &mut lisa_workspace::protocol::Conn, env: &Env, id: &str, name: &str) {
+    conn.send(&ClientMsg::StopAgent { id: id.to_owned() })
+        .unwrap_or_else(|e| panic!("{e}"));
+    state(conn, |s| {
+        s.worktrees.iter().any(|w| w.id == id && !w.running)
+    });
+    std::fs::remove_dir_all(env.root.join("workspaces/repo").join(name))
+        .unwrap_or_else(|e| panic!("{e}"));
+}
+
+#[test]
+fn a_worktree_deleted_outside_lisa_leaves_the_list_and_keeps_its_branch() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    delete_outside(&mut conn, &env, &id, "feature");
+
+    conn.send(&ClientMsg::RemoveWorktree {
+        id: id.clone(),
+        force: false,
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let notice = until(&mut conn, |m| match m {
+        DaemonMsg::Notice(n) => Some(n.clone()),
+        DaemonMsg::Error(e) => panic!("refused: {e}"),
+        _ => None,
+    });
+    assert!(notice.contains("branch feature was kept"), "{notice}");
+    let s = state(&mut conn, |s| s.worktrees.is_empty());
+    assert!(s.worktrees.is_empty());
+    // O trabalho que só existia na branch não se perde com a limpeza da lista
+    let kept = std::process::Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", "refs/heads/feature"])
+        .current_dir(&env.repo)
+        .status()
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(kept.success());
+}
+
+#[test]
+fn a_worktree_whose_repository_is_gone_too_can_still_leave_the_list() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    delete_outside(&mut conn, &env, &id, "feature");
+    std::fs::remove_dir_all(&env.repo).unwrap_or_else(|e| panic!("{e}"));
+
+    conn.send(&ClientMsg::RemoveWorktree { id, force: false })
+        .unwrap_or_else(|e| panic!("{e}"));
+    let s = state(&mut conn, |s| s.worktrees.is_empty());
+    assert!(s.worktrees.is_empty());
+}
+
+#[test]
+fn a_folder_deleted_while_the_daemon_runs_is_reported_as_missing() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    delete_outside(&mut conn, &env, &id, "feature");
+    // Qualquer novo estado já traz a marca, sem reiniciar o daemon
+    conn.send(&ClientMsg::Ping)
+        .unwrap_or_else(|e| panic!("{e}"));
+    conn.send(&ClientMsg::SetBaseBranch {
+        project: "repo".into(),
+        base: "main".into(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let s = state(&mut conn, |s| s.worktrees.iter().any(|w| w.broken));
+    assert!(s.worktrees.iter().any(|w| w.id == id && w.broken));
+}

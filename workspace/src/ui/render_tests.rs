@@ -1467,3 +1467,24 @@ fn a_scrolled_pane_says_how_far_back_it_is_and_hides_the_cursor() {
     );
     insta::assert_snapshot!(t.backend());
 }
+
+#[test]
+fn removing_a_worktree_without_a_folder_says_only_the_list_changes() {
+    let mut ws = workspace();
+    let mut gone = wt("api/gone", AgentState::Idle, false);
+    gone.broken = true;
+    ws.worktrees = vec![gone];
+    let mut a = App::new(100, 14);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a.select_row(1);
+    a.on_key(key(KeyCode::Char('d')));
+    let t = draw(&a);
+    let screen = text_of(&t);
+    assert!(screen.contains("Its folder is already gone."), "{screen}");
+    assert!(
+        screen.contains("Only the list changes; branch gone is kept."),
+        "{screen}"
+    );
+    assert!(!screen.contains("Deletes the worktree"), "{screen}");
+}

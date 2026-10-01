@@ -229,7 +229,9 @@ impl Inner {
     }
 
     fn state(&self) -> WorkspaceState {
-        let registry = lock(&self.registry);
+        let mut registry = lock(&self.registry);
+        // Uma pasta apagada por fora aparece como ausente sem esperar o daemon reiniciar
+        registry.refresh_health();
         let trackers = lock(&self.trackers);
         let mut tags = registry.tags();
         let projects = registry
@@ -616,6 +618,20 @@ impl Inner {
             Ok(t) => t,
             Err(e) => return self.error(e),
         };
+        // A pasta sumiu por fora da Lisa: só resta tirar da lista. Nada no git impede isso,
+        // e a branch fica, porque não há como conferir o que só existe nela.
+        if !wt.path.exists() {
+            self.sessions.stop(id);
+            let _ = git::prune_worktrees(&project.path);
+            self.forget(id);
+            if git::branch_exists(&project.path, None, &wt.branch) {
+                self.send(&DaemonMsg::Notice(format!(
+                    "removed from the list · branch {} was kept",
+                    wt.branch
+                )));
+            }
+            return self.broadcast_state();
+        }
         let check = || {
             (!wt.broken && wt.path.exists())
                 .then(|| {
@@ -643,13 +659,18 @@ impl Inner {
             self.error(e);
             return self.broadcast_state();
         }
+        self.forget(id);
+        self.broadcast_state();
+    }
+
+    /// Tira o worktree do registro e de tudo o que o daemon guarda sobre ele.
+    fn forget(&self, id: &str) {
         lock(&self.registry).forget_worktree(id);
         self.sessions.forget(id);
         lock(&self.trackers).remove(id);
         lock(&self.notified).remove(id);
         lock(&self.last_sent).remove(id);
         self.save();
-        self.broadcast_state();
     }
 
     fn restart_agent(self: &Arc<Self>, id: &str) {

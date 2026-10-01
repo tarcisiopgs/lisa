@@ -156,6 +156,11 @@ pub fn branch_exists(top: &Path, remote: Option<&str>, branch: &str) -> bool {
         || remote.is_some_and(|r| ref_exists(top, &format!("refs/remotes/{r}/{branch}")))
 }
 
+/// Esquece os worktrees cuja pasta não existe mais.
+pub fn prune_worktrees(top: &Path) -> Result<(), GitError> {
+    checked(top, &Env::default(), &["worktree", "prune"]).map(|_| ())
+}
+
 /// A branch existe no remote, pelo último fetch.
 pub fn remote_branch_exists(top: &Path, remote: &str, branch: &str) -> bool {
     ref_exists(top, &format!("refs/remotes/{remote}/{branch}"))
