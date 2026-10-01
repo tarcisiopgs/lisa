@@ -134,3 +134,62 @@ fn scrollback_is_capped() {
     }
     assert_eq!(s.history_len(), 100);
 }
+
+// ---- Histórico ----
+
+/// Dez linhas numeradas numa tela de cinco: as primeiras vão para o histórico.
+fn scrolled_screen() -> Screen {
+    let mut s = screen();
+    for i in 1..=10 {
+        s.feed(format!("line {i}\r\n").as_bytes());
+    }
+    s
+}
+
+#[test]
+fn the_view_shows_the_end_until_it_is_scrolled() {
+    let s = scrolled_screen();
+    let snap = s.snapshot();
+    assert_eq!(snap.scrolled, 0);
+    assert_eq!(row_text(&snap, 0), "line 7");
+}
+
+#[test]
+fn scrolling_back_shows_history_and_hides_the_cursor() {
+    let mut s = scrolled_screen();
+    s.scroll(3);
+    let snap = s.snapshot();
+    assert_eq!(snap.scrolled, 3);
+    assert_eq!(row_text(&snap, 0), "line 4");
+    assert_eq!(row_text(&snap, 4), "line 8");
+    assert!(!snap.cursor.visible);
+}
+
+#[test]
+fn scrolling_stops_at_both_ends() {
+    let mut s = scrolled_screen();
+    s.scroll(1_000);
+    let top = s.snapshot();
+    assert_eq!(row_text(&top, 0), "line 1");
+    assert_eq!(usize::try_from(top.scrolled).unwrap_or(0), s.history_len());
+    s.scroll(-1_000);
+    assert_eq!(s.snapshot().scrolled, 0);
+}
+
+#[test]
+fn scrolling_to_the_bottom_returns_to_the_live_screen() {
+    let mut s = scrolled_screen();
+    s.scroll(4);
+    s.scroll_to_bottom();
+    let snap = s.snapshot();
+    assert_eq!(snap.scrolled, 0);
+    assert_eq!(row_text(&snap, 0), "line 7");
+}
+
+#[test]
+fn output_arriving_while_scrolled_does_not_move_the_view() {
+    let mut s = scrolled_screen();
+    s.scroll(3);
+    s.feed(b"line 11\r\n");
+    assert_eq!(row_text(&s.snapshot(), 0), "line 4");
+}

@@ -436,3 +436,72 @@ fn a_refused_rename_reports_the_reason() {
     });
     assert!(reason.contains("branch main already exists"), "{reason}");
 }
+
+// ---- Histórico ----
+
+fn snapshot_of(conn: &mut lisa_workspace::protocol::Conn, pane: &str, scrolled: bool) -> String {
+    let mut text = String::new();
+    until(conn, |m| {
+        let DaemonMsg::Snapshot { pane: p, snapshot } = m else {
+            return None;
+        };
+        if p != pane || (snapshot.scrolled > 0) != scrolled {
+            return None;
+        }
+        text = snapshot
+            .lines
+            .iter()
+            .map(|l| l.cells.iter().map(|c| c.ch).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some(())
+    });
+    text
+}
+
+#[test]
+fn scrolling_shows_history_and_typing_returns_to_the_end() {
+    let env = setup();
+    let c = start(&env);
+    let mut conn = ui(&env, &c);
+    let id = create(&mut conn, &env, "feature");
+    conn.send(&ClientMsg::Focus {
+        worktree: Some(id.clone()),
+        window_focused: true,
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    // O agente falso ecoa cada linha: 40 linhas não cabem nas 20 da tela
+    for i in 0..40 {
+        conn.send(&ClientMsg::Input {
+            pane: id.clone(),
+            bytes: format!("row-{i:02}\r").into_bytes(),
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+    }
+    screen_contains(&mut conn, &id, "echo:row-39");
+
+    // Outro tamanho força um snapshot inteiro, em vez de um diff
+    let resnap = |conn: &mut lisa_workspace::protocol::Conn, rows: u16| {
+        conn.send(&ClientMsg::Resize { cols: 80, rows })
+            .unwrap_or_else(|e| panic!("{e}"));
+    };
+    conn.send(&ClientMsg::Scroll {
+        pane: id.clone(),
+        lines: 1_000,
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    resnap(&mut conn, 19);
+    let back = snapshot_of(&mut conn, &id, true);
+    // O começo da conversa, que já tinha saído da tela
+    assert!(back.contains("row-00"), "{back}");
+    assert!(!back.contains("echo:row-39"), "{back}");
+
+    conn.send(&ClientMsg::Input {
+        pane: id.clone(),
+        bytes: b"x".to_vec(),
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    resnap(&mut conn, 20);
+    let live = snapshot_of(&mut conn, &id, false);
+    assert!(live.contains("echo:row-39"), "{live}");
+}

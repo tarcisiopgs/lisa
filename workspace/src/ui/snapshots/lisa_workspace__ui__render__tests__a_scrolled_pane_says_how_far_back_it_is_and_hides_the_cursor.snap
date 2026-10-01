@@ -1,0 +1,18 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │old line                                                               "
+" ▾ api                      │                                                                       "
+"▐  ◉ fix-login              │                                                                       "
+"   ◆ rate-limit             │                                                                       "
+"   ○ docs-update            │                                                                       "
+" ▾ lisa                     │                                                                       "
+"   no worktrees · n         │                                                                       "
+" ▾ web                      │                                                                       "
+"   ✔ new-checkout           │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │                                                                       "
+"                            │ ↑ 42 lines back · scroll down or type to return                       "
+" ^a sidebar                                                                  api/fix-login · claude "

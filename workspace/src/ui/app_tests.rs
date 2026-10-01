@@ -392,6 +392,7 @@ fn diff_for_the_focused_pane_updates_the_screen() {
         },
         title: String::new(),
         modes: Modes::default(),
+        scrolled: 0,
     };
     a.on_daemon(DaemonMsg::Snapshot {
         pane: "api/fix-login".into(),
@@ -2035,4 +2036,219 @@ fn any_other_key_cancels_quitting_everything() {
     assert!(a.on_key(ch('n')).is_empty());
     assert!(a.dialog().is_none());
     assert_eq!(a.exit_message(), None);
+}
+
+// ---- Mouse ----
+
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+fn click(a: &mut App, column: u16, row: u16) -> Vec<Action> {
+    a.on_mouse(mouse_at(
+        MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+    ))
+}
+
+fn wheel(a: &mut App, up: bool, column: u16, row: u16) -> Vec<Action> {
+    let kind = if up {
+        MouseEventKind::ScrollUp
+    } else {
+        MouseEventKind::ScrollDown
+    };
+    a.on_mouse(mouse_at(kind, column, row))
+}
+
+/// Tela do agente aberto com os modos dados.
+fn screen_with_modes(a: &mut App, pane: &str, modes: Modes) {
+    let (cols, rows) = a.pane_size();
+    let mut snapshot = blank_screen(cols, rows);
+    snapshot.modes = modes;
+    a.on_daemon(DaemonMsg::Snapshot {
+        pane: pane.into(),
+        snapshot,
+    });
+}
+
+#[test]
+fn clicking_a_worktree_row_opens_it() {
+    let mut a = app();
+    // Linha 0 é o título; 1 é o projeto api; 2 é api/fix-login; 3 é api/rate-limit
+    let actions = click(&mut a, 5, 3);
+    assert_eq!(a.focused(), Some("api/rate-limit"));
+    assert_eq!(a.zone(), Zone::Pane);
+    assert!(matches!(
+        sent(&actions).as_slice(),
+        [ClientMsg::Focus { worktree: Some(id), .. }] if id == "api/rate-limit"
+    ));
+}
+
+#[test]
+fn clicking_a_project_row_folds_it_and_keeps_the_sidebar_focused() {
+    let mut a = app();
+    click(&mut a, 5, 1);
+    assert!(a.is_collapsed("api"));
+    assert_eq!(a.zone(), Zone::Sidebar);
+    click(&mut a, 5, 1);
+    assert!(!a.is_collapsed("api"));
+}
+
+#[test]
+fn clicks_on_the_title_the_footer_or_below_the_last_row_do_nothing() {
+    let mut a = app();
+    let before = a.selected();
+    assert!(click(&mut a, 5, 0).is_empty());
+    assert!(click(&mut a, 5, 29).is_empty());
+    assert!(click(&mut a, 5, 20).is_empty());
+    assert_eq!(a.selected(), before);
+    assert_eq!(a.focused(), None);
+}
+
+#[test]
+fn the_wheel_over_the_sidebar_moves_the_selection_within_bounds() {
+    let mut a = app();
+    wheel(&mut a, false, 5, 5);
+    assert_eq!(a.selected(), 1);
+    wheel(&mut a, true, 5, 5);
+    wheel(&mut a, true, 5, 5);
+    assert_eq!(a.selected(), 0);
+    for _ in 0..50 {
+        wheel(&mut a, false, 5, 5);
+    }
+    assert_eq!(a.selected(), a.rows().len() - 1);
+}
+
+#[test]
+fn clicking_the_agent_from_the_sidebar_focuses_the_pane() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    a.on_key(ctrl('a'));
+    assert_eq!(a.zone(), Zone::Sidebar);
+    let actions = click(&mut a, 60, 10);
+    assert_eq!(a.zone(), Zone::Pane);
+    // O agente não pediu mouse: o clique não vira input
+    assert!(sent(&actions).is_empty());
+}
+
+#[test]
+fn the_wheel_over_an_agent_without_mouse_scrolls_its_history() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    screen_with_modes(&mut a, "api/fix-login", Modes::default());
+    assert_eq!(
+        sent(&wheel(&mut a, true, 60, 10)),
+        [ClientMsg::Scroll {
+            pane: "api/fix-login".into(),
+            lines: WHEEL_LINES,
+        }]
+    );
+    assert_eq!(
+        sent(&wheel(&mut a, false, 60, 10)),
+        [ClientMsg::Scroll {
+            pane: "api/fix-login".into(),
+            lines: -WHEEL_LINES,
+        }]
+    );
+}
+
+#[test]
+fn an_agent_that_asked_for_the_mouse_gets_it_in_pane_coordinates() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    screen_with_modes(
+        &mut a,
+        "api/fix-login",
+        Modes {
+            mouse_report: true,
+            sgr_mouse: true,
+            ..Modes::default()
+        },
+    );
+    // Lateral de 28 colunas + separador: a coluna 29 da tela é a primeira do painel
+    let actions = click(&mut a, 29, 0);
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::Input {
+            pane: "api/fix-login".into(),
+            bytes: b"\x1b[<0;1;1M".to_vec(),
+        }]
+    );
+    let actions = wheel(&mut a, true, 39, 4);
+    assert_eq!(
+        sent(&actions),
+        [ClientMsg::Input {
+            pane: "api/fix-login".into(),
+            bytes: b"\x1b[<64;11;5M".to_vec(),
+        }]
+    );
+}
+
+#[test]
+fn the_wheel_on_an_alternate_screen_becomes_arrow_keys() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    screen_with_modes(
+        &mut a,
+        "api/fix-login",
+        Modes {
+            alt_screen: true,
+            ..Modes::default()
+        },
+    );
+    assert_eq!(
+        sent(&wheel(&mut a, true, 60, 10)),
+        [ClientMsg::Input {
+            pane: "api/fix-login".into(),
+            bytes: b"\x1b[A\x1b[A\x1b[A".to_vec(),
+        }]
+    );
+}
+
+#[test]
+fn the_mouse_does_nothing_under_a_dialog_or_on_the_separator() {
+    let mut a = app();
+    open(&mut a, "api/fix-login");
+    assert!(click(&mut a, 28, 5).is_empty());
+    a.on_key(ctrl('a'));
+    a.on_key(ch('?'));
+    assert!(click(&mut a, 5, 3).is_empty());
+    assert!(wheel(&mut a, true, 60, 10).is_empty());
+    assert!(a.dialog().is_some());
+}
+
+#[test]
+fn a_click_lands_on_the_row_that_is_drawn_when_the_list_is_scrolled() {
+    let mut ws = workspace();
+    for i in 0..40 {
+        ws.worktrees
+            .push(wt(&format!("web/extra-{i:02}"), AgentState::Idle, true));
+    }
+    let mut a = App::new(120, 12);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a.select_row(30);
+    let top = a.sidebar_offset();
+    assert!(top > 0);
+    click(&mut a, 5, 1);
+    assert_eq!(a.rows().get(top), a.selected_row().as_ref());
+}
+
+#[test]
+fn in_a_narrow_terminal_a_click_on_the_rail_brings_the_sidebar() {
+    let mut a = App::new(80, 20);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(workspace()));
+    open(&mut a, "api/fix-login");
+    assert_eq!(a.zone(), Zone::Pane);
+    click(&mut a, 1, 1);
+    assert_eq!(a.zone(), Zone::Sidebar);
 }

@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{DisableBracketedPaste, DisableFocusChange, PopKeyboardEnhancementFlags};
+use crossterm::event::{
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, PopKeyboardEnhancementFlags,
+};
 use crossterm::queue;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +16,12 @@ pub fn restore_bytes(enhanced: bool) -> Vec<u8> {
     if enhanced {
         let _ = queue!(out, PopKeyboardEnhancementFlags);
     }
-    let _ = queue!(out, DisableBracketedPaste, DisableFocusChange);
+    let _ = queue!(
+        out,
+        DisableBracketedPaste,
+        DisableFocusChange,
+        DisableMouseCapture
+    );
     out
 }
 
@@ -123,6 +130,10 @@ mod tests {
         assert!(
             bytes.contains("\x1b[?1004l"),
             "focus reporting left on: {bytes:?}"
+        );
+        assert!(
+            bytes.contains("\x1b[?1000l") && bytes.contains("\x1b[?1006l"),
+            "mouse capture left on: {bytes:?}"
         );
     }
 

@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
-use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line as GridLine};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
@@ -128,6 +128,17 @@ impl Screen {
         &self.title
     }
 
+    /// Rola a vista pelo histórico: positivo volta no tempo, negativo avança. Para nos
+    /// extremos.
+    pub fn scroll(&mut self, lines: i32) {
+        self.term.scroll_display(Scroll::Delta(lines));
+    }
+
+    /// Volta a vista para o fim, onde a saída nova aparece.
+    pub fn scroll_to_bottom(&mut self) {
+        self.term.scroll_display(Scroll::Bottom);
+    }
+
     /// Linhas guardadas no scrollback.
     pub fn history_len(&self) -> usize {
         self.term.grid().history_size()
@@ -137,9 +148,11 @@ impl Screen {
         let grid = self.term.grid();
         let rows = grid.screen_lines();
         let cols = grid.columns();
+        // Vista rolada: as linhas vêm de cima da tela, no histórico
+        let offset = i32::try_from(grid.display_offset()).unwrap_or(0);
         let lines = (0..rows)
             .map(|r| {
-                let row = &grid[GridLine(i32::try_from(r).unwrap_or(i32::MAX))];
+                let row = &grid[GridLine(i32::try_from(r).unwrap_or(i32::MAX) - offset)];
                 Line {
                     cells: (0..cols).map(|c| convert_cell(&row[Column(c)])).collect(),
                 }
@@ -154,10 +167,12 @@ impl Screen {
             cursor: CursorPos {
                 row: u16::try_from(point.line.0.max(0)).unwrap_or(0),
                 col: u16::try_from(point.column.0).unwrap_or(0),
-                visible: mode.contains(TermMode::SHOW_CURSOR),
+                // No histórico, o cursor do agente não está na tela
+                visible: offset == 0 && mode.contains(TermMode::SHOW_CURSOR),
             },
             title: self.title.clone(),
             modes: modes(mode),
+            scrolled: u32::try_from(offset).unwrap_or(0),
         }
     }
 }
