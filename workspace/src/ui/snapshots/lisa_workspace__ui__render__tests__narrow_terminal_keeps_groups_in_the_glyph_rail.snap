@@ -13,4 +13,4 @@ expression: draw(&a).backend()
 "   │                                                                            "
 "   │                                                                            "
 "   │                                                                            "
-" b-metric-api/fix-ingest-lag · claude                                  ^a menu  "
+" ^a sidebar                                b-metric-api/fix-ingest-lag · claude "

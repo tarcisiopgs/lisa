@@ -55,8 +55,8 @@ One agent runs in one worktree of one repository; work that spans several reposi
   - a group's agents are listed directly under it, each marked with its repository
   - ungrouping turns the repositories back into standalone projects and deletes nothing
 - The sidebar width is adjustable between 20 and 48 columns.
-- Worktree names are generated (from the task, or from a fixed word list) and can be changed; projects can carry an alias, and groups and worktrees can be renamed. Renaming a worktree renames its local branch.
-- With the router key set, a new worktree starts from the task, and the dialog arrives already filled in.
+- Worktree names are generated from a fixed word list and changed afterwards; projects can carry an alias, and groups and worktrees can be renamed. Renaming a worktree renames its local branch.
+- A new worktree always starts from the task; the second step picks agent, model and mode. With the router key set, that step arrives already filled in and says what the router decided.
 - Terminology:
   - "project": a mapped git repository
   - "group": a name over several projects, used to list and launch, never to run

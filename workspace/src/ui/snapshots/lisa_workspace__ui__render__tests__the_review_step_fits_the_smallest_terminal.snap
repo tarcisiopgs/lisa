@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: t.backend()
+---
+" PROJECTS                   │                               "
+"▐▾ api┌ New worktree in api · staccato ──────────────────┐  "
+"   ◉ f│  Jev suggests claude · opus · high · 86% sure    │  "
+"   ◆ r│› Agent   ● claude                                │  "
+"   ○ d│          ○ opencode  no full autonomy            │  "
+" ▾ lis│          ○ gemini  not installed                 │  "
+"   no │  Model   ‹ opus ›   effort ‹ high ›              │  "
+" ▾ web│  Mode    (•) normal   ( ) full autonomy          │  "
+"   ✔ n│  ⏎ create · tab next field · ←→ change · esc     │  "
+"      └──────────────────────────────────────────────────┘  "
+"                            │                               "
+"                                                            "

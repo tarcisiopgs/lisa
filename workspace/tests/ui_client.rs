@@ -111,15 +111,22 @@ impl Ui {
         self.pump("project", |a| !a.workspace().projects.is_empty());
     }
 
-    fn new_worktree(&mut self, name: &str) {
+    /// Cria um worktree sem tarefa e devolve o nome que o diálogo gerou para ele.
+    fn new_worktree(&mut self) -> String {
         self.prefix();
         self.key(KeyCode::Char('n'));
-        self.type_text(name);
+        // Etapa da tarefa, em branco; depois a revisão, aceita como veio
         self.key(KeyCode::Enter);
-        let n = name.to_owned();
+        let name = match self.app.dialog() {
+            Some(lisa_workspace::ui::app::Dialog::NewWorktree(d)) => d.name.clone(),
+            other => panic!("no new worktree dialog: {other:?}"),
+        };
+        self.key(KeyCode::Enter);
+        let n = name.clone();
         self.pump("worktree opened", move |a| {
             a.focused_view().is_some_and(|w| w.name == n)
         });
+        name
     }
 }
 
@@ -144,7 +151,7 @@ fn adding_a_project_and_creating_a_worktree_opens_the_agent() {
     let c = start(&env);
     let mut ui = connect(&env, &c);
     ui.add_project(&env.repo.display().to_string());
-    ui.new_worktree("feature one");
+    ui.new_worktree();
     contains(&mut ui, "fake-claude-ready");
     ui.type_text("hello");
     ui.key(KeyCode::Enter);
@@ -157,16 +164,17 @@ fn switching_worktrees_swaps_the_pane_without_stopping_the_other_agent() {
     let c = start(&env);
     let mut ui = connect(&env, &c);
     ui.add_project(&env.repo.display().to_string());
-    ui.new_worktree("first");
+    let first = ui.new_worktree();
     contains(&mut ui, "fake-claude-ready");
     ui.type_text("from-first");
     ui.key(KeyCode::Enter);
     contains(&mut ui, "echo:from-first");
-    ui.new_worktree("second");
+    let second = ui.new_worktree();
+    assert_ne!(first, second);
     contains(&mut ui, "fake-claude-ready");
     assert!(!ui.screen_text().contains("from-first"));
     ui.prefix();
-    ui.select("first");
+    ui.select(&first);
     ui.key(KeyCode::Enter);
     contains(&mut ui, "echo:from-first");
     assert!(ui.app.workspace().worktrees.iter().all(|w| w.running));
@@ -178,7 +186,7 @@ fn leaving_the_ui_keeps_agents_running_for_the_next_one() {
     let c = start(&env);
     let mut ui = connect(&env, &c);
     ui.add_project(&env.repo.display().to_string());
-    ui.new_worktree("keep");
+    let keep = ui.new_worktree();
     contains(&mut ui, "fake-claude-ready");
     drop(ui);
     let mut again = connect(&env, &c);
@@ -189,10 +197,10 @@ fn leaving_the_ui_keeps_agents_running_for_the_next_one() {
             .workspace()
             .worktrees
             .iter()
-            .any(|w| w.name == "keep" && w.running)
+            .any(|w| w.name == keep && w.running)
     );
     again.prefix();
-    again.select("keep");
+    again.select(&keep);
     again.key(KeyCode::Enter);
     contains(&mut again, "fake-claude-ready");
 }
@@ -203,11 +211,14 @@ fn removing_a_dirty_worktree_is_refused_and_it_stays_listed() {
     let c = start(&env);
     let mut ui = connect(&env, &c);
     ui.add_project(&env.repo.display().to_string());
-    ui.new_worktree("dirty");
-    std::fs::write(env.root.join("workspaces/repo/dirty/README"), "changed")
-        .unwrap_or_else(|e| panic!("{e}"));
+    let dirty = ui.new_worktree();
+    std::fs::write(
+        env.root.join(format!("workspaces/repo/{dirty}/README")),
+        "changed",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     ui.prefix();
-    ui.select("dirty");
+    ui.select(&dirty);
     ui.key(KeyCode::Char('d'));
     ui.key(KeyCode::Char('y'));
     ui.pump("refusal", |a| {
@@ -225,6 +236,6 @@ fn removing_a_dirty_worktree_is_refused_and_it_stays_listed() {
             .workspace()
             .worktrees
             .iter()
-            .any(|w| w.name == "dirty" && w.running)
+            .any(|w| w.name == dirty && w.running)
     );
 }

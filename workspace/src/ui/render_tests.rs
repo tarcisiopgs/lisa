@@ -213,11 +213,16 @@ fn empty_workspace_explains_how_to_start() {
 }
 
 #[test]
-fn new_worktree_dialog_previews_the_branch_and_marks_missing_agents() {
+fn new_worktree_dialog_marks_missing_agents_and_has_no_name_field() {
     let mut a = app(100, 16);
     a.on_key(key(KeyCode::Char('n')));
-    for c in "Fix Login!".chars() {
-        a.on_key(key(KeyCode::Char(c)));
+    a.on_key(key(KeyCode::Enter));
+    let screen = text(&a);
+    assert!(screen.contains("○ gemini  not installed"), "{screen}");
+    assert!(screen.contains("○ opencode  no full autonomy"), "{screen}");
+    // O nome é gerado e só se troca depois, com o rename
+    for gone in ["Name", "branch:", "· auto", "Task"] {
+        assert!(!screen.contains(gone), "{gone:?} in {screen}");
     }
     insta::assert_snapshot!(draw(&a).backend());
 }
@@ -291,16 +296,15 @@ fn type_in(a: &mut App, s: &str) {
     }
 }
 
-/// Diálogo aberto, com nome e tarefa digitados e o foco já fora da tarefa.
-/// Devolve o id da consulta pedida ao roteador.
+/// Diálogo aberto com o roteador disponível, a tarefa digitada e confirmada: já na revisão,
+/// com o foco no agente. Devolve o id da consulta pedida ao roteador.
 fn with_task(cols: u16, rows: u16, task: &str) -> (App, u64) {
     let mut a = app(cols, rows);
+    a.set_router_ready(true);
     a.on_key(key(KeyCode::Char('n')));
-    type_in(&mut a, "fix-login-redirect");
-    a.on_key(key(KeyCode::Tab));
     type_in(&mut a, task);
     let id = a
-        .on_key(key(KeyCode::Tab))
+        .on_key(key(KeyCode::Enter))
         .iter()
         .find_map(|x| match x {
             Action::Route { id, .. } => Some(*id),
@@ -324,38 +328,124 @@ fn answers(size: Size, depth: f32, kind: Kind, kind_confidence: f32) -> Answers 
 
 const TASK: &str = "Fix the redirect loop on login when the session cookie has expired";
 
+/// Linhas da tela, sem a moldura à direita.
+fn screen_lines(a: &App) -> Vec<String> {
+    let t = draw(a);
+    let area = t.backend().buffer().area;
+    (0..area.height)
+        .map(|y| row_text(&t, y, area.width))
+        .collect()
+}
+
+/// Índice da primeira linha que contém `needle`.
+fn line_of(lines: &[String], needle: &str) -> usize {
+    lines
+        .iter()
+        .position(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("no {needle:?} in\n{}", lines.join("\n")))
+}
+
 #[test]
 fn new_worktree_dialog_shows_the_task_field() {
+    // Sem o roteador a tarefa também vem primeiro, sozinha
     let mut a = app(100, 24);
     a.on_key(key(KeyCode::Char('n')));
     let screen = text(&a);
-    assert!(screen.contains("Task"), "{screen}");
+    assert!(screen.contains("› Task"), "{screen}");
+    assert!(screen.contains("⏎ skip · esc cancel"), "{screen}");
+    for later in ["Agent", "Model", "Mode", "⏎ create"] {
+        assert!(!screen.contains(later), "{later:?} in {screen}");
+    }
+    insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn review_without_a_route_has_no_verdict_and_no_task() {
+    let mut a = app(100, 24);
+    a.on_key(key(KeyCode::Char('n')));
+    type_in(&mut a, "fix login");
+    a.on_key(key(KeyCode::Enter));
+    let lines = screen_lines(&a);
+    let screen = lines.join("\n");
     assert!(
         screen.contains("⏎ create · tab next field · ←→ change · esc cancel"),
+        "{screen}"
+    );
+    for gone in ["Jev", "Task", "fix login", "Name", "branch:"] {
+        assert!(!screen.contains(gone), "{gone:?} in {screen}");
+    }
+    // Sem veredito, o agente é a primeira linha do diálogo
+    assert_eq!(
+        line_of(&lines, "› Agent"),
+        line_of(&lines, "New worktree in api") + 1,
         "{screen}"
     );
     insta::assert_snapshot!(draw(&a).backend());
 }
 
 #[test]
-fn routing_shows_on_the_selected_agent_row() {
-    let (a, _) = with_task(100, 24, TASK);
-    let screen = text(&a);
-    assert!(screen.contains("● claude  routing…"), "{screen}");
+fn a_pending_route_says_so_at_the_top() {
+    let (a, id) = with_task(100, 24, TASK);
+    assert_ne!(id, 0, "no route requested");
+    let lines = screen_lines(&a);
+    let screen = lines.join("\n");
+    assert!(
+        lines.iter().any(|l| l.contains("│  asking Jev…")),
+        "{screen}"
+    );
+    assert!(
+        line_of(&lines, "asking Jev…") < line_of(&lines, "Agent"),
+        "{screen}"
+    );
+    // A marca não fica mais na linha do agente
+    let agent = &lines[line_of(&lines, "● claude")];
+    assert!(agent.contains("› Agent   ● claude   "), "{agent:?}");
+    assert!(!screen.contains("routing…"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
 }
 
 #[test]
-fn suggestion_marks_the_agent_and_fills_the_model() {
+fn a_suggestion_is_one_line_at_the_top_and_fills_the_model() {
     let (mut a, id) = with_task(100, 24, TASK);
     a.on_route(
         id,
         Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
     );
-    let screen = text(&a);
-    assert!(screen.contains("● claude  suggested · 86%"), "{screen}");
+    let lines = screen_lines(&a);
+    let screen = lines.join("\n");
+    assert!(
+        screen.contains("│  Jev suggests claude · opus · high · 86% sure"),
+        "{screen}"
+    );
+    assert!(
+        line_of(&lines, "Jev suggests") < line_of(&lines, "Agent"),
+        "{screen}"
+    );
+    assert!(!screen.contains("suggested ·"), "{screen}");
     assert!(screen.contains("‹ opus ›   effort ‹ high ›"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
+}
+
+#[test]
+fn a_suggestion_for_another_agent_names_only_the_agent() {
+    let (mut a, id) = with_task(100, 24, TASK);
+    // Escolha feita à mão antes de a resposta chegar
+    a.on_key(key(KeyCode::Tab));
+    a.on_key(key(KeyCode::Right));
+    a.on_key(key(KeyCode::BackTab));
+    a.on_key(key(KeyCode::Down));
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    let screen = text(&a);
+    assert!(screen.contains("● opencode"), "{screen}");
+    // Modelo e effort são do agente sugerido, não do que está selecionado
+    assert!(
+        screen.contains("│  Jev suggests claude · 86% sure"),
+        "{screen}"
+    );
+    assert!(screen.contains("task is not sent to opencode"), "{screen}");
 }
 
 #[test]
@@ -364,22 +454,29 @@ fn unsure_suggestion_says_so() {
     a.on_route(id, Ok(answers(Size::Scoped, 0.1, Kind::Review, 0.2)));
     let screen = text(&a);
     assert!(
-        screen.contains("● claude  unsure · your default"),
+        screen.contains("│  Jev is unsure · using your default"),
         "{screen}"
     );
+    assert!(!screen.contains("% sure"), "{screen}");
+    assert!(!screen.contains("unsure · your default"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
 }
 
 #[test]
-fn failure_reason_sits_under_the_task() {
+fn failure_reason_sits_at_the_top() {
     let (mut a, id) = with_task(100, 24, TASK);
     a.on_route(id, Err(RouteError::NoKey));
-    let screen = text(&a);
+    let lines = screen_lines(&a);
+    let screen = lines.join("\n");
     assert!(
-        screen.contains("no TYPESAFE_API_KEY · choosing manually"),
+        screen.contains("│  no TYPESAFE_API_KEY · choosing manually"),
         "{screen}"
     );
-    assert!(!screen.contains("routing…"), "{screen}");
+    assert!(
+        line_of(&lines, "no TYPESAFE_API_KEY") < line_of(&lines, "Agent"),
+        "{screen}"
+    );
+    assert!(!screen.contains("asking Jev"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
 }
 
@@ -390,6 +487,10 @@ fn model_without_effort_hides_the_effort() {
     let screen = text(&a);
     assert!(screen.contains("‹ haiku ›"), "{screen}");
     assert!(!screen.contains("effort"), "{screen}");
+    assert!(
+        screen.contains("Jev suggests claude · haiku · 90% sure"),
+        "{screen}"
+    );
     insta::assert_snapshot!(draw(&a).backend());
 }
 
@@ -398,10 +499,18 @@ fn agent_without_a_catalog_hides_the_model_and_warns() {
     let (mut a, id) = with_task(100, 24, TASK);
     a.on_route(id, Err(RouteError::Timeout));
     a.on_key(key(KeyCode::Down));
-    let screen = text(&a);
+    let lines = screen_lines(&a);
+    let screen = lines.join("\n");
     assert!(screen.contains("● opencode"), "{screen}");
-    assert!(screen.contains("task is not sent to opencode"), "{screen}");
     assert!(!screen.contains("Model"), "{screen}");
+    // O aviso fica logo abaixo do veredito, os dois antes do agente
+    let reason = line_of(&lines, "Jev timed out · choosing manually");
+    assert_eq!(
+        line_of(&lines, "│  task is not sent to opencode"),
+        reason + 1,
+        "{screen}"
+    );
+    assert!(reason < line_of(&lines, "Agent"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
 }
 
@@ -419,23 +528,12 @@ fn cost_note_shows_for_models_that_have_one() {
 fn long_task_wraps_without_splitting_characters() {
     let mut a = app(100, 26);
     a.on_key(key(KeyCode::Char('n')));
-    a.on_key(key(KeyCode::Tab));
     a.on_paste("Corrigir a ação de publicação 🚀 que falha em produção quando o usuário não tem permissão\nsegunda linha: validar também o fluxo de reenvio e a paginação da listagem de pedidos");
     let screen = text(&a);
     // Em foco, a tarefa mostra o fim do texto, com o cursor
     assert!(screen.contains("pedidos▏"), "{screen}");
     assert!(!screen.contains('\u{fffd}'), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
-}
-
-#[test]
-fn unfocused_long_task_shows_its_start_with_an_ellipsis() {
-    let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five";
-    let (a, _) = with_task(100, 26, long);
-    let screen = text(&a);
-    assert!(screen.contains("one two three"), "{screen}");
-    assert!(screen.contains('…'), "{screen}");
-    assert!(!screen.contains("twenty-five"), "{screen}");
 }
 
 #[test]
@@ -452,6 +550,7 @@ fn short_terminal_keeps_the_focused_field_and_the_hints() {
     assert!(screen.contains("● claude"), "{screen}");
     assert!(screen.contains("⏎ create"), "{screen}");
     assert!(screen.contains("New worktree in api"), "{screen}");
+    assert!(screen.contains("Jev suggests claude"), "{screen}");
     insta::assert_snapshot!(draw(&a).backend());
 }
 
@@ -718,6 +817,7 @@ fn new_worktree_from_a_group_starts_with_the_repo_field() {
     let mut a = grouped(100, 24, grouped_workspace());
     a.select_row(0);
     a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Enter));
     a.on_key(key(KeyCode::Right));
     let t = draw(&a);
     let screen = text_of(&t);
@@ -734,6 +834,7 @@ fn new_worktree_from_a_group_fits_the_smallest_terminal() {
     let mut a = grouped(60, 12, grouped_workspace());
     a.select_row(0);
     a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Enter));
     let t = draw(&a);
     let screen = text_of(&t);
     assert!(screen.contains("› Repo    ‹ api ›  1 of 3"), "{screen}");
@@ -903,26 +1004,50 @@ fn with_the_router_the_new_worktree_dialog_asks_only_for_the_task() {
 }
 
 #[test]
-fn a_generated_name_is_marked_auto_until_edited() {
-    let mut a = app(100, 24);
-    a.on_key(key(KeyCode::Char('n')));
-    let screen = text_of(&draw(&a));
-    assert!(screen.contains(" · auto"), "{screen}");
-    type_text(&mut a, "mine");
-    let t = draw(&a);
-    let screen = text_of(&t);
-    assert!(screen.contains("branch: mine"), "{screen}");
-    assert!(!screen.contains(" · auto"), "{screen}");
-}
-
-#[test]
 fn the_task_step_fits_the_smallest_terminal() {
     let mut a = app(60, 12);
     a.set_router_ready(true);
     a.on_key(key(KeyCode::Char('n')));
     let t = draw(&a);
-    assert!(text_of(&t).contains("⏎ skip · esc cancel"));
+    let screen = text_of(&t);
+    assert!(screen.contains("New worktree in api"), "{screen}");
+    assert!(screen.contains("› Task"), "{screen}");
+    assert!(screen.contains("⏎ skip · esc cancel"), "{screen}");
     insta::assert_snapshot!(t.backend());
+    // Com uma tarefa longa, a dica continua na tela
+    a.on_paste(&format!("{TASK}\n{TASK}\n{TASK}\n{TASK}"));
+    let screen = text_of(&draw(&a));
+    assert!(screen.contains("⏎ continue · esc cancel"), "{screen}");
+    assert!(screen.contains("has expired▏"), "{screen}");
+}
+
+#[test]
+fn the_review_step_fits_the_smallest_terminal() {
+    let (mut a, id) = with_task(60, 12, TASK);
+    a.on_route(
+        id,
+        Ok(answers(Size::Complex, 0.9, Kind::Investigation, 0.86)),
+    );
+    let t = draw(&a);
+    let screen = text_of(&t);
+    for shown in [
+        "New worktree in api",
+        "Jev suggests claude · opus · high · 86% sure",
+        "› Agent   ● claude",
+        "‹ opus ›   effort ‹ high ›",
+        "(•) normal",
+        // Nessa largura a moldura corta o `cancel` do fim da dica
+        "⏎ create · tab next field · ←→ change · esc",
+    ] {
+        assert!(screen.contains(shown), "missing {shown:?} in\n{screen}");
+    }
+    insta::assert_snapshot!(t.backend());
+    // O pior caso em altura: veredito, aviso de tarefa não enviada e todos os agentes
+    a.on_key(key(KeyCode::Down));
+    let screen = text_of(&draw(&a));
+    for shown in ["● opencode", "task is not sent to opencode", "⏎ create"] {
+        assert!(screen.contains(shown), "missing {shown:?} in\n{screen}");
+    }
 }
 
 #[test]
@@ -984,18 +1109,262 @@ fn sidebar_keys_sit_under_the_sidebar_and_the_open_agent_moves_right() {
     let t = draw(&a);
     let footer = row_text(&t, 13, 120);
     assert!(
-        footer.starts_with(" ⏎ open · n new · p project"),
+        footer.starts_with(" ⏎ open · n new · s stop · e rename · d remove · ? keys  "),
         "{footer:?}"
     );
     assert!(
-        footer.trim_end().ends_with("api/fix-login · claude"),
+        footer.ends_with("  ^a agent · fix-login · claude "),
         "{footer:?}"
     );
-    // Com o foco no agente, a ordem é a de antes
+    // Com o foco no agente, a esquerda só diz como voltar ao menu
     a.on_key(key(KeyCode::Esc));
+    assert_eq!(a.zone(), Zone::Pane);
     let footer = row_text(&draw(&a), 13, 120);
-    assert!(footer.starts_with(" api/fix-login · claude"), "{footer:?}");
-    assert!(footer.trim_end().ends_with("^a menu"), "{footer:?}");
+    assert!(footer.starts_with(" ^a sidebar  "), "{footer:?}");
+    assert!(footer.ends_with("  api/fix-login · claude "), "{footer:?}");
+}
+
+// ---- Legendas por linha selecionada e dica do painel vazio ----
+
+use crate::ui::app::Row;
+
+/// Legenda da esquerda do rodapé (a tela inteira quando não há agente aberto).
+fn footer(a: &App) -> String {
+    let (cols, rows) = a.size();
+    row_text(&draw(a), rows - 1, cols).trim_end().to_owned()
+}
+
+fn select(a: &mut App, row: &Row) {
+    let at = a
+        .rows()
+        .iter()
+        .position(|r| r == row)
+        .unwrap_or_else(|| panic!("no row {row:?} in {:?}", a.rows()));
+    a.select_row(at);
+}
+
+fn worktree_row(id: &str) -> Row {
+    Row::Worktree { id: id.into() }
+}
+
+/// Grupo com agentes, grupo vazio, projeto com agentes e projeto vazio, todos com nome
+/// diferente do slug; um worktree parado e um quebrado.
+fn every_row_kind() -> App {
+    let mut ws = grouped_workspace();
+    ws.groups.push(GroupView {
+        slug: "acme".into(),
+        name: "Acme Corp".into(),
+    });
+    ws.projects.push(project("acme-api", Some("acme"), "api"));
+    for p in &mut ws.projects {
+        match p.slug.as_str() {
+            "lisa" => p.name = "Lisa CLI".into(),
+            "bloom" => p.name = "Bloom App".into(),
+            _ => {}
+        }
+    }
+    ws.worktrees
+        .push(wt("lisa/stopped-one", AgentState::Idle, false));
+    let mut broken = wt("lisa/broken-one", AgentState::Idle, false);
+    broken.broken = true;
+    ws.worktrees.push(broken);
+    grouped(120, 16, ws)
+}
+
+#[test]
+fn the_sidebar_legend_follows_the_selected_row() {
+    let mut a = every_row_kind();
+    assert_eq!(a.zone(), Zone::Sidebar);
+    let cases = [
+        (
+            worktree_row("lisa/sidebar-groups"),
+            " ⏎ open · n new · s stop · e rename · d remove · ? keys",
+        ),
+        (
+            worktree_row("lisa/stopped-one"),
+            " ⏎ open · n new · r restart · e rename · d remove · ? keys",
+        ),
+        (worktree_row("lisa/broken-one"), " d remove · ? keys"),
+        (
+            Row::Project {
+                slug: "lisa".into(),
+            },
+            " ⏎ fold · n new · e rename · ? keys",
+        ),
+        (
+            Row::Empty {
+                project: "bloom".into(),
+            },
+            " ⏎ fold · n new · e rename · ? keys",
+        ),
+        (
+            Row::Group {
+                slug: "b-metric".into(),
+            },
+            " ⏎ fold · n new · e rename · d ungroup · ? keys",
+        ),
+        (
+            Row::EmptyGroup {
+                group: "acme".into(),
+            },
+            " ⏎ fold · n new · e rename · d ungroup · ? keys",
+        ),
+    ];
+    for (row, legend) in cases {
+        select(&mut a, &row);
+        assert_eq!(footer(&a), legend, "{row:?}");
+    }
+}
+
+#[test]
+fn the_legend_without_any_row_says_how_to_add_a_project() {
+    let mut a = App::new(100, 12);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(WorkspaceState::default()));
+    assert_eq!(a.zone(), Zone::Sidebar);
+    assert_eq!(footer(&a), " p add a project · ? keys · q quit");
+}
+
+#[test]
+fn the_right_legend_names_the_open_agent_whatever_row_is_selected() {
+    let mut a = every_row_kind();
+    select(&mut a, &worktree_row("lisa/sidebar-groups"));
+    a.on_key(key(KeyCode::Enter));
+    a.on_key(ctrl('a'));
+    select(
+        &mut a,
+        &Row::Group {
+            slug: "b-metric".into(),
+        },
+    );
+    let line = footer(&a);
+    assert!(
+        line.starts_with(" ⏎ fold · n new · e rename · d ungroup · ? keys  "),
+        "{line:?}"
+    );
+    assert!(
+        line.ends_with("  ^a agent · sidebar-groups · claude"),
+        "{line:?}"
+    );
+}
+
+#[test]
+fn the_pane_legend_says_how_to_reach_the_sidebar_and_names_full_autonomy() {
+    let mut ws = workspace();
+    ws.worktrees[0].autonomy = true;
+    let mut a = App::new(120, 12);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    open(&mut a, "api/fix-login");
+    assert_eq!(a.zone(), Zone::Pane);
+    let line = footer(&a);
+    assert!(line.starts_with(" ^a sidebar  "), "{line:?}");
+    assert!(
+        line.ends_with("  api/fix-login · claude · full autonomy"),
+        "{line:?}"
+    );
+    // No menu, a direita troca o caminho pela tecla e pelo nome do worktree
+    a.on_key(ctrl('a'));
+    let line = footer(&a);
+    assert!(
+        line.ends_with("  ^a agent · fix-login · claude · full autonomy"),
+        "{line:?}"
+    );
+}
+
+#[test]
+fn a_dialog_leaves_no_keys_in_the_left_legend() {
+    let mut a = app(120, 14);
+    open(&mut a, "api/fix-login");
+    a.on_key(ctrl('a'));
+    a.on_key(key(KeyCode::Char('n')));
+    let line = row_text(&draw(&a), 13, 120);
+    assert!(line.starts_with("    "), "{line:?}");
+    assert!(!line.contains("? keys"), "{line:?}");
+    assert!(!line.contains("^a"), "{line:?}");
+    assert!(line.ends_with("  api/fix-login · claude "), "{line:?}");
+}
+
+/// Texto do painel do agente, sem a lateral nem o rodapé.
+fn pane_text(a: &App) -> String {
+    let (cols, rows) = a.size();
+    let side = cols - a.pane_size().0;
+    let t = draw(a);
+    let buf = t.backend().buffer();
+    (0..rows - 1)
+        .map(|y| {
+            (side..cols)
+                .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().to_owned()))
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        })
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn the_empty_pane_hint_follows_the_selected_row() {
+    let mut a = every_row_kind();
+    let cases = [
+        (
+            worktree_row("lisa/sidebar-groups"),
+            "⏎ opens sidebar-groups",
+        ),
+        (worktree_row("lisa/stopped-one"), "⏎ opens stopped-one"),
+        (
+            Row::Project {
+                slug: "lisa".into(),
+            },
+            "n starts a worktree in Lisa CLI",
+        ),
+        (
+            Row::Empty {
+                project: "bloom".into(),
+            },
+            "n starts a worktree in Bloom App",
+        ),
+        (
+            Row::Group {
+                slug: "b-metric".into(),
+            },
+            "n starts a worktree in B-Metric",
+        ),
+        (
+            Row::EmptyGroup {
+                group: "acme".into(),
+            },
+            "n starts a worktree in Acme Corp",
+        ),
+    ];
+    for (row, hint) in cases {
+        select(&mut a, &row);
+        assert_eq!(pane_text(&a), hint, "{row:?}");
+    }
+    // Com um diálogo aberto, a dica sai
+    a.on_key(key(KeyCode::Char('?')));
+    assert!(!text_of(&draw(&a)).contains("n starts a worktree"));
+}
+
+#[test]
+fn a_long_empty_pane_hint_is_cut_inside_the_pane() {
+    let mut ws = workspace();
+    ws.worktrees.push(wt(
+        "lisa/a-worktree-with-a-very-long-name-that-cannot-fit-in-the-pane-at-all",
+        AgentState::Idle,
+        true,
+    ));
+    let mut a = App::new(100, 12);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    select(
+        &mut a,
+        &worktree_row("lisa/a-worktree-with-a-very-long-name-that-cannot-fit-in-the-pane-at-all"),
+    );
+    let hint = pane_text(&a);
+    assert!(hint.starts_with("⏎ opens a-worktree-with"), "{hint:?}");
+    assert!(hint.ends_with('…'), "{hint:?}");
 }
 
 #[test]
@@ -1024,4 +1393,54 @@ fn quitting_everything_asks_first_and_says_what_stays() {
     assert!(screen.contains("Stop 4 agents and quit?"), "{screen}");
     assert!(screen.contains("y stop and quit · esc cancel"), "{screen}");
     insta::assert_snapshot!(t.backend());
+}
+
+// ---- Achados da adaptação dos testes ----
+
+#[test]
+fn a_tight_footer_drops_middle_keys_and_keeps_help_and_the_open_agent() {
+    let mut a = app(80, 14);
+    open(&mut a, "api/fix-login");
+    a.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    let footer = row_text(&draw(&a), 13, 80);
+    assert!(footer.starts_with(" ⏎ open · "), "{footer:?}");
+    assert!(footer.contains("? keys"), "{footer:?}");
+    assert!(
+        footer.trim_end().ends_with("^a agent · fix-login · claude"),
+        "{footer:?}"
+    );
+}
+
+#[test]
+fn the_review_title_names_the_worktree_that_will_be_created() {
+    let mut a = app(100, 24);
+    a.on_key(key(KeyCode::Char('n')));
+    a.on_key(key(KeyCode::Enter));
+    let name = match a.dialog() {
+        Some(crate::ui::app::Dialog::NewWorktree(d)) => d.name.clone(),
+        other => panic!("no dialog: {other:?}"),
+    };
+    let screen = text_of(&draw(&a));
+    assert!(
+        screen.contains(&format!("New worktree in api · {name} ")),
+        "{screen}"
+    );
+}
+
+#[test]
+fn in_a_narrow_terminal_the_empty_pane_hint_stays_clear_of_the_sidebar() {
+    let mut ws = workspace();
+    ws.worktrees = vec![wt(
+        "api/a-very-long-name-that-cannot-fit",
+        AgentState::Idle,
+        true,
+    )];
+    let mut a = App::new(60, 12);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a.select_row(1);
+    let t = draw(&a);
+    let line = row_text(&t, 5, 60);
+    let hint = line.split('│').nth(1).unwrap_or_default();
+    assert!(hint.trim_start().starts_with("⏎ opens "), "{line:?}");
 }
