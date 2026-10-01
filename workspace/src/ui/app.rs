@@ -1,10 +1,12 @@
 //! Estado e lógica da UI, sem terminal: teclas e mensagens do daemon viram ações.
 
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::input::{encode_key, encode_paste};
+use super::picker::{Outcome, Picker};
 use crate::agents::{self, AgentId, Effort, MAX_PROMPT_BYTES};
 use crate::protocol::work::AgentOption;
 use crate::protocol::work::{
@@ -197,9 +199,7 @@ fn step<T: Copy + PartialEq>(items: &[T], current: T, forward: bool) -> T {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dialog {
     NewWorktree(NewWorktree),
-    AddProject {
-        path: String,
-    },
+    AddProject(Picker),
     BaseBranch {
         project: String,
         value: String,
@@ -245,16 +245,9 @@ pub struct App {
     router: RouterConfig,
     /// Id da última consulta ao roteador; respostas com outro id são descartadas.
     route_seq: u64,
-}
-
-/// `~` no começo do caminho vira o HOME.
-fn expand_home(path: &str) -> String {
-    match (path.strip_prefix('~'), std::env::var("HOME")) {
-        (Some(rest), Ok(home)) if rest.is_empty() || rest.starts_with('/') => {
-            format!("{home}{rest}")
-        }
-        _ => path.to_owned(),
-    }
+    /// Onde o seletor de projetos abre quando não há projeto mapeado por perto.
+    start_dir: PathBuf,
+    home: Option<PathBuf>,
 }
 
 impl App {
@@ -275,7 +268,15 @@ impl App {
             default_autonomy: false,
             router: RouterConfig::default(),
             route_seq: 0,
+            start_dir: PathBuf::from("/"),
+            home: std::env::var_os("HOME").map(PathBuf::from),
         }
+    }
+
+    /// Diretório de onde a Lisa foi aberta e o HOME, para o seletor de projetos.
+    pub fn set_dirs(&mut self, start: PathBuf, home: Option<PathBuf>) {
+        self.start_dir = start;
+        self.home = home;
     }
 
     pub fn set_default_autonomy(&mut self, autonomy: bool) {
@@ -517,6 +518,10 @@ impl App {
     }
 
     pub fn on_paste(&mut self, text: &str) -> Vec<Action> {
+        if let Some(Dialog::AddProject(picker)) = self.dialog.as_mut() {
+            picker.paste(text);
+            return Vec::new();
+        }
         if let Some(dialog) = self.dialog.as_mut() {
             // Na tarefa, as quebras de linha coladas ficam, normalizadas
             let multiline = matches!(dialog, Dialog::NewWorktree(d) if d.field == Field::Task);
@@ -729,11 +734,7 @@ impl App {
                 Some(project) => self.open_new_worktree(project),
                 None => self.set_notice(NoticeKind::Info, "add a project first (p)"),
             },
-            KeyCode::Char('p') => {
-                self.dialog = Some(Dialog::AddProject {
-                    path: String::new(),
-                })
-            }
+            KeyCode::Char('p') => self.open_add_project(),
             KeyCode::Char('b') => {
                 if let Some(project) = self.selected_project() {
                     let value = self
@@ -793,6 +794,26 @@ impl App {
         }
     }
 
+    /// Abre o seletor ao lado do último projeto mapeado; sem um, onde a Lisa foi aberta.
+    fn open_add_project(&mut self) {
+        let projects = &self.workspace.projects;
+        let beside_last = projects
+            .last()
+            .and_then(|p| Path::new(&p.path).parent().map(Path::to_path_buf));
+        let start = beside_last
+            .into_iter()
+            .chain([self.start_dir.clone()])
+            .chain(self.home.clone())
+            .find(|dir| dir.is_dir())
+            .unwrap_or_else(|| PathBuf::from("/"));
+        let added: Vec<PathBuf> = projects.iter().map(|p| PathBuf::from(&p.path)).collect();
+        self.dialog = Some(Dialog::AddProject(Picker::open(
+            &start,
+            self.home.clone(),
+            &added,
+        )));
+    }
+
     fn open_new_worktree(&mut self, project: String) {
         let agent = self
             .workspace
@@ -841,17 +862,13 @@ impl App {
                 self.dialog = None;
                 Vec::new()
             }
-            Dialog::AddProject { path } => {
-                if edit_text(path, key) {
-                    return Vec::new();
-                }
-                if key.code == KeyCode::Enter && !path.trim().is_empty() {
-                    let path = expand_home(path.trim());
+            Dialog::AddProject(picker) => match picker.on_key(key) {
+                Outcome::Add(path) => {
                     self.dialog = None;
-                    return vec![Action::Send(ClientMsg::AddProject { path })];
+                    vec![Action::Send(ClientMsg::AddProject { path })]
                 }
-                Vec::new()
-            }
+                Outcome::Stay => Vec::new(),
+            },
             Dialog::BaseBranch { project, value } => {
                 if edit_text(value, key) {
                     return Vec::new();
@@ -1023,7 +1040,6 @@ fn fix_autonomy(d: &mut NewWorktree, agents: &[AgentOption]) {
 /// Campo de texto do diálogo, se houver.
 fn dialog_text(dialog: &mut Dialog) -> Option<&mut String> {
     match dialog {
-        Dialog::AddProject { path } => Some(path),
         Dialog::BaseBranch { value, .. } => Some(value),
         Dialog::NewWorktree(d) if !d.pending => match d.field {
             Field::Name => Some(&mut d.name),

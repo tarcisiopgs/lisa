@@ -8,7 +8,7 @@ expression: draw(&a).backend()
 "                                                                       │                            "
 "                            No projects yet                            │                            "
 "                                                                       │                            "
-"              p  add a project (path to a git repository)              │                            "
+"                           p  add a project                            │                            "
 "                                                                       │                            "
 "                                                                       │                            "
 "                                                                       │                            "

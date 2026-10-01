@@ -41,11 +41,17 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
   - New worktree: name (with a dim `branch: <sanitized>` preview), task (optional, up to three wrapped rows, dim placeholder when empty), agent list (unavailable ones dim with `not installed`), model (`‹ opus ›   effort ‹ high ›`, only for agents with a verified catalog; arrows turn yellow in focus), permission (normal / full autonomy; disabled with a reason when unsupported), a `fetching origin/main…` line while the daemon works.
   - Routing marks sit dim on the agent row: `routing…` (yellow) while waiting, `suggested · 86%`, `unsure · your default`. A failure reason or `task is not sent to <agent>` takes one dim line under the task; a documented cost note takes one dim line under the model.
   - On short terminals the dialog shrinks in this order: task to one row, blank separators removed, agent list windowed around the selection. The focused field and the hint line always stay.
+  - Add project: a folder picker, never a bare path field. A dim line with the listed folder (`~/Workspace/`, plus `15/35` on the right when the list overflows), the filter line (`› glo▏`), then the subfolders: git repositories first with `●`, plain folders dim with a trailing `/`, already mapped repositories dim with `added` on the right. Hidden folders appear only when the filter starts with a dot.
+    - Typing filters by case-insensitive subsequence, closest match first. `↑↓` move, `→`/`Tab` open the folder, `←` (or `Backspace` on an empty filter) goes up, `⏎` adds a repository or opens a plain folder.
+    - A filter starting with `/` or `~` is a path: the list follows the typed folder and filters by the last segment. A pasted path replaces the filter.
+    - It opens beside the last mapped project; with none, where Lisa was started, then the home folder.
+    - The list height follows the folder (up to ten rows), not the filter, so the box does not jump while typing. The hint line names what `⏎` does for the selected row.
+    - `no folders here`, `no match` (dim) and `Cannot open this folder: <reason>` (red) take the first list row.
   - Remove: `y/N` confirmation. A refusal shows the reason in red with `f force · esc cancel`.
 
 ## Empty and edge states
 
-- No projects: a centred message in the pane area, `No projects yet` and `p add a project (path to a git repository)`.
+- No projects: a centred message in the pane area, `No projects yet` and `p add a project`.
 - Project without worktrees: a dim `no worktrees · n` row.
 - Exited agent: the last screen dimmed with a bottom banner `agent exited (code N) · r restart`.
 - Broken worktree: the pane says `Worktree missing on disk · d remove from list`.

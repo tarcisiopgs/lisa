@@ -1,0 +1,16 @@
+---
+source: src/ui/render_tests.rs
+expression: draw(&a).backend()
+---
+"  ┌ Add project ─────────────────────────────────────┐      "
+"  │  ~/Workspace/                               1/35 │      "
+"  │  › ▏                                             │      "
+"  │                                                  │      "
+"  │  ▐ ● glowz                                       │      "
+"  │    ● glowz-api                                   │      "
+"  │    ● lisa                                  added │      "
+"  │    ● service-00                                  │      "
+"  │                                                  │      "
+"  │  ⏎ add · → open · ← up · esc cancel              │      "
+"  └──────────────────────────────────────────────────┘      "
+"                                                            "
