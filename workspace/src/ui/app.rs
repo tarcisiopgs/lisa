@@ -1444,7 +1444,16 @@ impl App {
                 Vec::new()
             }
             Dialog::ConfirmRemove { id, sent, refused } => match key.code {
-                KeyCode::Char('y') if !*sent => {
+                // Sem pasta, nada é apagado: o ⏎ basta. Com pasta, só o `y` remove.
+                KeyCode::Char('y') | KeyCode::Enter
+                    if !*sent
+                        && (key.code != KeyCode::Enter
+                            || self
+                                .workspace
+                                .worktrees
+                                .iter()
+                                .any(|w| w.id == *id && w.broken)) =>
+                {
                     *sent = true;
                     vec![Action::Send(ClientMsg::RemoveWorktree {
                         id: id.clone(),

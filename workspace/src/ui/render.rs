@@ -1368,21 +1368,26 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             let w = app.worktree(id);
             let name = w.map_or(id.as_str(), |w| w.name.as_str());
             let branch = w.map_or(id.as_str(), |w| w.branch.as_str());
+            let gone = w.is_some_and(|w| w.broken);
+            // Nenhuma linha pode passar da largura: uma linha quebrada empurra a das
+            // teclas para fora da caixa, e o diálogo fica sem dizer o que apertar
+            let inner = usize::from(width).saturating_sub(2);
             let mut lines = vec![Line::from(vec![
                 Span::raw("  Remove "),
-                Span::styled(name.to_owned(), bold()),
+                Span::styled(clip(name, inner.saturating_sub(11)), bold()),
                 Span::raw("?"),
             ])];
-            if w.is_some_and(|w| w.broken) {
+            if gone {
                 // A pasta já sumiu: só sai da lista
                 lines.push(Line::styled("  Its folder is already gone.", dim()));
-                lines.push(Line::styled(
-                    format!("  Only the list changes; branch {branch} is kept."),
-                    dim(),
-                ));
+                lines.push(Line::styled("  Only the list entry is removed.", dim()));
             } else {
                 lines.push(Line::styled(
-                    format!("  Deletes the worktree and the local branch {branch}."),
+                    "  Deletes the worktree and its local branch:",
+                    dim(),
+                ));
+                lines.push(Line::styled(
+                    format!("  {}", clip(branch, inner.saturating_sub(3))),
                     dim(),
                 ));
                 lines.push(Line::styled("  The remote branch is kept.", dim()));
@@ -1391,7 +1396,7 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
             match (sent, refused) {
                 (_, Some(reason)) => {
                     lines.push(Line::styled(
-                        format!("  Refused: {reason}"),
+                        clip(&format!("  Refused: {reason}"), inner),
                         Style::default().fg(TuiColor::Red),
                     ));
                     lines.push(Line::styled("  f force · esc cancel", dim()));
@@ -1400,6 +1405,9 @@ fn render_dialog(f: &mut Frame, app: &App, dialog: &Dialog, body: Rect) {
                     "  removing…",
                     Style::default().fg(TuiColor::Yellow),
                 )),
+                (false, None) if gone => {
+                    lines.push(Line::styled("  ⏎ remove from list · esc cancel", dim()));
+                }
                 (false, None) => lines.push(Line::styled("  y remove · n cancel", dim())),
             }
             ("Remove worktree".into(), lines)
