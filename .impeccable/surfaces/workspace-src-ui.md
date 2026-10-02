@@ -58,7 +58,7 @@ working `◉` yellow · needs you `◆` red bold · done `✔` green · idle `�
     - Groups: `^f` on a plain folder adds it as a group made of the repositories directly inside it. `^n` starts a new group: a name first (`› Name  Glowz▏`), then the same list with `space` marking repositories in any folder (`✔` in green), `<name> · N marked` on the right of the folder line, and `⏎` creating the group. Already mapped repositories can be marked and move into the group. Why a key did nothing (`no repositories in this folder`, `mark at least one repository`, a name already taken) shows in red on the line above the hints until the next key. The title becomes `New group`.
   - New worktree from a group: the title names the group and a `Repo` field comes first (`› Repo    ‹ api ›  1 of 6`). `←→` cycle the repositories and a letter jumps to the next tag starting with it. It opens on the selected agent's repository; from the group row, on the last one used in that group.
   - Ungroup: `Ungroup <name>?`, two dim lines saying the repositories become standalone projects and nothing is deleted, `y ungroup · esc cancel`.
-  - Remove: `y/N` confirmation. A refusal shows the reason in red with `f force · esc cancel`.
+  - Remove: `y remove · n cancel`; `⏎` does not confirm, because the folder and the local branch are deleted. A refusal shows the reason in red with `f force · esc cancel`. For a worktree whose folder is already gone, the box says `Its folder is already gone.` and `Only the list entry is removed.`, and `⏎` or `y` confirms (`⏎ remove from list · esc cancel`). No line of this dialog may wrap: a wrapped line pushes the key hints out of the box, so names are cut with `…`.
 
 ## Empty and edge states
 

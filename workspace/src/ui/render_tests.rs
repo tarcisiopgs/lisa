@@ -1475,27 +1475,6 @@ fn a_scrolled_pane_says_how_far_back_it_is_and_hides_the_cursor() {
     insta::assert_snapshot!(t.backend());
 }
 
-#[test]
-fn removing_a_worktree_without_a_folder_says_only_the_list_changes() {
-    let mut ws = workspace();
-    let mut gone = wt("api/gone", AgentState::Idle, false);
-    gone.broken = true;
-    ws.worktrees = vec![gone];
-    let mut a = App::new(100, 14);
-    a.on_focus(true);
-    a.on_daemon(DaemonMsg::State(ws));
-    a.select_row(1);
-    a.on_key(key(KeyCode::Char('d')));
-    let t = draw(&a);
-    let screen = text_of(&t);
-    assert!(screen.contains("Its folder is already gone."), "{screen}");
-    assert!(
-        screen.contains("Only the list changes; branch gone is kept."),
-        "{screen}"
-    );
-    assert!(!screen.contains("Deletes the worktree"), "{screen}");
-}
-
 // ---- Tela de entrada ----
 
 #[test]
@@ -1572,4 +1551,85 @@ fn the_welcome_screen_leaves_when_an_agent_or_a_dialog_opens() {
     a.on_key(key(KeyCode::Esc));
     open(&mut a, "api/fix-login");
     assert!(!text_of(&draw(&a)).contains("Map projects."));
+}
+
+// ---- O diálogo de remoção nunca perde as teclas ----
+
+/// Um worktree com o nome dado; sem pasta quando `gone`.
+fn removal_dialog(cols: u16, name: &str, gone: bool) -> Terminal<TestBackend> {
+    let mut ws = workspace();
+    let mut w = wt(&format!("api/{name}"), AgentState::Idle, !gone);
+    w.broken = gone;
+    ws.worktrees = vec![w];
+    let mut a = App::new(cols, 20);
+    a.on_focus(true);
+    a.on_daemon(DaemonMsg::State(ws));
+    a.select_row(1);
+    a.on_key(key(KeyCode::Char('d')));
+    draw(&a)
+}
+
+/// Linhas de dentro da caixa do diálogo.
+fn dialog_rows(t: &Terminal<TestBackend>) -> Vec<String> {
+    let screen = text_of(t);
+    let mut inside = false;
+    let mut rows = Vec::new();
+    for line in screen.lines() {
+        if line.contains('└') {
+            break;
+        }
+        if inside {
+            rows.push(line.rsplit_once('│').map_or("", |(l, _)| l).to_owned());
+        }
+        if line.contains('┌') {
+            inside = true;
+        }
+    }
+    rows
+}
+
+#[test]
+fn removing_a_missing_worktree_with_a_long_name_still_shows_what_to_press() {
+    // Os nomes que deixaram o diálogo sem a linha de teclas na 2.8.0
+    for name in ["eu-pretendo-utilizar-agente", "ausdhausdhaduhsadsu"] {
+        for cols in [100, 120] {
+            let t = removal_dialog(cols, name, true);
+            let rows = dialog_rows(&t);
+            let last = rows.last().cloned().unwrap_or_default();
+            assert!(
+                last.contains("⏎ remove from list · esc cancel"),
+                "{name} at {cols}: {rows:#?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn removing_a_worktree_with_a_very_long_name_keeps_the_keys_and_cuts_the_name() {
+    let name = "a-worktree-whose-name-is-far-longer-than-the-dialog-can-hold-on-one-line";
+    for gone in [true, false] {
+        let t = removal_dialog(100, name, gone);
+        let rows = dialog_rows(&t);
+        let last = rows.last().cloned().unwrap_or_default();
+        let keys = if gone {
+            "⏎ remove from list · esc cancel"
+        } else {
+            "y remove · n cancel"
+        };
+        assert!(last.contains(keys), "gone={gone}: {rows:#?}");
+        assert!(rows[0].contains('…'), "gone={gone}: {rows:#?}");
+    }
+}
+
+#[test]
+fn removing_a_missing_worktree_promises_nothing_about_a_branch() {
+    let t = removal_dialog(100, "gone", true);
+    let screen = text_of(&t);
+    assert!(screen.contains("Its folder is already gone."), "{screen}");
+    assert!(
+        screen.contains("Only the list entry is removed."),
+        "{screen}"
+    );
+    assert!(!screen.contains("is kept"), "{screen}");
+    insta::assert_snapshot!(t.backend());
 }

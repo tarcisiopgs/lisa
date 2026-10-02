@@ -2335,3 +2335,29 @@ fn an_error_while_removing_closes_the_dialog_and_shows_the_reason() {
     assert!(a.dialog().is_none());
     assert!(a.notice().is_some_and(|n| n.text.contains("prune failed")));
 }
+
+#[test]
+fn enter_confirms_removing_a_worktree_whose_folder_is_gone() {
+    let mut a = with_one(gone());
+    select(&mut a, "api/gone");
+    a.on_key(ch('d'));
+    assert_eq!(
+        sent(&a.on_key(key(KeyCode::Enter))),
+        [ClientMsg::RemoveWorktree {
+            id: "api/gone".into(),
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn enter_never_confirms_removing_a_worktree_that_still_has_its_folder() {
+    let mut a = app();
+    select(&mut a, "api/fix-login");
+    a.on_key(ch('d'));
+    assert!(a.on_key(key(KeyCode::Enter)).is_empty());
+    assert!(matches!(
+        a.dialog(),
+        Some(Dialog::ConfirmRemove { sent: false, .. })
+    ));
+}
