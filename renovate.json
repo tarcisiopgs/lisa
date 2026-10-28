@@ -3,7 +3,8 @@
 	"description": [
 		"Dependency updates for Lisa: the npm package, the Rust workspace crate and the GitHub Actions workflows.",
 		"Self-contained on purpose: no shared preset, so the config cannot break when another repository moves.",
-		"Renovate merges, not GitHub (platformAutomerge: false). Native auto-merge lands every ready PR at the same instant, and two PRs that both touch Cargo.lock would conflict. Renovate merges one branch per run, always rebased on main."
+		"Renovate merges, not GitHub (platformAutomerge: false). Native auto-merge lands every ready PR at the same instant, and two PRs that both touch Cargo.lock would conflict. Renovate merges one branch per run.",
+		"rebaseWhen \"auto\": a PR with automerge is rebased whenever it falls behind main, so it always merges on top of the latest main; a PR waiting for review is only rebased when it has a conflict, so it does not rerun CI on every merge to main."
 	],
 	"extends": [
 		"config:recommended",
@@ -17,7 +18,7 @@
 	"labels": ["dependencies"],
 	"reviewers": ["tarcisiopgs"],
 	"assignAutomerge": true,
-	"rebaseWhen": "behind-base-branch",
+	"rebaseWhen": "auto",
 	"minimumReleaseAge": "3 days",
 	"internalChecksFilter": "strict",
 	"prConcurrentLimit": 3,
